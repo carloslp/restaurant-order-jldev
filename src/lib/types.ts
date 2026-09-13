@@ -18,7 +18,6 @@ export type StaffRole = 'ADMIN' | 'CAJERO' | 'COCINERO';
 export type Zone = 'INTERIOR' | 'TERRAZA' | 'BARRA';
 
 // --- Catálogo ---
-
 export interface Category {
   id: string;
   location_id: string;
@@ -62,7 +61,6 @@ export interface Product {
 }
 
 // --- Carrito / snapshot ---
-
 export interface CartModifierSelection {
   option_id: string;
   option_name: string;
@@ -92,7 +90,6 @@ export interface CartSnapshotItem extends CartItem {}
 export interface CartSnapshot extends Cart {}
 
 // --- Pedido ---
-
 export interface Order {
   id: string;
   location_id: string;
@@ -111,6 +108,12 @@ export interface Order {
   total: number; // subtotal + delivery_fee_amount
   cart_snapshot: CartSnapshot;
   delivery_zone: string | null;
+  delivery_token: string | null; // UUID as string
+  delivery_token_expires_at: string | null;
+  delivery_token_rotated_at: string | null;
   delivered_at: string | null;
   created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
 }

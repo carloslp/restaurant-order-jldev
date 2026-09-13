@@ -1,11 +1,13 @@
 // Utilidades de tokens: generación y hashing.
-// El token plano se envía por link; solo se guarda su hash (bcrypt).
-// Usa la lib nativa crypto del runtime.
+// El token plano se envía por link; solo se guarda su hash.
+// El hash usa bcrypt ($2a$) para que sea verificable por el RLS de Supabase,
+// que compara con crypt(token_plano, hash) de pgcrypto.
 
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import bcrypt from 'bcryptjs';
 
-/** Genera un token plano de N caracteres alfanuméricos (default 12). */
-export function generateToken(length = 12): string {
+/** Genera un token plano de N caracteres alfanuméricos (default 16). */
+export function generateToken(length = 16): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; // sin 0/O/1/l/I
   const bytes = randomBytes(length);
   let out = '';
@@ -15,19 +17,19 @@ export function generateToken(length = 12): string {
   return out;
 }
 
-/** Hash de un token plano (SHA-256, suficiente para tokens de alta entropía). */
+/** Hash de un token plano (bcrypt, formato $2a$ compatible con pgcrypto crypt()). */
 export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+  return bcrypt.hashSync(token, 10);
 }
 
-/** Verifica un token plano contra un hash. */
+/** Verifica un token plano contra un hash bcrypt ($2a$/$2b$). */
 export function verifyToken(token: string, hash: string): boolean {
-  const candidate = hashToken(token);
-  // comparación en tiempo constante
-  if (candidate.length !== hash.length) return false;
-  let diff = 0;
-  for (let i = 0; i < candidate.length; i++) {
-    diff |= candidate.charCodeAt(i) ^ hash.charCodeAt(i);
+  if (!hash || (!hash.startsWith('$2a$') && !hash.startsWith('$2b$') && !hash.startsWith('$2y$'))) {
+    return false;
   }
-  return diff === 0;
+  try {
+    return bcrypt.compareSync(token, hash);
+  } catch {
+    return false;
+  }
 }
