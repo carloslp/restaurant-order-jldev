@@ -1,6 +1,6 @@
 // Utilidades de servidor: resolución del local por subdominio y helpers de GUC.
 
-import { createAnonServerClient } from '@/lib/supabase/server';
+import { createAnonServerClient, createServerClient } from '@/lib/supabase/server';
 
 export interface LocalInfo {
   id: string;
@@ -11,13 +11,18 @@ export interface LocalInfo {
   delivery_fee: number;
 }
 
-/** Resuelve el local a partir del host (subdominio). */
+/**
+ * Resuelve el local a partir del host (subdominio).
+ * NOTA: lee `locals` con service role porque la política RLS oculta la tabla al rol anon
+ * (el público no debe enumerar locales). El subdominio es un identificador público del dominio,
+ * no un dato sensible; el service role es seguro en el servidor.
+ */
 export async function getLocalByHost(host: string | null | undefined): Promise<LocalInfo | null> {
   if (!host) return null;
-  const subdomain = host.split(':')[0].split('.')[0].toLowerCase(); // ej. "milocal.localhost" -> "milocal"
+  const subdomain = host.split(':')[0].split('.')[0].toLowerCase();
   if (!subdomain) return null;
 
-  const supabase = createAnonServerClient();
+  const supabase = createServerClient();
   const { data, error } = await supabase
     .from('locals')
     .select('*')
@@ -35,9 +40,9 @@ export async function getLocalByHost(host: string | null | undefined): Promise<L
   };
 }
 
-/** Obtiene el local por su ID (para server actions que ya conocen el id). */
+/** Obtiene el local por su ID. */
 export async function getLocalById(id: string): Promise<LocalInfo | null> {
-  const supabase = createAnonServerClient();
+  const supabase = createServerClient();
   const { data } = await supabase.from('locals').select('*').eq('id', id).maybeSingle();
   if (!data) return null;
   return {
