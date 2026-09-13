@@ -1,10 +1,13 @@
-// Server actions for order tracking (client and repartidor)
+// Server actions / queries para órdenes.
+// - Cliente: getOrderByDeliveryToken, markOrderAsDeliveredByToken
+// - Staff: listOrdersForLocation, updateOrderStatus (con validación de transición)
 
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
 import { verifyToken } from '@/lib/tokens';
-import type { Order } from '@/lib/types';
+import type { Order, OrderStatus, StaffRole } from '@/lib/types';
+import { getCurrentStaff } from '@/app/staff/page';
 
 /**
  * Fetch an order by its delivery_token (UUID string).
@@ -84,8 +87,7 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
     .eq('id', tokenRecord.id);
 
   if (tokenUpdateError) {
-    // We could log this, but the order is already marked as delivered.
-    // For simplicity, we still return success.
+    // The order is already delivered; the token can be cleaned up later.
     console.error('Error marking delivery token as used:', tokenUpdateError);
   }
 
@@ -93,4 +95,119 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
     ok: true,
     orderId: updatedOrder.id,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Staff: listar pedidos del local (RLS filtra por app.local_id vía GUC).
+// ---------------------------------------------------------------------------
+
+export async function listOrdersForLocation(opts?: {
+  statuses?: OrderStatus[];
+  limit?: number;
+}): Promise<Order[]> {
+  const { staff } = await getCurrentStaff();
+  const supabase = createServerClient();
+
+  // RLS: current_setting('app.local_id') debe estar seteado.
+  // En Server Actions, lo seteamos explícitamente antes de la query.
+  await supabase.rpc('set_config', {
+    name: 'app.local_id',
+    value: staff.location_id,
+    is_local: true,
+  });
+
+  let query = supabase
+    .from('orders')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(opts?.limit ?? 100);
+
+  if (opts?.statuses?.length) {
+    query = query.in('status', opts.statuses);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error listando orders:', error);
+    return [];
+  }
+
+  return (data ?? []) as Order[];
+}
+
+// Matriz de transiciones por rol (del diseño): cocinero solo cocina.
+const ALLOWED_TRANSITIONS: Record<StaffRole, Partial<Record<OrderStatus, OrderStatus[]>>> = {
+  ADMIN: {
+    CREADO: ['CONFIRMADO_CAJA', 'CANCELADO'],
+    CONFIRMADO_CAJA: ['EN_PREPARACION', 'CANCELADO'],
+    EN_PREPARACION: ['LISTO', 'CANCELADO'],
+    LISTO: ['LISTO_PARA_ENTREGA', 'COMPLETADO', 'CANCELADO'],
+    LISTO_PARA_ENTREGA: ['COMPLETADO', 'CANCELADO'],
+  },
+  CAJERO: {
+    CREADO: ['CONFIRMADO_CAJA', 'CANCELADO'],
+    CONFIRMADO_CAJA: ['EN_PREPARACION', 'CANCELADO'],
+    LISTO: ['LISTO_PARA_ENTREGA', 'COMPLETADO', 'CANCELADO'],
+    LISTO_PARA_ENTREGA: ['COMPLETADO', 'CANCELADO'],
+  },
+  COCINERO: {
+    CONFIRMADO_CAJA: ['EN_PREPARACION'],
+    EN_PREPARACION: ['LISTO'],
+  },
+};
+
+export async function updateOrderStatus(
+  orderId: string,
+  nextStatus: OrderStatus
+): Promise<{ ok: boolean; error?: string }> {
+  const { staff } = await getCurrentStaff();
+  const supabase = createServerClient();
+
+  // 1. Cargar la orden actual
+  const { data: order, error: fetchError } = await supabase
+    .from('orders')
+    .select('id, status, location_id')
+    .eq('id', orderId)
+    .single();
+
+  if (fetchError || !order) {
+    return { ok: false, error: 'Orden no encontrada' };
+  }
+
+  // 2. Validar que sea del mismo local
+  if (order.location_id !== staff.location_id) {
+    return { ok: false, error: 'No autorizado para esta orden' };
+  }
+
+  // 3. Validar transición según rol
+  const allowed = ALLOWED_TRANSITIONS[staff.role as StaffRole]?.[order.status as OrderStatus] ?? [];
+  if (!allowed.includes(nextStatus)) {
+    return {
+      ok: false,
+      error: `Transición ${order.status} → ${nextStatus} no permitida para tu rol`,
+    };
+  }
+
+  // 4. Aplicar (update payload: status + delivered_at si es COMPLETADO)
+  const updatePayload: {
+    status: OrderStatus;
+    delivered_at?: string | null;
+  } = { status: nextStatus };
+
+  if (nextStatus === 'COMPLETADO') {
+    updatePayload.delivered_at = new Date().toISOString();
+  }
+
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update(updatePayload)
+    .eq('id', orderId);
+
+  if (updateError) {
+    console.error('Error actualizando orden:', updateError);
+    return { ok: false, error: 'No se pudo actualizar la orden' };
+  }
+
+  return { ok: true };
 }

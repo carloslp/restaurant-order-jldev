@@ -1,21 +1,28 @@
-// Cliente Supabase (browser-safe).
-// Soporta ambas nomenclaturas de claves:
-//   - moderna: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-//   - clásica: NEXT_PUBLIC_SUPABASE_ANON_KEY
+// src/lib/supabase/client.ts
+// Cliente Supabase del navegador (anon/publishable key).
+'use client';
 
 import { createBrowserClient } from '@supabase/ssr';
 
-export function createClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    process.env.SUPABASE_PUBLISHABLE_KEY;
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
 
-  if (!url || !key) {
-    throw new Error(
-      'Faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (o ANON)'
-    );
+function getBrowserClient() {
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (o ANON)');
   }
-  return createBrowserClient(url, key);
+
+  if (!browserClient) {
+    browserClient = createBrowserClient(url, anonKey);
+  }
+  return browserClient;
+}
+
+export function createClient() {
+  return getBrowserClient();
 }
