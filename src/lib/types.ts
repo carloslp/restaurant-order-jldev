@@ -1,0 +1,116 @@
+// Tipos del dominio compartidos entre frontend y server actions.
+// Espejan el esquema de Supabase (docs/schema.sql).
+
+export type OrderType = 'RECOGER' | 'DOMICILIO';
+export type OrderStatus =
+  | 'CREADO'
+  | 'CONFIRMADO_CAJA'
+  | 'EN_PREPARACION'
+  | 'LISTO'
+  | 'LISTO_PARA_ENTREGA'
+  | 'COMPLETADO'
+  | 'CANCELADO';
+export type PaymentMethod = 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
+export type PaymentStatus = 'PENDIENTE' | 'COBRADO';
+export type ReservationStatus = 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA' | 'NO_SHOW';
+export type DepositStatus = 'SIN_DEPOSITO' | 'DEPOSITO_PENDIENTE' | 'DEPOSITADO';
+export type StaffRole = 'ADMIN' | 'CAJERO' | 'COCINERO';
+export type Zone = 'INTERIOR' | 'TERRAZA' | 'BARRA';
+
+// --- Catálogo ---
+
+export interface Category {
+  id: string;
+  location_id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface ModifierOption {
+  id: string;
+  modifier_group_id: string;
+  name: string;
+  price_impact: number; // impacto en precio público (IVA incluido)
+  is_active: boolean;
+}
+
+export interface ModifierGroup {
+  id: string;
+  product_id: string;
+  name: string;
+  is_required: boolean;
+  min_selections: number;
+  max_selections: number; // 0 = sin límite
+  options: ModifierOption[];
+}
+
+export interface Product {
+  id: string;
+  location_id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  base_price: number; // precio público, IVA incluido
+  is_available: boolean;
+  modifier_groups?: ModifierGroup[];
+  allergens?: string[]; // nombres de alérgenos
+  diet_labels?: string[]; // nombres de etiquetas dietarias
+}
+
+// --- Carrito / snapshot ---
+
+export interface CartModifierSelection {
+  option_id: string;
+  option_name: string;
+  price_impact: number;
+  quantity: number;
+}
+
+export interface CartItemModifiers {
+  modifier_group_id: string;
+  modifier_group_name: string;
+  selections: CartModifierSelection[];
+}
+
+export interface CartItem {
+  product_id: string;
+  product_name: string;
+  base_price: number;
+  quantity: number;
+  modifiers: CartItemModifiers[];
+}
+
+export interface Cart {
+  items: CartItem[];
+}
+
+export interface CartSnapshotItem extends CartItem {}
+export interface CartSnapshot extends Cart {}
+
+// --- Pedido ---
+
+export interface Order {
+  id: string;
+  location_id: string;
+  customer_name: string;
+  customer_phone: string;
+  order_type: OrderType;
+  payment_method: PaymentMethod;
+  delivery_address: string | null;
+  delivery_references: string | null;
+  eta: string;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  subtotal: number; // precios públicos (IVA incluido)
+  iva_amount: number; // IVA interno (subtotal * rate/(1+rate))
+  delivery_fee_amount: number;
+  total: number; // subtotal + delivery_fee_amount
+  cart_snapshot: CartSnapshot;
+  delivery_zone: string | null;
+  delivered_at: string | null;
+  created_at: string;
+}
