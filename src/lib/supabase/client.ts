@@ -1,13 +1,21 @@
 // Cliente Supabase (browser-safe).
-// Debe usarse con las variables de entorno:
-//   NEXT_PUBLIC_SUPABASE_URL
-//   NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Soporta ambas nomenclaturas de claves:
+//   - moderna: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+//   - clásica: NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 import { createBrowserClient } from '@supabase/ssr';
 
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.SUPABASE_PUBLISHABLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      'Faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (o ANON)'
+    );
+  }
+  return createBrowserClient(url, key);
 }
