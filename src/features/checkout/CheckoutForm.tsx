@@ -1,7 +1,7 @@
 // Paso 1 del checkout: formulario de datos del cliente.
 // - Usa Zod para validación en cliente (coincide con server action).
 // - Guarda en localStorage temporal para recuperar si hay error.
-// - Al submit llama a la server action 'createOrder'.
+// - Al submit llama a la server action 'createOrder' y muestra resultado.
 
 'use client';
 
@@ -11,6 +11,7 @@ import { useCart } from '@/features/cart/CartContext';
 import { formatMXN } from '@/lib/pricing';
 import { createOrder } from '@/features/checkout/actions';
 import { z } from 'zod';
+import Link from 'next/link';
 
 interface CheckoutFormProps {
   orderType: 'RECOGER' | 'DOMICILIO';
@@ -149,6 +150,38 @@ export function CheckoutForm({
     }
   }, [form]);
 
+  // Si hay un resultado exitoso, mostramos mensaje de confirmación en lugar del formulario
+  if (result?.ok && result.orderId) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="mb-4 text-2xl font-bold text-green-600">
+            ¡Pedido confirmado!
+          </h2>
+          <p className="mb-4">
+            Su pedido <strong>#{result.orderId.slice(0, 8).toUpperCase()}</strong> ha sido recibido y está en proceso.
+          </p>
+          {result.trackToken && (
+            <>
+              <p className="mb-2">
+                Puede seguir el estado de su pedido en:
+              </p>
+              <p className="mb-4 font-mono bg-gray-100 px-3 py-2 rounded">
+                /track/{result.trackToken}
+              </p>
+              <Link href={`/track/${result.trackToken}`} className="inline-block rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 transition">
+                Ver seguimiento
+              </Link>
+            </>
+          )}
+          <Link href="/" className="text-sm text-orange-600 hover:underline">
+            Volver al menú
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
@@ -211,7 +244,7 @@ export function CheckoutForm({
               placeholder="Calle Ejemplo #123, Col. Centro"
             />
             {errors.delivery_address && (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-sm text-red-600">
                 {errors.delivery_address}
               </p>
             )}
