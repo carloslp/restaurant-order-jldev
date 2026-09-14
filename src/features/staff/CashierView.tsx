@@ -1,22 +1,36 @@
 // src/features/staff/CashierView.tsx
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { updateOrderStatus } from '@/lib/server/order';
+import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import type { Order } from '@/lib/types';
 import { formatMXN } from '@/lib/pricing';
 
 interface CashierViewProps {
-  orders: Order[];
+  locationId: string;
 }
 
 function orderTypeLabel(type: Order['order_type']): string {
   return type === 'DOMICILIO' ? '🚀 Delivery' : '🏃 Para llevar';
 }
 
-export function CashierView({ orders: initialOrders }: CashierViewProps) {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
-  const [pending, startTransition] = useTransition();
+const ACTIVE_STATUSES: Order['status'][] = [
+  'CREADO',
+  'CONFIRMADO_CAJA',
+  'EN_PREPARACION',
+  'LISTO',
+  'LISTO_PARA_ENTREGA',
+];
+
+export function CashierView({ locationId }: CashierViewProps) {
+  // Pedidos en tiempo real (Realtime + estado inicial)
+  const orders = useRealtimeOrders({
+    locationId,
+    statuses: ACTIVE_STATUSES,
+    limit: 100,
+  });
+
   const [error, setError] = useState<string | null>(null);
 
   async function handleAction(orderId: string, nextStatus: Order['status']) {
@@ -24,25 +38,19 @@ export function CashierView({ orders: initialOrders }: CashierViewProps) {
     const result = await updateOrderStatus(orderId, nextStatus);
     if (!result.ok) {
       setError(result.error ?? 'No se pudo actualizar');
-      return;
     }
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, status: nextStatus }
-          : o
-      )
-    );
+    // El Realtime actualiza la lista automáticamente.
   }
 
   const pendingOrders = orders.filter((o) => !['COMPLETADO', 'CANCELADO'].includes(o.status));
-  const completedOrders = orders.filter((o) => ['COMPLETADO', 'CANCELADO'].includes(o.status));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Caja</h1>
-        {pending && <span className="text-sm text-gray-500">Procesando...</span>}
+        <span className="text-sm text-gray-500">
+          {pendingOrders.length} activos
+        </span>
       </div>
 
       {error && (
@@ -51,9 +59,6 @@ export function CashierView({ orders: initialOrders }: CashierViewProps) {
 
       {/* Pedidos activos */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-700">
-          Pedidos activos ({pendingOrders.length})
-        </h2>
         {pendingOrders.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
             No hay pedidos activos.
@@ -146,26 +151,10 @@ export function CashierView({ orders: initialOrders }: CashierViewProps) {
         )}
       </div>
 
-      {/* Completados / cancelados */}
-      {completedOrders.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-500">
-            Historial ({completedOrders.length})
-          </h3>
-          {completedOrders.map((order) => (
-            <div
-              key={order.id}
-              className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-2 text-sm text-gray-500"
-            >
-              <span>
-                #{order.id.slice(0, 8).toUpperCase()} · {order.customer_name} ·{' '}
-                {order.status.toLowerCase()}
-              </span>
-              <span className="font-mono">{formatMXN(order.total)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Realtime activo */}
+      <p className="text-xs text-green-600">
+        ● Realtime activo — los cambios se reflejan al instante.
+      </p>
     </div>
   );
 }

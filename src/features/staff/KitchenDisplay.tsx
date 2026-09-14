@@ -2,12 +2,12 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { updateOrderStatus, listOrdersForLocation } from '@/lib/server/order';
+import { updateOrderStatus } from '@/lib/server/order';
+import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import type { Order } from '@/lib/types';
-import { formatMXN } from '@/lib/pricing';
 
 interface KitchenDisplayProps {
-  orders: Order[];
+  locationId: string;
 }
 
 function formatTime(iso: string): string {
@@ -17,21 +17,16 @@ function formatTime(iso: string): string {
   });
 }
 
-function statusLabel(status: Order['status']): string {
-  const labels: Record<Order['status'], string> = {
-    CREADO: 'Recibido',
-    CONFIRMADO_CAJA: 'Confirmado',
-    EN_PREPARACION: 'En preparación',
-    LISTO: 'Listo',
-    LISTO_PARA_ENTREGA: 'Listo para entrega',
-    COMPLETADO: 'Entregado',
-    CANCELADO: 'Cancelado',
-  };
-  return labels[status] ?? status;
-}
+const ACTIVE_STATUSES: Order['status'][] = ['CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO'];
 
-export function KitchenDisplay({ orders: initialOrders }: KitchenDisplayProps) {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
+  // Pedidos en tiempo real (Realtime + estado inicial)
+  const orders = useRealtimeOrders({
+    locationId,
+    statuses: ACTIVE_STATUSES,
+    limit: 100,
+  });
+
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -42,13 +37,7 @@ export function KitchenDisplay({ orders: initialOrders }: KitchenDisplayProps) {
       setError(result.error ?? 'No se pudo actualizar');
       return;
     }
-    // Refrescar la lista (server action) para reflejar el estado.
-    startTransition(async () => {
-      const fresh = await listOrdersForLocation({
-        statuses: ['CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO'],
-      });
-      setOrders(fresh);
-    });
+    // El Realtime actualizará la lista automáticamente.
   }
 
   const grouped: Record<string, Order[]> = {
@@ -67,7 +56,7 @@ export function KitchenDisplay({ orders: initialOrders }: KitchenDisplayProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Pantalla de cocina</h1>
-        {pending && <span className="text-sm text-gray-500">Refrescando...</span>}
+        {pending && <span className="text-sm text-gray-500">Actualizando...</span>}
       </div>
       {error && (
         <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -90,7 +79,7 @@ export function KitchenDisplay({ orders: initialOrders }: KitchenDisplayProps) {
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-bold text-gray-800">
-                      #{order.cart_snapshot.items.reduce((sum, item) => sum + item.quantity, 0)}
+                      #{order.id.slice(0, 8).toUpperCase()}
                     </span>
                     <span className="text-xs text-gray-500">{formatTime(order.created_at)}</span>
                   </div>

@@ -1,9 +1,7 @@
 // src/app/staff/kds/page.tsx
 import { redirect } from 'next/navigation';
-import { listOrdersForLocation } from '@/lib/server/order';
 import { getCurrentStaff } from '@/app/staff/page';
 import { KitchenDisplay } from '@/features/staff/KitchenDisplay';
-import type { Order } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +13,6 @@ export default async function KdsPage() {
     redirect('/staff');
   }
 
-  const orders: Order[] = await listOrdersForLocation({
-    statuses: ['CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO'],
-  });
-
-  return <KitchenDisplay orders={orders} />;
+  // Pasamos locationId; el componente (client) se encarga de cargar + suscribirse.
+  return <KitchenDisplay locationId={staff.location_id} />;
 }
