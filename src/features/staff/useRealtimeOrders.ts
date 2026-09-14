@@ -8,15 +8,14 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 /**
  * Hook de Realtime para órdenes del local.
- * Escucha cambios (INSERT/UPDATE/DELETE) en la tabla `orders`
- * filtrando por location_id y mantiene la lista local sincronizada.
+ * Requiere que la tabla `orders` tenga Realtime habilitado y que el anon key
+ * pueda leer las órdenes del local (mediante RLS que use el claim `app.local_id`
+ * del JWT). Para que el anon pueda leer, necesitamos que el usuario tenga una
+ * sesión válida (después del magic link) y que el cliente de anon use las
+ * cookies de sesión (lo hace automáticamente @supabase/ssr).
  *
  * Uso:
  *   const orders = useRealtimeOrders({ locationId, statuses, limit });
- *
- * Nota: requiere que Supabase Realtime esté habilitado para la tabla `orders`
- * (Dashboard → Database → Replication) y que el anon key tenga permisos
- * de suscripción a postgres_changes (o usar un canal con filtro).
  */
 export function useRealtimeOrders(opts: {
   locationId: string;
@@ -54,7 +53,7 @@ export function useRealtimeOrders(opts: {
     }
     loadInitial();
 
-    // Suscribirse a cambios
+    // Suscribirse a cambios con filtro en la base (usa el mismo location_id)
     const channel = supabase
       .current!.channel(`orders-realtime-${locationId}`)
       .on(
@@ -78,8 +77,9 @@ export function useRealtimeOrders(opts: {
             if (payload.eventType === 'UPDATE' && incoming) {
               const exists = prev.some((o) => o.id === incoming.id);
               if (!exists) {
-                // Si el update trae una orden que no teníamos (p.ej. cambió de estado),
-                // agregarla respetando el filtro de statuses.
+                // Si el update trae una orden que no teníamos (p.ej. cambió de estado)
+                // pero pasa el filtro de location_id (ya lo tiene el channel) y
+                // opcionalmente de statuses, la agregamos.
                 if (statuses?.length && !statuses.includes(incoming.status)) {
                   return prev;
                 }
