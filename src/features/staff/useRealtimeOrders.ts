@@ -7,12 +7,11 @@ import type { Order } from '@/lib/types';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 /**
- * Hook de Realtime para órdenes del local.
- * Requiere que la tabla `orders` tenga Realtime habilitado y que el anon key
- * pueda leer las órdenes del local (mediante RLS que use el claim `app.local_id`
- * del JWT). Para que el anon pueda leer, necesitamos que el usuario tenga una
- * sesión válida (después del magic link) y que el cliente de anon use las
- * cookies de sesión (lo hace automáticamente @supabase/ssr).
+ * Hook de Realtime para órdenes del local (para KDS y Caja).
+ * - Carga inicial: SELECT a la vista segura staff_orders_view (RLS con JWT/GUC).
+ * - Suscripción: postgres_changes a la tabla `orders` filtrando por location_id.
+ *   Requiere Realtime habilitado en la tabla orders y la policy orders_staff_live
+ *   (docs/policy-realtime-staff.sql).
  *
  * Uso:
  *   const orders = useRealtimeOrders({ locationId, statuses, limit });
@@ -34,11 +33,11 @@ export function useRealtimeOrders(opts: {
       supabase.current = createClient();
     }
 
-    // Cargar estado inicial
+    // Cargar estado inicial desde la vista segura (no expone datos sensibles)
     let isMounted = true;
     async function loadInitial() {
       let query = supabase
-        .current!.from('orders')
+        .current!.from('staff_orders_view')
         .select('*')
         .eq('location_id', locationId)
         .order('created_at', { ascending: false })
@@ -48,12 +47,23 @@ export function useRealtimeOrders(opts: {
       }
       const { data, error } = await query;
       if (isMounted && !error) {
-        setOrders((data ?? []) as Order[]);
+        // Normalizar: la vista tiene delivery_address_short; el hook devuelve Order.
+        const normalized = (data ?? []).map((v: Record<string, unknown>) => ({
+          ...v,
+          delivery_address: v.delivery_address_short ?? null,
+          delivery_references: null,
+          delivery_token: null,
+          delivery_token_expires_at: null,
+          delivery_token_rotated_at: null,
+          customer_phone: '', // no expuesto en la vista
+        } as Order));
+        setOrders(normalized);
       }
     }
     loadInitial();
 
-    // Suscribirse a cambios con filtro en la base (usa el mismo location_id)
+    // Suscribirse a cambios de la tabla orders (los eventos llegan si la policy
+    // orders_staff_live permite SELECT; el payload trae las columnas reales).
     const channel = supabase
       .current!.channel(`orders-realtime-${locationId}`)
       .on(
@@ -66,28 +76,34 @@ export function useRealtimeOrders(opts: {
         },
         (payload: RealtimePostgresChangesPayload<{ [key: string]: never }>) => {
           setOrders((prev) => {
-            const incoming = payload.new as Order | undefined;
+            const incoming = payload.new as Partial<Order> | undefined;
+            // El payload del Realtime incluye TODO el row de orders (columnas reales),
+            // no la vista. Lo normalizamos para la UI.
+            const normalizedIncoming = incoming
+              ? ({
+                  ...incoming,
+                  delivery_address: incoming.delivery_address ?? null,
+                  delivery_references: incoming.delivery_references ?? null,
+                  customer_phone: incoming.customer_phone ?? '',
+                } as Order)
+              : undefined;
             const oldId = (payload.old as { id?: string } | undefined)?.id;
 
-            if (payload.eventType === 'INSERT' && incoming) {
-              // Insert nuevo: agregar al frente (más reciente)
-              return [incoming, ...prev].slice(0, limit);
+            if (payload.eventType === 'INSERT' && normalizedIncoming) {
+              return [normalizedIncoming, ...prev].slice(0, limit);
             }
 
-            if (payload.eventType === 'UPDATE' && incoming) {
-              const exists = prev.some((o) => o.id === incoming.id);
+            if (payload.eventType === 'UPDATE' && normalizedIncoming) {
+              const exists = prev.some((o) => o.id === normalizedIncoming.id);
               if (!exists) {
-                // Si el update trae una orden que no teníamos (p.ej. cambió de estado)
-                // pero pasa el filtro de location_id (ya lo tiene el channel) y
-                // opcionalmente de statuses, la agregamos.
-                if (statuses?.length && !statuses.includes(incoming.status)) {
+                if (statuses?.length && !statuses.includes(normalizedIncoming.status)) {
                   return prev;
                 }
-                return [incoming, ...prev].slice(0, limit);
+                return [normalizedIncoming, ...prev].slice(0, limit);
               }
               return prev.map((o) =>
-                o.id === incoming.id
-                  ? { ...o, ...incoming }
+                o.id === normalizedIncoming.id
+                  ? { ...o, ...normalizedIncoming }
                   : o
               );
             }
