@@ -21,7 +21,7 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 4 | `AdminMenuCategories.tsx` — Listar/crear/editar/eliminar categorías. Tabla con drag-and-drop para `sort_order`, toggle `is_active`. | ⬜ Pendiente | 6h |
+| 4 | `AdminMenuCategories.tsx` — Listar/crear/editar/eliminar categorías. Tabla con drag-and-drop para `sort_order`, toggle `is_active`. | ✅ Completado | 6h |
 | 5 | `AdminMenuProducts.tsx` — CRUD productos. Formulario modal: nombre, descripción, precio, imagen (upload Supabase Storage), categoría, disponibilidad, alérgenos (multi-select), etiquetas dietarias (multi-select), grupos de modificadores anidados. | ⬜ Pendiente | 12h |
 | 6 | `AdminModifierGroups.tsx` — Gestión de modificadores por producto. Builder visual: grupos requeridos/opcionales, min/max selecciones, opciones con impacto de precio. | ⬜ Pendiente | 8h |
 | 7 | Server Actions CRUD: `createCategory`, `updateCategory`, `deleteCategory`, `createProduct`, `updateProduct`, `deleteProduct`, `createModifierGroup`, `updateModifierGroup`, `createModifierOption`, `updateModifierOption`. Validación Zod, `revalidatePath`, manejo de imágenes. | ⬜ Pendiente | 10h |

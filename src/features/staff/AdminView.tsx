@@ -128,7 +128,9 @@ export function AdminView({ staff, local }: AdminViewProps) {
       {activeTab === 'menu' && (
         <div className="space-y-6">
           <AdminMenuCategories />
-          {/* Aquí se añadirán AdminMenuProducts y AdminModifierGroups más adelante */}
+          <hr className="my-8 border-gray-200" />
+          <AdminMenuProducts />
+          {/* Los modificadores se gestionan dentro de la vista de productos o en un modal dedicado */}
         </div>
       )}
     </div>

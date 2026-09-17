@@ -126,7 +126,7 @@ export async function listProducts(categoryId?: string): Promise<Product[]> {
 
   let query = supabase
     .from('products')
-    .select(\`\*, modifier_groups(id, name, is_required, min_selections, max_selections, options(id, name, price_impact, is_active))\`)
+    .select('*, modifier_groups(id, name, is_required, min_selections, max_selections, options(id, name, price_impact, is_active))')
     .order('name', { ascending: true });
 
   if (categoryId) {
@@ -448,7 +448,7 @@ export async function deleteMenuImage(publicUrl: string): Promise<{ ok: boolean 
 
   // Extract path from public URL
   const url = new URL(publicUrl);
-  const pathMatch = url.pathname.match(/\/menu-images\/(.+)$/);
+  const pathMatch = url.pathname.match(/\\/menu-images\\/(.+)$/);
   if (!pathMatch) throw new Error('URL de imagen inválida');
 
   const filePath = pathMatch[1];
