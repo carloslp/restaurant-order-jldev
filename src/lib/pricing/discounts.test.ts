@@ -1,6 +1,6 @@
 // src/lib/pricing/discounts.test.ts
 import { describe, it, expect } from 'vitest';
-import { calculateBestDiscount } from './discounts';
+import { calculateBestDiscount, DiscountWithUsage } from './discounts';
 import type { Cart, Discount } from '@/lib/types';
 
 const mockCart: Cart = {
@@ -22,7 +22,7 @@ const mockCart: Cart = {
   ],
 };
 
-const mockDiscounts: Discount[] = [
+const mockDiscounts: DiscountWithUsage[] = [
   {
     id: 'd1',
     location_id: 'loc1',
@@ -98,7 +98,6 @@ describe('calculateBestDiscount', () => {
 
   it('should prioritize code over automatic discount', () => {
     const subtotal = 140;
-    // Auto saves 5, Code saves 14
     const result = calculateBestDiscount(mockCart, subtotal, mockDiscounts, 'PROMO10');
     expect(result.applied_discount?.type).toBe('CODE');
     expect(result.total_saved).toBe(14);
@@ -108,6 +107,71 @@ describe('calculateBestDiscount', () => {
     const inactiveDiscounts = mockDiscounts.map(d => ({ ...d, is_active: false }));
     const subtotal = 140;
     const result = calculateBestDiscount(mockCart, subtotal, inactiveDiscounts, 'PROMO10');
+    expect(result.total_saved).toBe(0);
+  });
+
+  it('should respect total usage limits', () => {
+    const limitedDiscount = [{ 
+        ...mockDiscounts[1], 
+        usage_limit_total: 10, 
+        current_usage_total: 10 
+    }];
+    const subtotal = 140;
+    const result = calculateBestDiscount(mockCart, subtotal, limitedDiscount, null);
+    expect(result.total_saved).toBe(0);
+  });
+
+  it('should respect customer usage limits', () => {
+    const limitedDiscount = [{ 
+        ...mockDiscounts[1], 
+        usage_limit_per_customer: 1, 
+        current_usage_customer: 1 
+    }];
+    const subtotal = 140;
+    const result = calculateBestDiscount(mockCart, subtotal, limitedDiscount, null);
+    expect(result.total_saved).toBe(0);
+  });
+
+  it('should respect daily usage limits', () => {
+    const limitedDiscount = [{ 
+        ...mockDiscounts[1], 
+        usage_limit_per_day: 5, 
+        current_usage_day: 5 
+    }];
+    const subtotal = 140;
+    const result = calculateBestDiscount(mockCart, subtotal, limitedDiscount, null);
+    expect(result.total_saved).toBe(0);
+  });
+
+  it('should apply scoped percentage discount only to eligible products', () => {
+    const scopedDiscount: DiscountWithUsage[] = [{
+      ...mockDiscounts[0],
+      applies_to_product_ids: ['p1'], // Only Pizza (100)
+      code: 'PIZZA10'
+    }];
+    const subtotal = 140; // Pizza(100) + Refrescos(40)
+    const result = calculateBestDiscount(mockCart, subtotal, scopedDiscount, 'PIZZA10');
+    expect(result.total_saved).toBe(10); // 10% of 100, not 140
+    expect(result.final_subtotal).toBe(130);
+  });
+
+  it('should respect temporal windows (future start date)', () => {
+    const futureDiscount = [{
+      ...mockDiscounts[1],
+      starts_at: new Date(Date.now() + 86400000).toISOString() // Tomorrow
+    }];
+    const subtotal = 140;
+    const result = calculateBestDiscount(mockCart, subtotal, futureDiscount, null);
+    expect(result.total_saved).toBe(0);
+  });
+
+  it('should respect temporal windows (past end date)', () => {
+    const expiredDiscount = [{
+      ...mockDiscounts[1],
+      ends_at: new Date(Date.now() - 86400000).toISOString() // Yesterday
+    }];
+    const subtotal = 140;
+    const result = calculateBestDiscount(mockCart, subtotal, expiredDiscount, null);
     expect(result.total_saved).toBe(0);
   });
 });
