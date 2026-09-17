@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { listReservations, createReservation, updateReservation, deleteReservation, changeReservationStatus, getZoneCapacities } from '@/lib/server/reservations';
+import { listReservations, deleteReservation, changeReservationStatus, getZoneCapacities } from '@/lib/server/reservations';
+import { ReservationForm } from './ReservationForm';
 import type { ReservationStatus, Zone } from '@/lib/types';
 import { format, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, differenceInMinutes, setHours, setMinutes } from 'date-fns';
 
@@ -14,7 +15,6 @@ export function AdminReservations() {
   const [zoneCapacities, setZoneCapacities] = useState<Record<Zone, number>>({ INTERIOR: 0, TERRAZA: 0, BARRA: 0 });
   const [loading, setLoading] = useState(true);
   const [editingReservation, setEditingReservation] = useState<any>(null);
-  const [formData, setFormData] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
 
   // Time slots for the day
@@ -76,56 +76,23 @@ export function AdminReservations() {
   // Open form for new reservation
   const handleNew = (zone?: Zone, startTime?: Date) => {
     setEditingReservation(null);
-    setFormData({
-      holder_name: '',
-      holder_phone: '',
-      reservation_date: format(new Date(), 'yyyy-MM-dd'),
-      reservation_time: format(startTime || new Date(), 'HH:mm'),
-      party_size: 1,
-      preferred_zone: zone || 'INTERIOR',
-      status: 'PENDIENTE',
-      deposit_status: 'SIN_DEPOSITO',
-      notes: '',
-    });
     setShowForm(true);
   };
 
   // Open form for editing reservation
   const handleEdit = (reservation: any) => {
     setEditingReservation(reservation);
-    setFormData({
-      holder_name: reservation.holder_name,
-      holder_phone: reservation.holder_phone,
-      reservation_date: reservation.reservation_date,
-      reservation_time: reservation.reservation_time,
-      party_size: reservation.party_size,
-      preferred_zone: reservation.preferred_zone,
-      status: reservation.status,
-      deposit_status: reservation.deposit_status,
-      notes: reservation.notes || '',
-    });
     setShowForm(true);
   };
 
   const handleCancel = () => {
     setShowForm(false);
     setEditingReservation(null);
-    setFormData(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingReservation) {
-        await updateReservation(editingReservation.id, formData);
-      } else {
-        await createReservation(formData);
-      }
-      await loadData();
-      handleCancel();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
+  const handleSubmitSuccess = async () => {
+    await loadData();
+    handleCancel();
   };
 
   const handleDelete = async (id: string) => {
