@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Category, Product } from '@/lib/types';
 import { formatMXN, linePrice } from '@/lib/pricing';
 import AddToCartButton from './AddToCartButton';
-import type { CartItem, CartItemModifiers } from '@/lib/types';
+import { useCart } from '@/features/cart/CartContext';
 
 interface Props {
   local: { name: string; subdomain: string; iva_rate: number; delivery_fee: number } | null;
@@ -12,6 +12,7 @@ interface Props {
   products: Product[];
   allergens: string[];
   dietLabels: string[];
+  searchTerm: string;
 }
 
 export default function MenuClient({
@@ -20,37 +21,32 @@ export default function MenuClient({
   products,
   allergens,
   dietLabels,
+  searchTerm,
 }: Props) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const { cart, addItem, updateQuantity, removeItem, clearCart, count } = useCart();
 
-  // Cargar carrito de localStorage al montar
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('cart');
-      if (raw) setCart(JSON.parse(raw));
-    } catch {
-      // ignorar
-    }
-  }, []);
+  // No need for local cart effects; CartContext handles persistence
 
-  // Persistir carrito
-  useEffect(() => {
-    try {
-      localStorage.setItem('cart', JSON.stringify(cart));
-    } catch {
-      // ignorar
-    }
-  }, [cart]);
+  // Filter products by searchTerm (case-insensitive) on name and description
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm) return products;
+    const term = searchTerm.toLowerCase();
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(term) ||
+        (p.description && p.description.toLowerCase().includes(term))
+    );
+  }, [products, searchTerm]);
 
   const visibleCategories: Category[] = categories.length
     ? categories
-    : products.length
+    : filteredProducts.length
       ? [
           {
             id: 'todos',
-            location_id: products[0].location_id,
+            location_id: filteredProducts[0].location_id,
             name: 'Menú',
             description: '',
             image_url: null,
@@ -61,37 +57,14 @@ export default function MenuClient({
       : [];
 
   const productsByCategory = (cat: Category) =>
-    products.filter((p) => p.category_id === cat.id);
+    filteredProducts.filter((p) => p.category_id === cat.id);
 
   const addToCart = useCallback(
     (product: Product, qty: number) => {
       if (qty <= 0) return;
-      setCart((prev) => {
-        const existing = prev.find(
-          (i) =>
-            i.product_id === product.id &&
-            JSON.stringify(i.modifiers) === JSON.stringify([])
-        );
-        if (existing) {
-          return prev.map((i) =>
-            i.product_id === product.id && JSON.stringify(i.modifiers) === JSON.stringify([])
-              ? { ...i, quantity: i.quantity + qty }
-              : i
-          );
-        }
-        return [
-          ...prev,
-          {
-            product_id: product.id,
-            product_name: product.name,
-            base_price: product.base_price,
-            quantity: qty,
-            modifiers: [],
-          },
-        ];
-      });
+      addItem(product, qty, []);
     },
-    []
+    [addItem]
   );
 
   const cartTotal = useMemo(
@@ -233,13 +206,10 @@ export default function MenuClient({
       {/* Barra flotante del carrito */}
       {cart.length > 0 && (
         <div className="fixed bottom-4 inset-x-0 z-20 flex justify-center px-4">
-          <button
-            onClick={() => alert(JSON.stringify(cart, null, 2))}
-            className="rounded-full bg-orange-600 text-white px-6 py-3 shadow-lg font-semibold hover:bg-orange-700 transition"
-          >
+          <Link href="/checkout" className="rounded-full bg-orange-600 text-white px-6 py-3 shadow-lg font-semibold hover:bg-orange-700 transition">
             Ver carrito · {cart.reduce((s, i) => s + i.quantity, 0)} ítems ·{' '}
             {formatMXN(cartTotal)}
-          </button>
+          </Link>
         </div>
       )}
     </main>

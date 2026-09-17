@@ -38,25 +38,25 @@ export async function getOrderByDeliveryToken(deliveryToken: string): Promise<Or
 export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{ ok: boolean; error?: string; orderId?: string }> {
   const supabase = createServerClient();
 
-  // 1. Find the delivery token record that matches the plain token (via hash) and is not used/revoked/expired
-  const { data: tokenRecord, error: tokenError } = await supabase
+  // 1. Find all valid (unused, unrevoked, unexpired) delivery token candidates
+  const { data: candidates, error: tokenError } = await supabase
     .from('delivery_tokens')
     .select('*, orders!inner(id, status, delivery_token_expires_at)')
     .eq('used_at', null)
     .eq('revoked_at', null)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
+    .gt('expires_at', new Date().toISOString());
 
-  if (tokenError || !tokenRecord) {
+  if (tokenError || !candidates?.length) {
     return { ok: false, error: 'Token inválido, usado, revocado o expirado' };
   }
 
-  // 2. Verify the plain token against the hash (using bcrypt)
-  if (!verifyToken(plainToken, tokenRecord.token_hash)) {
+  // 2. Find the specific token by verifying the plain token against each candidate's hash
+  const tokenRecord = candidates.find((c: any) => verifyToken(plainToken, c.token_hash));
+  if (!tokenRecord) {
     return { ok: false, error: 'Token inválido' };
   }
 
-  const order = tokenRecord.orders;
+  const order = (tokenRecord as any).orders;
 
   // 3. Check if the order is already in a terminal state (optional, but we can prevent updating if already completed/cancelled)
   if (order.status === 'COMPLETADO' || order.status === 'CANCELADO') {
@@ -95,6 +95,35 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
     ok: true,
     orderId: updatedOrder.id,
   };
+}
+
+/**
+ * Fetch an order by its plain delivery token (used by repartidor).
+ * Used by the repartidor tracking page.
+ */
+export async function getOrderByPlainToken(plainToken: string): Promise<Order | null> {
+  const supabase = createServerClient();
+
+  // 1. Find all valid (unused, unrevoked, unexpired) delivery token candidates
+  const { data: candidates, error: tokenError } = await supabase
+    .from('delivery_tokens')
+    .select('*, orders!inner(*)')
+    .eq('used_at', null)
+    .eq('revoked_at', null)
+    .gt('expires_at', new Date().toISOString());
+
+  if (tokenError || !candidates?.length) {
+    return null;
+  }
+
+  // 2. Find the specific token by verifying the plain token against each candidate's hash
+  const tokenRecord = candidates.find((c: any) => verifyToken(plainToken, c.token_hash));
+  if (!tokenRecord) {
+    return null;
+  }
+
+  // 3. Return the associated order
+  return (tokenRecord as any).orders as Order;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 // Utilidades de servidor: resolución del local por subdominio y helpers de GUC.
 
-import { createAnonServerClient, createServerClient } from '@/lib/supabase/server';
+import { createServerClient } from '@/lib/supabase/server';
 
 export interface LocalInfo {
   id: string;

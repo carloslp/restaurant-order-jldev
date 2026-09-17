@@ -5,6 +5,7 @@ import { useCart } from '@/features/cart/CartContext';
 import { formatMXN, linePrice } from '@/lib/pricing';
 import { CheckoutForm } from '@/features/checkout/CheckoutForm';
 import type { OrderType, PaymentMethod } from '@/lib/types';
+import { useState } from 'react';
 
 export default function CheckoutPage() {
   const { cart, total, count } = useCart();
@@ -17,8 +18,8 @@ export default function CheckoutPage() {
     );
   }
 
-  const orderType: OrderType = 'DOMICILIO';
-  const paymentMethod: PaymentMethod = 'EFECTIVO_EXACTO';
+  const [orderType, setOrderType] = useState<OrderType>('RECOGER');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('EFECTIVO_EXACTO');
   const eta = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
   return (
@@ -51,6 +52,66 @@ export default function CheckoutPage() {
           <div className="flex justify-between">
             <span>Total</span>
             <span className="font-bold text-lg">{formatMXN(total)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mb-6">
+        <h2 className="mb-2 text-lg font-semibold">Detalles del pedido</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Tipo de orden</label>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  checked={orderType === 'RECOGER'}
+                  onChange={(e) => setOrderType('RECOGER')}
+                  className="h-4 w-4 text-orange-600"
+                />
+                <span className="ml-2">Para recoger</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  checked={orderType === 'DOMICILIO'}
+                  onChange={(e) => setOrderType('DOMICILIO')}
+                  className="h-4 w-4 text-orange-600"
+                />
+                <span className="ml-2">A domicilio</span>
+              </label>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Método de pago</label>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  checked={paymentMethod === 'EFECTIVO_EXACTO'}
+                  onChange={(e) => setPaymentMethod('EFECTIVO_EXACTO')}
+                  className="h-4 w-4 text-orange-600"
+                />
+                <span className="ml-2">Efectivo exacto</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  checked={paymentMethod === 'EFECTIVO_CON_CAMBIO'}
+                  onChange={(e) => setPaymentMethod('EFECTIVO_CON_CAMBIO')}
+                  className="h-4 w-4 text-orange-600"
+                />
+                <span className="ml-2">Efectivo con cambio</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  checked={paymentMethod === 'TARJETA_CONTRA_ENTREGA'}
+                  onChange={(e) => setPaymentMethod('TARJETA_CONTRA_ENTREGA')}
+                  className="h-4 w-4 text-orange-600"
+                />
+                <span className="ml-2">Tarjeta contra entrega</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>

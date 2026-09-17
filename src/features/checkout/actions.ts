@@ -2,19 +2,22 @@
 // - Validación de entrada
 // - Idempotencia (evitar duplicados por doble submit)
 // - Persistencia con service role (salta RLS para insert)
+// - Generación de token de reparto
 
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
+import { randomUUID } from 'crypto';
 import { createServerClient } from '@/lib/supabase/server';
-import { getLocalById } from '@/lib/server/local';
+import { getLocalByHost } from '@/lib/server/local';
 import { getMenu } from '@/features/menu/queries';
 import { linePrice } from '@/lib/pricing';
 import { isValidAddress, isValidName, isValidPhone, isValidReferences } from '@/lib/validation';
+import { generateToken, hashToken } from '@/lib/tokens';
 import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers } from '@/lib/types';
 
 export interface CreateOrderInput {
-  location_id: string;
   customer_name: string;
   customer_phone: string;
   order_type: OrderType;
@@ -34,10 +37,18 @@ export interface CreateOrderResult {
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
+  // Derivar location_id del host (subdominio)
+  const headersList = await headers();
+  const host = headersList.get('host');
+  const local = await getLocalByHost(host);
+  if (!local) {
+    return { ok: false, error: 'Local no identificado' };
+  }
+  const location_id = local.id;
+
   const supabase = createServerClient();
 
   // 1. Validación de entrada
-  if (!input.location_id) return { ok: false, error: 'Local no identificado' };
   if (!isValidName(input.customer_name)) return { ok: false, error: 'Nombre inválido' };
   if (!isValidPhone(input.customer_phone)) return { ok: false, error: 'Teléfono inválido' };
   if (!['RECOGER', 'DOMICILIO'].includes(input.order_type)) return { ok: false, error: 'Tipo de pedido inválido' };
@@ -52,24 +63,28 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   if (!input.cart.items.length) return { ok: false, error: 'Carrito vacío' };
   if (!input.idempotency_key) return { ok: false, error: 'Falta idempotency key' };
 
-  // 2. Idempotencia: buscar una orden previa con la misma key en los últimos 15 min
+  // 2. Generar tokens de reparto
+  const deliveryTokenUuid = randomUUID();
+  const plainToken = generateToken();
+  const tokenHash = hashToken(plainToken);
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2 horas
+
+  // 3. Idempotencia: buscar una orden previa con la misma key en los últimos 15 min
   const { data: existing } = await supabase
     .from('orders')
     .select('*')
-    .eq('location_id', input.location_id)
+    .eq('location_id', location_id)
     .eq('idempotency_key', input.idempotency_key)
     .maybeSingle();
 
   if (existing) {
-    return { ok: true, order: existing as Order }; // ya se creó, no duplicar
+    return { ok: true, order: existing as Order }; // ya se creado, no duplicar
   }
 
-  // 3. Cargar local y menú para validar precios contra lo que envía el cliente
-  const local = await getLocalById(input.location_id);
-  if (!local) return { ok: false, error: 'Local no encontrado' };
-  const { products } = await getMenu(input.location_id);
+  // 4. Cargar local y menú para validar precios contra lo que envía el cliente
+  const { products } = await getMenu(location_id);
 
-  // 4. Reconstruir el snapshot y recalcular precios desde la BD (nunca confiar en el cliente)
+  // 5. Reconstruir el snapshot y recalcular precios desde la BD (nunca confiar en el cliente)
   const snapshotItems = [];
   let items_subtotal = 0;
   for (const item of input.cart.items) {
@@ -123,18 +138,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
   }
 
-  // 5. Calcular totales con el IVA del local
+  // 6. Calcular totales con el IVA del local
   // subtotal público = items_subtotal + delivery fee (si aplica)
   const deliveryFee = input.order_type === 'DOMICILIO' ? local.delivery_fee : 0;
   const subtotal = items_subtotal + deliveryFee;
   const iva_amount = Math.round(subtotal * (local.iva_rate / (1 + local.iva_rate)) * 100) / 100;
   const total = Math.round(subtotal * 100) / 100;
 
-  // 6. Insertar orden (service role salta RLS)
+  // 7. Insertar orden (service role salta RLS)
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
-      location_id: input.location_id,
+      location_id,
       customer_name: input.customer_name.trim(),
       customer_phone: input.customer_phone.trim(),
       order_type: input.order_type,
@@ -150,15 +165,33 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       total,
       cart_snapshot: { version: '1', items: snapshotItems },
       idempotency_key: input.idempotency_key,
+      delivery_token: deliveryTokenUuid,
+      delivery_token_expires_at: expiresAt,
+      delivery_token_rotated_at: new Date().toISOString(),
     })
     .select()
     .single();
 
   if (error || !order) {
-    console.error('Error insertando order:', error?.message ?? 'sin datos');
+    console.error('Error inserting order:', error?.message ?? 'no data');
     return { ok: false, error: 'No se pudo crear el pedido' };
   }
 
+  // 8. Insertar registro de token de reparto
+  const { error: tokenError } = await supabase
+    .from('delivery_tokens')
+    .insert({
+      order_id: order.id,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+    });
+
+  if (tokenError) {
+    console.error('Failed to insert delivery token:', tokenError);
+    // No eliminamos la orden, pero fallamos la creación porque el token es esencial para el reparto
+    return { ok: false, error: 'No se pudo crear el token de reparto' };
+  }
+
   revalidatePath('/');
-  return { ok: true, order: order as Order };
+  return { ok: true, order: order as Order, track_token: plainToken };
 }

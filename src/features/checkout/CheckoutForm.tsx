@@ -95,11 +95,10 @@ export function CheckoutForm({
         return;
       }
 
-      // 3. Preparar input para server action (incluye location_id del GUC)
+      // 3. Preparar input para server action (location_id será derivado del host en la acción)
       const idempotencyKey =
         form.idempotency_key ?? crypto.randomUUID();
       const input = {
-        location_id: '', // será poblado por el middleware (GUC app.local_id)
         customer_name: form.customer_name!.trim(),
         customer_phone: form.customer_phone!.trim(),
         order_type: orderType,
@@ -124,7 +123,7 @@ export function CheckoutForm({
           setResult({
             ok: true,
             orderId: actionResult.order.id,
-            trackToken: actionResult.order.delivery_token ?? undefined,
+            trackToken: actionResult.track_token ?? undefined,
           });
           // limpiar formulario guardado tras éxito
           localStorage.removeItem(FORM_STORAGE_KEY);
