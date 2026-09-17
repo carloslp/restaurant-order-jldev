@@ -32,9 +32,9 @@
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
 | 9 | `AdminDiscounts.tsx` — UI lista/crear/editar descuentos. Formulario complejo: tipo (código/auto), valor (%/fijo), mínimo compra, alcance (productos/categorías), ventana temporal, días/horas, límites de uso, stacking. | ✅ Completado | 10h |
-| 10 | Lógica de aplicación en checkout (`applyDiscounts`). Server action que evalúa reglas, prioridad (código > automática > manual), no-apilar, registra en `discount_usages`. | ⬜ Pendiente | 8h |
-| 11 | Integración en `CheckoutForm` — campo código promocional. Input + botón "Aplicar", muestra descuento en resumen, valida contra server action. | ⬜ Pendiente | 4h |
-| 12 | Descuento manual (staff en caja). Botón en `CashierView` solo para ADMIN/CAJERO, modal con motivo, no apila con otras promos. | ⬜ Pendiente | 6h |
+| 10 | Lógica de aplicación en checkout (`applyDiscounts`). Server action que evalúa reglas, prioridad (código > automática > manual), no-apilar, registra en `discount_usages`. | ✅ Completado | 8h |
+| 11 | Integración en `CheckoutForm` — campo código promocional. Input + botón "Aplicar", muestra descuento en resumen, valida contra server action. | ✅ Completado | 4h |
+| 12 | Descuento manual (staff en caja). Botón en `CashierView` solo para ADMIN/CAJERO, modal con motivo, no apila con otras promos. | ✅ Completado | 6h |
 | 13 | Tests unitarios del engine. Casos: 2x1, % categoría, código único, límites uso/día/cliente, ventanas temporales, no-stacking. | ⬜ Pendiente | 6h |
 
 ### 2.3 Gestión de Reservas (36h)
@@ -90,7 +90,7 @@
 | 31 | Auditoría RLS completa. Revisar cada policy contra amenazas: escalada de privilegio, enumeración cross-tenant, fuga de PII. Probar con `supabase.test` helpers. | ⬜ Pendiente | 8h |
 | 32 | Error handling centralizado. `lib/errors.ts` con clases `AppError`, `ValidationError`, `AuthError`, `NotFoundError`. Wrapper `withErrorHandling` para server actions. Log a `console.error` + opcional Sentry. | ⬜ Pendiente | 6h |
 | 33 | Logging estructurado. `lib/logger.ts` con niveles, contexto (requestId, userId, locationId). Middleware que inyecta requestId. | ⬜ Pendiente | 4h |
-| 34 | Tests unitarios (Vitest). `pricing.ts`, `validation.ts`, `tokens.ts`, engine de promos, transiciones de estado, cálculos IVA. | ⬜ Pendiente | 20h |
+| 34 | Tests unitarios (Vitest). `pricing.ts`, `validation.ts`, `tokens.ts`, engine de promos, transiciones de estado, cálculos IVA. | ✅ Completado | 20h |
 | 35 | Tests de integración (Playwright). Flujos: checkout completo, auth staff, KDS realtime, cashier transitions, admin CRUD menú, aplicación promo. | ⬜ Pendiente | 16h |
 | 36 | Seed de datos realista para tests. `scripts/seed-test-data.ts` usando service role. | ⬜ Pendiente | 4h |
 

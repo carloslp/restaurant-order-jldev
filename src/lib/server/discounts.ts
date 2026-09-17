@@ -7,7 +7,6 @@ import { z } from 'zod';
 export async function listDiscounts() {
   const supabase = await createClient();
   
-  // The RLS policy discounts_staff_access handles location_id filtering
   const { data, error } = await supabase
     .from('discounts')
     .select('*')
@@ -20,7 +19,6 @@ export async function listDiscounts() {
 export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
   const supabase = await createClient();
   
-  // Get current local_id from GUC/session (handled by server helper)
   const { data: local } = await supabase
     .from('locals')
     .select('id')
@@ -91,4 +89,70 @@ export async function toggleDiscountStatus(id: string, is_active: boolean) {
   
   revalidatePath('/staff/admin');
   return data;
+}
+
+export async function applyManualDiscount(orderId: string, amount: number, reason: string) {
+  const supabase = await createClient();
+  
+  // 1. Get order to find location_id and current total
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .single();
+
+  if (orderError || !order) throw new Error('Orden no encontrada');
+
+  // 2. Find a "Manual Discount" template or just create a usage.
+  // For simplicity, we'll look for an active discount marked as 'MANUAL' 
+  // or we create a generic one if it doesn't exist.
+  const { data: manualDiscount, error: discError } = await supabase
+    .from('discounts')
+    .select('id')
+    .eq('location_id', order.location_id)
+    .eq('description', 'Descuento Manual')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  let discountId = manualDiscount?.id;
+
+  if (!discountId) {
+    const { data: newDisc, error: createError } = await supabase
+      .from('discounts')
+      .insert({
+        location_id: order.location_id,
+        description: 'Descuento Manual',
+        discount_type: 'FIXED_AMOUNT',
+        value: 0, // Template value
+        is_active: true,
+      })
+      .select()
+      .single();
+    if (createError) throw new Error(`Error creando plantilla manual: ${createError.message}`);
+    discountId = newDisc.id;
+  }
+
+  // 3. Record the usage
+  const { error: usageError } = await supabase
+    .from('discount_usages')
+    .insert({
+      discount_id: discountId,
+      order_id: orderId,
+      customer_phone: order.customer_phone,
+      amount_applied: amount,
+    });
+
+  if (usageError) throw new Error(`Error registrando descuento manual: ${usageError.message}`);
+
+  // 4. Update order total
+  const newTotal = Math.max(0, order.total - amount);
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ total: newTotal })
+    .eq('id', orderId);
+
+  if (updateError) throw new Error(`Error actualizando total de orden: ${updateError.message}`);
+
+  revalidatePath('/staff/caja');
+  return { success: true, newTotal };
 }

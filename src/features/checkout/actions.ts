@@ -3,6 +3,7 @@
 // - Idempotencia (evitar duplicados por doble submit)
 // - Persistencia con service role (salta RLS para insert)
 // - Generación de token de reparto
+// - Aplicación de descuentos y promociones
 
 'use server';
 
@@ -15,7 +16,8 @@ import { getMenu } from '@/features/menu/queries';
 import { linePrice } from '@/lib/pricing';
 import { isValidAddress, isValidName, isValidPhone, isValidReferences } from '@/lib/validation';
 import { generateToken, hashToken } from '@/lib/tokens';
-import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers } from '@/lib/types';
+import { calculateBestDiscount } from '@/lib/pricing/discounts';
+import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers, Discount } from '@/lib/types';
 
 export interface CreateOrderInput {
   customer_name: string;
@@ -27,6 +29,7 @@ export interface CreateOrderInput {
   eta: string; // ISO
   cart: Cart;
   idempotency_key: string;
+  promo_code?: string | null; // Added for Task 11
 }
 
 export interface CreateOrderResult {
@@ -83,6 +86,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
   // 4. Cargar local y menú para validar precios contra lo que envía el cliente
   const { products } = await getMenu(location_id);
+  
+  // Fetch available discounts for this location
+  const { data: discounts, error: discError } = await supabase
+    .from('discounts')
+    .select('*')
+    .eq('location_id', location_id)
+    .eq('is_active', true);
+
+  if (discError) {
+    console.error('Error fetching discounts:', discError);
+    // We continue without discounts rather than failing the whole order
+  }
 
   // 5. Reconstruir el snapshot y recalcular precios desde la BD (nunca confiar en el cliente)
   const snapshotItems = [];
@@ -138,14 +153,24 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
   }
 
-  // 6. Calcular totales con el IVA del local
-  // subtotal público = items_subtotal + delivery fee (si aplica)
+  // 6. Calcular descuentos
+  const discountResult = calculateBestDiscount(
+    input.cart,
+    items_subtotal,
+    (discounts || []) as Discount[],
+    input.promo_code
+  );
+  
+  const discountedSubtotal = discountResult.final_subtotal;
+  const total_saved = discountResult.total_saved;
+
+  // 7. Calcular totales con el IVA del local
   const deliveryFee = input.order_type === 'DOMICILIO' ? local.delivery_fee : 0;
-  const subtotal = items_subtotal + deliveryFee;
+  const subtotal = discountedSubtotal + deliveryFee;
   const iva_amount = Math.round(subtotal * (local.iva_rate / (1 + local.iva_rate)) * 100) / 100;
   const total = Math.round(subtotal * 100) / 100;
 
-  // 7. Insertar orden (service role salta RLS)
+  // 8. Insertar orden (service role salta RLS)
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
@@ -177,7 +202,20 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     return { ok: false, error: 'No se pudo crear el pedido' };
   }
 
-  // 8. Insertar registro de token de reparto
+  // 9. Registrar uso del descuento si se aplicó uno
+  if (discountResult.applied_discount) {
+    const { error: usageError } = await supabase
+      .from('discount_usages')
+      .insert({
+        discount_id: discountResult.applied_discount.discount_id,
+        order_id: order.id,
+        customer_phone: input.customer_phone.trim(),
+        amount_applied: discountResult.total_saved,
+      });
+    if (usageError) console.error('Failed to record discount usage:', usageError);
+  }
+
+  // 10. Insertar registro de token de reparto
   const { error: tokenError } = await supabase
     .from('delivery_tokens')
     .insert({
@@ -188,7 +226,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
   if (tokenError) {
     console.error('Failed to insert delivery token:', tokenError);
-    // No eliminamos la orden, pero fallamos la creación porque el token es esencial para el reparto
     return { ok: false, error: 'No se pudo crear el token de reparto' };
   }
 

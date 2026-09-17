@@ -27,6 +27,7 @@ const formSchema = z.object({
   delivery_address: z.string().optional().nullable(),
   delivery_references: z.string().optional().nullable(),
   idempotency_key: z.string().min(1),
+  promo_code: z.string().optional().nullable(),
 });
 
 const FORM_STORAGE_KEY = 'restaurant-order-jldev:checkout-form';
@@ -114,6 +115,7 @@ export function CheckoutForm({
         eta,
         cart,
         idempotency_key: idempotencyKey,
+        promo_code: form.promo_code?.trim() || null,
       };
 
       // 4. Llamada a la server action
@@ -183,50 +185,52 @@ export function CheckoutForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div>
-        <label htmlFor="customer_name" className="block text-sm font-medium mb-1">
-          Nombre completo
-        </label>
-        <input
-          id="customer_name"
-          name="customer_name"
-          type="text"
-          value={form.customer_name ?? ''}
-          onChange={handleChange}
-          className={`block w-full rounded-md border-gray-300 px-3 py-2 ${
-            errors.customer_name ? 'border-red-500' : ''
-          }`}
-          placeholder="Juan Pérez"
-          required
-        />
-        {errors.customer_name && (
-          <p className="mt-1 text-sm text-red-600">{errors.customer_name}</p>
-        )}
-      </div>
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div>
+          <label htmlFor="customer_name" className="block text-sm font-medium mb-1">
+            Nombre completo
+          </label>
+          <input
+            id="customer_name"
+            name="customer_name"
+            type="text"
+            value={form.customer_name ?? ''}
+            onChange={handleChange}
+            className={`block w-full rounded-md border-gray-300 px-3 py-2 ${
+              errors.customer_name ? 'border-red-500' : ''
+            }`}
+            placeholder="Juan Pérez"
+            required
+          />
+          {errors.customer_name && (
+            <p className="mt-1 text-sm text-red-600">{errors.customer_name}</p>
+          )}
+        </div>
 
-      <div>
-        <label htmlFor="customer_phone" className="block text-sm font-medium mb-1">
-          Teléfono (con LADA)
-        </label>
-        <input
-          id="customer_phone"
-          name="customer_phone"
-          type="tel"
-          value={form.customer_phone ?? ''}
-          onChange={handleChange}
-          className={`block w-full rounded-md border-gray-300 px-3 py-2 ${
-            errors.customer_phone ? 'border-red-500' : ''
-          }`}
-          placeholder="+52 55 1234 5678"
-          required
-        />
-        {errors.customer_phone && (
-          <p className="mt-1 text-sm text-red-600">{errors.customer_phone}</p>
-        )}
+        <div>
+          <label htmlFor="customer_phone" className="block text-sm font-medium mb-1">
+            Teléfono (con LADA)
+          </label>
+          <input
+            id="customer_phone"
+            name="customer_phone"
+            type="tel"
+            value={form.customer_phone ?? ''}
+            onChange={handleChange}
+            className={`block w-full rounded-md border-gray-300 px-3 py-2 ${
+              errors.customer_phone ? 'border-red-500' : ''
+            }`}
+            placeholder="+52 55 1234 5678"
+            required
+          />
+          {errors.customer_phone && (
+            <p className="mt-1 text-sm text-red-600">{errors.customer_phone}</p>
+          )}
+        </div>
       </div>
 
       {orderType === 'DOMICILIO' && (
-        <>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div>
             <label htmlFor="delivery_address" className="block text-sm font-medium mb-1">
               Dirección de entrega
@@ -263,8 +267,25 @@ export function CheckoutForm({
               placeholder="Entre calles, color de casa, etc."
             />
           </div>
-        </>
+        </div>
       )}
+
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <label htmlFor="promo_code" className="block text-sm font-medium mb-1">
+          Código Promocional (opcional)
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="promo_code"
+            name="promo_code"
+            type="text"
+            value={form.promo_code ?? ''}
+            onChange={handleChange}
+            className="block w-full rounded-md border-gray-300 px-3 py-2"
+            placeholder="Ej: VERANO2024"
+          />
+        </div>
+      </div>
 
       <div className="flex justify-end">
         <button

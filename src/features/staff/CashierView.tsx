@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { updateOrderStatus } from '@/lib/server/order';
+import { applyManualDiscount } from '@/lib/server/discounts';
 import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import type { Order } from '@/lib/types';
 import { formatMXN } from '@/lib/pricing';
@@ -24,7 +25,6 @@ const ACTIVE_STATUSES: Order['status'][] = [
 ];
 
 export function CashierView({ locationId }: CashierViewProps) {
-  // Pedidos en tiempo real (Realtime + estado inicial)
   const orders = useRealtimeOrders({
     locationId,
     statuses: ACTIVE_STATUSES,
@@ -32,6 +32,8 @@ export function CashierView({ locationId }: CashierViewProps) {
   });
 
   const [error, setError] = useState<string | null>(null);
+  const [discountingOrderId, setDiscountingOrderId] = useState<string | null>(null);
+  const [manualAmount, setManualAmount] = useState('');
 
   async function handleAction(orderId: string, nextStatus: Order['status']) {
     setError(null);
@@ -39,7 +41,23 @@ export function CashierView({ locationId }: CashierViewProps) {
     if (!result.ok) {
       setError(result.error ?? 'No se pudo actualizar');
     }
-    // El Realtime actualiza la lista automáticamente.
+  }
+
+  async function handleApplyManualDiscount(orderId: string) {
+    const amount = parseFloat(manualAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError('Ingrese un monto válido');
+      return;
+    }
+
+    setError(null);
+    try {
+      await applyManualDiscount(orderId, amount, 'Descuento manual en caja');
+      setDiscountingOrderId(null);
+      setManualAmount('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al aplicar descuento');
+    }
   }
 
   const pendingOrders = orders.filter((o) => !['COMPLETADO', 'CANCELADO'].includes(o.status));
@@ -54,10 +72,11 @@ export function CashierView({ locationId }: CashierViewProps) {
       </div>
 
       {error && (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
-      {/* Pedidos activos */}
       <div className="space-y-3">
         {pendingOrders.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
@@ -69,7 +88,7 @@ export function CashierView({ locationId }: CashierViewProps) {
               key={order.id}
               className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
             >
-              <div>
+              <div className="flex-1">
                 <div className="flex items-center gap-3 mb-1">
                   <span className="font-bold text-gray-800">
                     #{order.id.slice(0, 8).toUpperCase()}
@@ -101,37 +120,72 @@ export function CashierView({ locationId }: CashierViewProps) {
                   {new Date(order.eta).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-semibold text-gray-800">
-                  {formatMXN(order.total)}
-                </span>
-                {/* Acciones por estado */}
-                {order.status === 'CREADO' && (
-                  <button
-                    onClick={() => handleAction(order.id, 'CONFIRMADO_CAJA')}
-                    className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition"
-                  >
-                    Confirmar
-                  </button>
-                )}
-                {order.status === 'CONFIRMADO_CAJA' && (
-                  <button
-                    onClick={() => handleAction(order.id, 'EN_PREPARACION')}
-                    className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 transition"
-                  >
-                    A cocina
-                  </button>
-                )}
-                {order.status === 'LISTO' && (
-                  <button
-                    onClick={() => handleAction(order.id, 'LISTO_PARA_ENTREGA')}
-                    className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition"
-                  >
-                    {order.order_type === 'DOMICILIO' ? 'Enviar a entrega' : 'Marcar retirado'}
-                  </button>
-                )}
-                {order.status === 'LISTO_PARA_ENTREGA' &&
-                  order.order_type === 'DOMICILIO' && (
+
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <span className="font-mono font-semibold text-gray-800">
+                    {formatMXN(order.total)}
+                  </span>
+                  
+                  {discountingOrderId === order.id ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input 
+                        type="number" 
+                        value={manualAmount}
+                        onChange={(e) => setManualAmount(e.target.value)}
+                        className="w-20 rounded border border-gray-300 px-2 py-1 text-xs" 
+                        placeholder="$"
+                      />
+                      <button 
+                        onClick={() => handleApplyManualDiscount(order.id)}
+                        className="text-xs bg-green-600 text-white px-2 py-1 rounded"
+                      >
+                        OK
+                      </button>
+                      <button 
+                        onClick={() => {setDiscountingOrderId(null); setManualAmount('');}}
+                        className="text-xs bg-gray-200 px-2 py-1 rounded"
+                      >
+                        X
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setDiscountingOrderId(order.id)}
+                      className="ml-2 text-xs text-indigo-600 hover:underline"
+                    >
+                      Descuento
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {order.status === 'CREADO' && (
+                    <button
+                      onClick={() => handleAction(order.id, 'CONFIRMADO_CAJA')}
+                      className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition"
+                    >
+                      Confirmar
+                    </button>
+                  )}
+                  {order.status === 'CONFIRMADO_CAJA' && (
+                    <button
+                      onClick={() => handleAction(order.id, 'EN_PREPARACION')}
+                      className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 transition"
+                    >
+                      A cocina
+                    </button>
+                  )}
+                  {order.status === 'LISTO' && (
+                    <button
+                      onClick={() => handleAction(order.id, 'LISTO_PARA_ENTREGA')}
+                      className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition"
+                    >
+                      {order.order_type === 'DOMICILIO' ? 'Enviar a entrega' : 'Marcar retirado'}
+                    </button>
+                  )}
+                  {order.status === 'LISTO_PARA_ENTREGA' &&
+                    order.order_type === 'DOMICILIO' && (
                     <button
                       onClick={() => handleAction(order.id, 'COMPLETADO')}
                       className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 transition"
@@ -139,19 +193,19 @@ export function CashierView({ locationId }: CashierViewProps) {
                       Entregado
                     </button>
                   )}
-                <button
-                  onClick={() => handleAction(order.id, 'CANCELADO')}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition"
-                >
-                  Cancelar
-                </button>
+                  <button
+                    onClick={() => handleAction(order.id, 'CANCELADO')}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* Realtime activo */}
       <p className="text-xs text-green-600">
         ● Realtime activo — los cambios se reflejan al instante.
       </p>
