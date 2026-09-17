@@ -4,7 +4,9 @@
 import { useState } from 'react';
 import type { StaffRole } from '@/lib/types';
 import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
+import { AdminMenuProducts } from '@/features/admin/AdminMenuProducts';
 import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
+import { AdminReservations } from '@/features/admin/AdminReservations';
 
 interface AdminViewProps {
   staff: {
@@ -22,7 +24,7 @@ interface AdminViewProps {
   } | null;
 }
 
-type AdminTab = 'dashboard' | 'menu' | 'discounts';
+type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations';
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -37,104 +39,128 @@ export function AdminView({ staff, local }: AdminViewProps) {
           </p>
         </div>
         <nav className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'dashboard' 
-                ? 'bg-white text-gray-900 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => setActiveTab('menu')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'menu' 
-                ? 'bg-white text-gray-900 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Menú
-          </button>
-        </nav>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'dashboard'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Dashboard
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('menu')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'menu'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Menú
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('reservations')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'reservations'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Reservas
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('discounts')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'discounts'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Descuentos
+                  </button>
+                </nav>
       </div>
 
       {activeTab === 'dashboard' && (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold text-gray-500 uppercase">
-                Local
-              </h2>
-              {local ? (
-                <dl className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Nombre</dt>
-                    <dd className="font-medium">{local.name}</dd>
+              <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <h2 className="mb-2 text-sm font-semibold text-gray-500 uppercase">
+                      Local
+                    </h2>
+                    {local ? (
+                      <dl className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <dt className="text-gray-500">Nombre</dt>
+                          <dd className="font-medium">{local.name}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-gray-500">Subdominio</dt>
+                          <dd className="font-medium">{local.subdomain}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-gray-500">Zona horaria</dt>
+                          <dd className="font-medium">{local.timezone}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-gray-500">IVA</dt>
+                          <dd className="font-medium">{local.iva_rate * 100}%</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-gray-500">Costo de envío</dt>
+                          <dd className="font-medium">${local.delivery_fee.toFixed(2)}</dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-gray-400">No hay datos del local.</p>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Subdominio</dt>
-                    <dd className="font-medium">{local.subdomain}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Zona horaria</dt>
-                    <dd className="font-medium">{local.timezone}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">IVA</dt>
-                    <dd className="font-medium">{(local.iva_rate * 100).toFixed(0)}%</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Costo de envío</dt>
-                    <dd className="font-medium">${Number(local.delivery_fee).toFixed(2)}</dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="text-sm text-gray-400">No hay datos del local.</p>
-              )}
-            </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold text-gray-500 uppercase">
-                Tu perfil
-              </h2>
-              <dl className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Email</dt>
-                  <dd className="font-medium">{staff.email}</dd>
+                  <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <h2 className="mb-2 text-sm font-semibold text-gray-500 uppercase">
+                      Tu perfil
+                    </h2>
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-gray-500">Email</dt>
+                        <dd className="font-medium">{staff.email}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-gray-500">Rol</dt>
+                        <dd className="font-medium">{staff.role}</dd>
+                      </div>
+                    </dl>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Rol</dt>
-                  <dd className="font-medium">{staff.role}</dd>
+
+                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6">
+                  <h2 className="mb-2 text-lg font-semibold text-gray-700">
+                    Próximamente
+                  </h2>
+                  <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
+                    <li>Reservas y gestión de zonas/aforo</li>
+                    <li>Reportes y cierre de caja</li>
+                    <li>Gestión de staff (altas, roles, desactivación)</li>
+                  </ul>
                 </div>
-              </dl>
-            </div>
-          </div>
+              </div>
+            )}
 
-          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6">
-            <h2 className="mb-2 text-lg font-semibold text-gray-700">
-              Próximamente
-            </h2>
-            <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-              <li>Reservas y gestión de zonas/aforo</li>
-              <li>Reportes y cierre de caja</li>
-              <li>Gestión de staff (altas, roles, desactivación)</li>
-            </ul>
-          </div>
-        </div>
-      )}
+            {activeTab === 'menu' && (
+              <div className="space-y-6">
+                <AdminMenuCategories />
+                <hr className="my-8 border-gray-200" />
+                <AdminMenuProducts />
+                {/* Los modificadores se gestionan dentro de la vista de productos o en un modal dedicado */}
+              </div>
+            )}
 
-      {activeTab === 'menu' && (
-        <div className="space-y-6">
-          <AdminMenuCategories />
-          <hr className="my-8 border-gray-200" />
-          <AdminMenuProducts />
-          {/* Los modificadores se gestionan dentro de la vista de productos o en un modal dedicado */}
-        </div>
-      )}
+            {activeTab === 'reservations' && (
+              <AdminReservations />
+            )}
 
-      {activeTab === 'discounts' && <AdminDiscounts />}
+            {activeTab === 'discounts' && <AdminDiscounts />}
     </div>
   );
 }
