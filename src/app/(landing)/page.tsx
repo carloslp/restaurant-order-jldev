@@ -32,10 +32,12 @@ export default async function LandingPage() {
   return (
     <MenuClient
       local={local}
+      locationId={local?.id ?? ''}
       categories={menu.categories}
       products={menu.products}
       allergens={allergens}
       dietLabels={dietLabels}
+      searchTerm=""
     />
   );
 }

@@ -6,9 +6,11 @@ import { formatMXN, linePrice } from '@/lib/pricing';
 import AddToCartButton from './AddToCartButton';
 import { useCart } from '@/features/cart/CartContext';
 import Link from 'next/link';
+import { useProductAvailability } from '@/features/menu/useProductAvailability';
 
 interface Props {
   local: { name: string; subdomain: string; iva_rate: number; delivery_fee: number } | null;
+  locationId: string;
   categories: Category[];
   products: Product[];
   allergens: string[];
@@ -18,6 +20,7 @@ interface Props {
 
 export default function MenuClient({
   local,
+  locationId,
   categories,
   products,
   allergens,
@@ -27,6 +30,21 @@ export default function MenuClient({
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const { cart, addItem } = useCart();
+
+  // Hook para disponibilidad en tiempo real
+  const productIds = useMemo(() => products.map(p => p.id), [products]);
+  const { availability } = useProductAvailability({
+    locationId,
+    productIds,
+    enabled: !!locationId && productIds.length > 0,
+  });
+
+  const isProductAvailable = useCallback(
+    (productId: string) => {
+      return availability[productId] ?? true;
+    },
+    [availability]
+  );
 
   // No need for local cart effects; CartContext handles persistence
 
@@ -161,13 +179,21 @@ export default function MenuClient({
                 <div className="grid gap-4 sm:grid-cols-2">
                   {items.map((p) => {
                     const qty = quantities[p.id] ?? 1;
+                    const available = isProductAvailable(p.id);
                     return (
                       <div
                         key={p.id}
-                        className="bg-white rounded-xl shadow-sm p-4 flex flex-col"
+                        className={`bg-white rounded-xl shadow-sm p-4 flex flex-col ${!available ? 'opacity-50' : ''}`}
                       >
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-800">{p.name}</h3>
+                          <div className="flex items-start justify-between">
+                            <h3 className="font-semibold text-gray-800">{p.name}</h3>
+                            {!available && (
+                              <span className="ml-2 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                No disponible
+                              </span>
+                            )}
+                          </div>
                           {p.description && (
                             <p className="text-sm text-gray-600 mt-1">{p.description}</p>
                           )}
@@ -198,8 +224,9 @@ export default function MenuClient({
                             }
                             className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm"
                             aria-label={`Cantidad de ${p.name}`}
+                            disabled={!available}
                           />
-                          <AddToCartButton product={p} quantity={qty} onAdd={addToCart} />
+                          <AddToCartButton product={p} quantity={qty} onAdd={addToCart} disabled={!available} />
                         </div>
                       </div>
                     );
