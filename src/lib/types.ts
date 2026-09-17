@@ -15,6 +15,42 @@ export type PaymentStatus = 'PENDIENTE' | 'COBRADO';
 export type ReservationStatus = 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA' | 'NO_SHOW';
 export type DepositStatus = 'SIN_DEPOSITO' | 'DEPOSITO_PENDIENTE' | 'DEPOSITADO';
 export type StaffRole = 'ADMIN' | 'CAJERO' | 'COCINERO';
+
+export type DiscountType = 'PERCENTAGE' | 'FIXED_AMOUNT';
+
+export interface Discount {
+  id: string;
+  location_id: string;
+  code: string | null;
+  description: string;
+  discount_type: DiscountType;
+  value: number;
+  min_purchase: number;
+  applies_to_product_ids: string[] | null;
+  applies_to_category_ids: string[] | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  days_of_week: number[] | null;
+  time_of_day_start: string | null;
+  time_of_day_end: string | null;
+  usage_limit_total: number | null;
+  usage_limit_per_customer: number | null;
+  usage_limit_per_day: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface DiscountUsage {
+  id: string;
+  discount_id: string;
+  order_id: string;
+  customer_phone: string;
+  applied_at: string;
+  amount_applied: number;
+}
+
 export type Zone = 'INTERIOR' | 'TERRAZA' | 'BARRA';
 
 // --- Catálogo ---

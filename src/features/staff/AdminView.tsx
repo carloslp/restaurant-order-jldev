@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import type { StaffRole } from '@/lib/types';
 import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
+import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
 
 interface AdminViewProps {
   staff: {
@@ -21,7 +22,7 @@ interface AdminViewProps {
   } | null;
 }
 
-type AdminTab = 'dashboard' | 'menu';
+type AdminTab = 'dashboard' | 'menu' | 'discounts';
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -116,7 +117,6 @@ export function AdminView({ staff, local }: AdminViewProps) {
               Próximamente
             </h2>
             <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-              <li>Panel de promociones y descuentos (engine completo)</li>
               <li>Reservas y gestión de zonas/aforo</li>
               <li>Reportes y cierre de caja</li>
               <li>Gestión de staff (altas, roles, desactivación)</li>
@@ -133,6 +133,8 @@ export function AdminView({ staff, local }: AdminViewProps) {
           {/* Los modificadores se gestionan dentro de la vista de productos o en un modal dedicado */}
         </div>
       )}
+
+      {activeTab === 'discounts' && <AdminDiscounts />}
     </div>
   );
 }
