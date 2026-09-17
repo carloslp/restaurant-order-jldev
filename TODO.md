@@ -11,7 +11,7 @@
 |---|-------|--------|----------|
 | 1 | Leyenda "IVA incluido" visible en menú y checkout (Req. legal México LFPC Art. 76 Bis). Badge en `MenuClient.tsx` y `CheckoutPage.tsx`. | ✅ Completado | 1h |
 | 2 | Validación de stock/disponibilidad en tiempo real. Hook que consulte `products.is_available` vía Realtime antes de confirmar. | ✅ Completado | 4h |
-| 3 | Mejora UX carrito (modificadores en UI). Selector de grupos/opciones en `AddToCartButton`. | ⬜ Pendiente | 8h |
+| 3 | Mejora UX carrito (modificadores en UI). Selector de grupos/opciones en `AddToCartButton`. | ✅ Completado | 8h |
 
 ---
 
@@ -78,7 +78,7 @@
 |---|-------|--------|----------|
 | 27 | Asignación de repartidor en orden (campo `driver_id`). FK a `staff` con role='REPARTIDOR' (nuevo rol). UI en `CashierView` y `AdminView` para asignar. | ⬜ Pendiente | 4h |
 | 28 | Vista track repartidor mejorada. Lista de pedidos asignados, filtro por estado, mapa simple (Leaflet/OSM) con dirección, botón "Llegué" → "Entregado". | ⬜ Pendiente | 6h |
-| 29 | Notificación push/email a repartidor al asignar. Supabase Realtime o webhook a servicio externo. | ⬜ Pendiente | 4h |
+| 29 | Notificación push/email a repartidor al asignar. webhook a servicio externo. | ⬜ Pendiente | 4h |
 | 30 | Rol `REPARTIDOR` en schema y RLS. Añadir a enum `staff.role`, policy `staff_staff_access`, navegación en `StaffNav`. | ⬜ Pendiente | 2h |
 
 ---
@@ -102,9 +102,9 @@
 |---|-------|--------|----------|
 | 37 | Documentar variables de entorno (`.env.example` completo). Añadir: `NEXT_PUBLIC_APP_URL`, `SUPABASE_STORAGE_BUCKET`, `CRON_SECRET`, `SENTRY_DSN`, `WHATSAPP_API_TOKEN`. | ⬜ Pendiente | 2h |
 | 38 | Guía de despliegue Vercel + Supabase. `docs/DEPLOY.md`: pasos CLI, variables en Vercel, migraciones (`supabase db push`), Storage buckets, Realtime habilitado, pg_cron para jobs. | ⬜ Pendiente | 4h |
-| 39 | Configurar Vercel Analytics / Speed Insights. `next.config.ts` + env vars. | ⬜ Pendiente | 1h |
-| 40 | Alertas de caída (UptimeRobot / Better Uptime). Health check endpoint `/api/health` que verifica Supabase. | ⬜ Pendiente | 2h |
-| 41 | Métricas de uso (PostHog o Plausible). Eventos: `order_created`, `order_completed`, `promo_applied`, `reservation_created`. | ⬜ Pendiente | 3h |
+| 39 | Configurar Vercel Analytics / Speed Insights. `next.config.ts` + env vars. | ❌ Cancelado | 1h |
+| 40 | Alertas de caída (UptimeRobot / Better Uptime). Health check endpoint `/api/health` que verifica Supabase. | ❌ Cancelado | 2h |
+| 41 | Métricas de uso (PostHog o Plausible). Eventos: `order_created`, `order_completed`, `promo_applied`, `reservation_created`. | ❌ Cancelado | 3h |
 
 ---
 
@@ -112,12 +112,12 @@
 
 | # | Decisión | Estado | Impacto |
 |---|----------|--------|---------|
-| 42 | **Imágenes de productos**: ¿Supabase Storage (gratis 1GB) o CDN externo (Cloudinary, UploadThing)? | ⬜ Pendiente | Afecta Admin Menú (upload) |
-| 43 | **Notificaciones WhatsApp**: ¿Twilio, Meta Cloud API, o proveedor local? | ⬜ Pendiente | Afecta recordatorios reservas |
+| 42 | **Imágenes de productos**: Supabase Storage (gratis 1GB) | ⬜ Pendiente | Afecta Admin Menú (upload) |
+| 43 | **Notificaciones WhatsApp**: Se va llamar un webhook, deja listo para solo poner el endpoint para activarlo. | ⬜ Pendiente | Afecta recordatorios reservas |
 | 44 | **Mapa repartidor**: ¿Leaflet + OSM (gratis, self-hosted tiles) o Mapbox (pago, mejor UX)? | ⬜ Pendiente | Afecta vista track repartidor |
-| 45 | **Gráficas**: ¿Recharts (React native, ~50KB) o Chart.js + wrapper (más maduro)? | ⬜ Pendiente | Afecta Admin Reportes |
-| 46 | **Tests E2E**: ¿Playwright (recomendado) o Cypress? | ⬜ Pendiente | Afecta infra testing |
-| 47 | **Monitoreo errores**: ¿Sentry (gratis 5k eventos/mes) o solo logs Vercel + Supabase? | ⬜ Pendiente | Afecta error handling |
+| 45 | **Gráficas**:  Chart.js + wrapper  | ⬜ Pendiente | Afecta Admin Reportes |
+| 46 | **Tests E2E**: Playwright (recomendado) | ⬜ Pendiente | Afecta infra testing |
+| 47 | **Monitoreo errores**: ¿Sentry (gratis 5k eventos/mes) o solo logs Vercel + Supabase? | ❌ Cancelado | Afecta error handling |
 
 ---
 
