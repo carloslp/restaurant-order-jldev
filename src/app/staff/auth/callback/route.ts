@@ -33,5 +33,5 @@ export async function GET(request: Request) {
     console.error('Error intercambiando code:', error);
   }
 
-  return NextResponse.redirect(`${origin}/staff/login?error=1`);
+  return NextResponse.redirect(`${origin}/login?error=1`);
 }

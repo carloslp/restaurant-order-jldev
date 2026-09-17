@@ -13,7 +13,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   } = await supabase.auth.getSession();
 
   if (!session) {
-    redirect('/staff/login');
+    redirect('/login');
   }
 
   return (

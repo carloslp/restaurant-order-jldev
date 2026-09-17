@@ -7,13 +7,13 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Staff routes
-  if (pathname.startsWith('/staff') && !['/staff/login'].includes(pathname)) {
+  if (pathname.startsWith('/staff') && !['/login'].includes(pathname)) {
     const token =
       request.cookies.get('sb-access-token')?.value ||
       request.cookies.get('sb-refresh-token')?.value;
 
     if (!token) {
-      const url = new URL('/staff/login', request.url);
+      const url = new URL('/login', request.url);
       url.searchParams.set('callbackUrl', request.url);
       return NextResponse.redirect(url);
     }

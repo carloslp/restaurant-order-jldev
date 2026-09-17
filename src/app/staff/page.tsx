@@ -12,7 +12,7 @@ export async function getCurrentStaff() {
   } = await supabase.auth.getSession();
 
   if (!session?.user) {
-    redirect('/staff/login');
+    redirect('/login');
   }
 
   // Buscar en tabla staff por email (auth.users es la fuente, staff es el perfil)

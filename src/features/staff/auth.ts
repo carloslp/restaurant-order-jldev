@@ -35,11 +35,11 @@ export async function signInWithMagicLink(prevState: { error?: string } | null, 
     };
   }
 
-  redirect(`${origin}/staff/login?sent=1`);
+  redirect(`${origin}/login?sent=1`);
 }
 
 export async function signOut() {
   const supabase = await createSessionServerClient();
   await supabase.auth.signOut();
-  redirect('/staff/login');
+  redirect('/login');
 }
