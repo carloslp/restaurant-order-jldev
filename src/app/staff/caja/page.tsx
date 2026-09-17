@@ -9,7 +9,8 @@ export default async function CajaPage() {
   const { staff } = await getCurrentStaff();
 
   // Caja: cajero o admin
-  if (staff.role !== 'CAJERO' && staff.role !== 'ADMIN') {
+  const role = staff.role?.toUpperCase();
+  if (role !== 'CAJERO' && role !== 'ADMIN') {
     redirect('/staff');
   }
 

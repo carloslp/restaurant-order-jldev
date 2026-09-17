@@ -1,6 +1,7 @@
 // src/app/staff/page.tsx
 import { redirect } from 'next/navigation';
 import { createSessionServerClient } from '@/lib/supabase/server';
+import { signOut } from '@/features/staff/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function getCurrentStaff() {
 
   if (error || !staff) {
     console.error('No staff profile for user:', error ?? 'not found');
-    redirect('/staff/login?error=no_staff');
+    redirect('/login?error=no_staff');
   }
 
   // Cargar local (para nombre y timezone)
@@ -45,12 +46,13 @@ export default async function StaffDashboardPage() {
   const { staff, local } = await getCurrentStaff();
 
   // Redirigir a la vista según rol
-  switch (staff.role) {
-    case 'COCINERO':
-      redirect('/staff/kds');
-    case 'CAJERO':
-      redirect('/staff/caja');
-    default:
-      redirect('/staff/admin');
-  }
+    const roleUpper = staff.role?.toUpperCase() ?? '';
+    switch (roleUpper) {
+      case 'COCINERO':
+        redirect('/staff/kds');
+      case 'CAJERO':
+        redirect('/staff/caja');
+      default:
+        redirect('/staff/admin');
+    }
 }

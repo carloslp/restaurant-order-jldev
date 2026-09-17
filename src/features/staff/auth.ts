@@ -5,37 +5,36 @@ import { createSessionServerClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 
-export async function signInWithMagicLink(prevState: { error?: string } | null, formData: FormData) {
+export async function signInWithEmailPassword(prevState: { error?: string } | null, formData: FormData) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const password = String(formData.get('password') ?? '');
 
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return { error: 'Ingresá un email válido.' };
+  }
+  if (!password) {
+    return { error: 'Ingresá tu contraseña.' };
   }
 
   const supabase = await createSessionServerClient();
   const headerStore = await headers();
   const origin = headerStore.get('origin') ?? `http://localhost:${process.env.PORT ?? 3000}`;
-  const redirectTo = `${origin}/staff/auth/callback`;
+  const redirectTo = `${origin}/staff`;
 
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await supabase.auth.signInWithPassword({
     email,
-    options: {
-      emailRedirectTo: redirectTo,
-      shouldCreateUser: false, // solo staff existente
-    },
+    password,
   });
 
   if (error) {
-    console.error('Error enviando magic link:', error);
-    return {
-      error:
-        error.code === 'user_not_found'
-          ? 'Este email no tiene acceso al staff.'
-          : 'No se pudo enviar el link. Intentá de nuevo.',
-    };
+    console.error('Error signing in with email:', error);
+    if (error.code === 'invalid_login_credentials') {
+      return { error: 'Credenciales inválidas.' };
+    }
+    return { error: 'Error al iniciar sesión. Intentá de nuevo.' };
   }
 
-  redirect(`${origin}/login?sent=1`);
+  redirect(`${origin}/staff`);
 }
 
 export async function signOut() {

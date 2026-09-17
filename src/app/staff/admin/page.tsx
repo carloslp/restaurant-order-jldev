@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 export default async function AdminPage() {
   const { staff, local } = await getCurrentStaff();
 
-  if (staff.role !== 'ADMIN') {
+  const role = staff.role?.toUpperCase();
+  if (role !== 'ADMIN') {
     return (
       <div className="rounded-md bg-yellow-50 p-6 text-sm text-yellow-800">
         Acceso restringido: solo administradores pueden ver esta página.

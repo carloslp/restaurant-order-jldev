@@ -119,7 +119,7 @@ export default function MenuClient({
         </p>
         <div className="mt-6 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
           🔌 Sin conexión a Supabase — mostrando placeholder.
-        </div}
+        </div>
       </main>
     );
   }
@@ -147,8 +147,8 @@ export default function MenuClient({
             {local && local.iva_rate && local.iva_rate !== 0.16 && (
               <span className="text-orange-300">· Tasa local: {(local.iva_rate * 100).toFixed(0)}%</span>
             )}
-          </div}
-        </div}
+          </div>
+        </div>
       </header>
 
       {/* Navegación de categorías */}
@@ -158,12 +158,12 @@ export default function MenuClient({
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${\n                activeCategory === cat.id\n                  ? 'bg-orange-600 text-white'\n                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'\n              }`}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${activeCategory === cat.id ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
             >
               {cat.name}
             </button>
           ))}
-        </div}
+        </div>
       </nav>
 
       {/* Productos */}
@@ -195,7 +195,7 @@ export default function MenuClient({
                                 No disponible
                               </span>
                             )}
-                          </div}
+                          </div>
                           {p.description && (
                             <p className="text-sm text-gray-600 mt-1">{p.description}</p>
                           )}
@@ -212,7 +212,7 @@ export default function MenuClient({
                           <p className="text-lg font-bold text-orange-700 mt-2">
                             {formatMXN(p.base_price)}
                           </p>
-                        </div}
+                        </div>
                         <div className="flex items-center gap-2 mt-3">
                           <input
                             type="number"
@@ -229,11 +229,11 @@ export default function MenuClient({
                             disabled={!available}
                           />
                           <AddToCartButton product={p} quantity={qty} onAdd={addToCart} disabled={!available} />
-                        </div}
+                        </div>
                       </div>
                     );
                   })}
-                </div}
+                </div>
               )}
             </div>
           );
@@ -247,7 +247,7 @@ export default function MenuClient({
             Ver carrito · {cart.items.reduce((s, i) => s + i.quantity, 0)} ítems ·{' '}
             {formatMXN(cartTotal)}
           </Link>
-        </div}
+        </div>
       )}
 
       {/* Selector de Modificadores */}

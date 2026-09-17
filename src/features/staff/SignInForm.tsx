@@ -2,10 +2,10 @@
 'use client';
 
 import { useActionState } from 'react';
-import { signInWithMagicLink } from './auth';
+import { signInWithEmailPassword } from './auth';
 
 export function SignInForm() {
-  const [state, formAction, pending] = useActionState(signInWithMagicLink, null);
+  const [state, formAction, pending] = useActionState(signInWithEmailPassword, null);
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-6">
@@ -14,21 +14,37 @@ export function SignInForm() {
           Acceso al equipo
         </h1>
         <p className="mb-6 text-center text-sm text-gray-500">
-          Ingresá tu email de trabajo. Te enviaremos un link mágico para entrar.
+          Ingresá tus credenciales para acceder al sistema.
         </p>
         <form action={formAction} className="space-y-4">
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-            Email
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            autoComplete="email"
-            placeholder="cajero@tulocal.com"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-          />
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="cajero@tulocal.com"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Contraseña
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              placeholder="••••••••"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            />
+          </div>
           {state?.error && (
             <p className="text-sm text-red-600">{state.error}</p>
           )}
@@ -37,7 +53,7 @@ export function SignInForm() {
             disabled={pending}
             className="w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {pending ? 'Enviando link...' : 'Enviar link mágico'}
+            {pending ? 'Iniciando sesión...' : 'Iniciar sesión'}
           </button>
         </form>
         <p className="mt-6 text-center text-xs text-gray-400">

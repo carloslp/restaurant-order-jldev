@@ -9,7 +9,8 @@ export default async function KdsPage() {
   const { staff } = await getCurrentStaff();
 
   // Solo cocineros (o admin) pueden ver el KDS; el layout ya protege la sesión.
-  if (staff.role !== 'COCINERO' && staff.role !== 'ADMIN') {
+  const role = staff.role?.toUpperCase();
+  if (role !== 'COCINERO' && role !== 'ADMIN') {
     redirect('/staff');
   }
 
