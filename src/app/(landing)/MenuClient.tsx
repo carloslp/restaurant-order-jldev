@@ -5,6 +5,7 @@ import type { Category, Product } from '@/lib/types';
 import { formatMXN, linePrice } from '@/lib/pricing';
 import AddToCartButton from './AddToCartButton';
 import { useCart } from '@/features/cart/CartContext';
+import Link from 'next/link';
 
 interface Props {
   local: { name: string; subdomain: string; iva_rate: number; delivery_fee: number } | null;
@@ -25,7 +26,7 @@ export default function MenuClient({
 }: Props) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const { cart, addItem, updateQuantity, removeItem, clearCart, count } = useCart();
+  const { cart, addItem } = useCart();
 
   // No need for local cart effects; CartContext handles persistence
 
@@ -69,7 +70,7 @@ export default function MenuClient({
 
   const cartTotal = useMemo(
     () =>
-      cart.reduce(
+      cart.items.reduce(
         (sum, item) =>
           sum +
           linePrice({
@@ -116,6 +117,13 @@ export default function MenuClient({
               'Precios con IVA incluido'
             )}
           </p>
+          {/* Leyenda "IVA incluido" visible siempre (LFPC Art. 76 Bis) */}
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-orange-200">
+            <span className="rounded bg-white/10 px-2 py-0.5 font-medium">IVA incluido (16%)</span>
+            {local && local.iva_rate && local.iva_rate !== 0.16 && (
+              <span className="text-orange-300">· Tasa local: {(local.iva_rate * 100).toFixed(0)}%</span>
+            )}
+          </div>
         </div>
       </header>
 
@@ -204,10 +212,10 @@ export default function MenuClient({
       </section>
 
       {/* Barra flotante del carrito */}
-      {cart.length > 0 && (
+      {cart.items.length > 0 && (
         <div className="fixed bottom-4 inset-x-0 z-20 flex justify-center px-4">
           <Link href="/checkout" className="rounded-full bg-orange-600 text-white px-6 py-3 shadow-lg font-semibold hover:bg-orange-700 transition">
-            Ver carrito · {cart.reduce((s, i) => s + i.quantity, 0)} ítems ·{' '}
+            Ver carrito · {cart.items.reduce((s, i) => s + i.quantity, 0)} ítems ·{' '}
             {formatMXN(cartTotal)}
           </Link>
         </div>

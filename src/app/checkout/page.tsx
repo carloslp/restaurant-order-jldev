@@ -49,11 +49,15 @@ export default function CheckoutPage() {
           })}
         </div>
         <div className="mt-4 pt-4 border-t">
-          <div className="flex justify-between">
-            <span>Total</span>
-            <span className="font-bold text-lg">{formatMXN(total)}</span>
-          </div>
-        </div>
+                  <div className="flex justify-between">
+                    <span>Total</span>
+                    <span className="font-bold text-lg">{formatMXN(total)}</span>
+                  </div>
+                  {/* Leyenda "IVA incluido" visible siempre (LFPC Art. 76 Bis) */}
+                  <div className="mt-2 flex items-center justify-end gap-1.5 text-xs text-gray-500">
+                    <span className="rounded bg-gray-100 px-2 py-0.5 font-medium">IVA incluido (16%)</span>
+                  </div>
+                </div>
       </div>
       <div className="mb-6">
         <h2 className="mb-2 text-lg font-semibold">Detalles del pedido</h2>
