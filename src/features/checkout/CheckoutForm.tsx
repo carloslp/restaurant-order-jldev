@@ -26,7 +26,7 @@ const formSchema = z.object({
     .regex(/^\+?[0-9\s\-\(\)]{10,15}$/, 'Teléfono inválido'),
   delivery_address: z.string().optional().nullable(),
   delivery_references: z.string().optional().nullable(),
-  idempotency_key: z.string().min(1),
+  idempotency_key: z.string().optional(),
   promo_code: z.string().optional().nullable(),
 });
 
@@ -85,6 +85,13 @@ export function CheckoutForm({
         setErrors(Object.fromEntries(
           Object.entries(fieldErrors).map(([key, value]) => [key, value?.[0] ?? ''])
         ));
+        setSubmitting(false);
+        return;
+      }
+
+      // Validación condicional para domicilio
+      if (orderType === 'DOMICILIO' && (!form.delivery_address || form.delivery_address.trim() === '')) {
+        setErrors({ delivery_address: 'La dirección es obligatoria para pedidos a domicilio' });
         setSubmitting(false);
         return;
       }

@@ -184,6 +184,9 @@ const ALLOWED_TRANSITIONS: Record<StaffRole, Partial<Record<OrderStatus, OrderSt
     CONFIRMADO_CAJA: ['EN_PREPARACION'],
     EN_PREPARACION: ['LISTO'],
   },
+  REPARTIDOR: {
+    LISTO_PARA_ENTREGA: ['COMPLETADO'],
+  },
 };
 
 export async function updateOrderStatus(

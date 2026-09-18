@@ -7,6 +7,7 @@ import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
 import { AdminMenuProducts } from '@/features/admin/AdminMenuProducts';
 import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
 import { AdminReservations } from '@/features/admin/AdminReservations';
+import { AdminStaff } from '@/features/admin/AdminStaff';
 
 interface AdminViewProps {
   staff: {
@@ -24,7 +25,7 @@ interface AdminViewProps {
   } | null;
 }
 
-type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations';
+type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff';
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -70,15 +71,25 @@ export function AdminView({ staff, local }: AdminViewProps) {
                     Reservas
                   </button>
                   <button
-                    onClick={() => setActiveTab('discounts')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'discounts'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Descuentos
-                  </button>
+                                      onClick={() => setActiveTab('discounts')}
+                                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                        activeTab === 'discounts'
+                                          ? 'bg-white text-gray-900 shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700'
+                                      }`}
+                                    >
+                                      Descuentos
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveTab('staff')}
+                                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                        activeTab === 'staff'
+                                          ? 'bg-white text-gray-900 shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700'
+                                      }`}
+                                    >
+                                      Staff
+                                    </button>
                 </nav>
       </div>
 
@@ -135,15 +146,13 @@ export function AdminView({ staff, local }: AdminViewProps) {
                 </div>
 
                 <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6">
-                  <h2 className="mb-2 text-lg font-semibold text-gray-700">
-                    Próximamente
-                  </h2>
-                  <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-                    <li>Reservas y gestión de zonas/aforo</li>
-                    <li>Reportes y cierre de caja</li>
-                    <li>Gestión de staff (altas, roles, desactivación)</li>
-                  </ul>
-                </div>
+                                  <h2 className="mb-2 text-lg font-semibold text-gray-700">
+                                    Próximamente
+                                  </h2>
+                                  <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
+                                    <li>Reportes y cierre de caja</li>
+                                  </ul>
+                                </div>
               </div>
             )}
 
@@ -161,6 +170,8 @@ export function AdminView({ staff, local }: AdminViewProps) {
             )}
 
             {activeTab === 'discounts' && <AdminDiscounts />}
+
+            {activeTab === 'staff' && <AdminStaff />}
     </div>
   );
 }

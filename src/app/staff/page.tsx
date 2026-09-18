@@ -60,13 +60,14 @@ export default async function StaffDashboardPage() {
   const { staff, local } = await getCurrentStaff();
 
   // Redirigir a la vista según rol
-    const roleUpper = staff.role?.toUpperCase() ?? '';
-    switch (roleUpper) {
-      case 'COCINERO':
-        redirect('/staff/kds');
-      case 'CAJERO':
-        redirect('/staff/caja');
-      default:
-        redirect('/staff/admin');
-    }
+      const roleUpper = staff.role?.toUpperCase() ?? '';
+      switch (roleUpper) {
+        case 'COCINERO':
+          redirect('/staff/kds');
+        case 'CAJERO':
+        case 'ADMIN':
+          redirect('/staff/caja');
+        default:
+          redirect('/staff/admin');
+      }
 }

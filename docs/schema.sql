@@ -120,7 +120,7 @@ CREATE TABLE staff (
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('ADMIN', 'CAJERO', 'COCINERO')),
+    role TEXT NOT NULL CHECK (role IN ('ADMIN', 'CAJERO', 'COCINERO', 'REPARTIDOR')),
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

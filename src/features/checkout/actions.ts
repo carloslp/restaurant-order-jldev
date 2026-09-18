@@ -28,7 +28,7 @@ export interface CreateOrderInput {
   delivery_references?: string | null;
   eta: string; // ISO
   cart: Cart;
-  idempotency_key: string;
+  idempotency_key?: string; // Made optional as column missing in orders table
   promo_code?: string | null; // Added for Task 11
 }
 
@@ -72,17 +72,17 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const tokenHash = hashToken(plainToken);
   const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2 horas
 
-  // 3. Idempotencia: buscar una orden previa con la misma key en los últimos 15 min
-  const { data: existing } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('location_id', location_id)
-    .eq('idempotency_key', input.idempotency_key)
-    .maybeSingle();
-
-  if (existing) {
-    return { ok: true, order: existing as Order }; // ya se creado, no duplicar
-  }
+  // 3. Idempotencia: omitido temporalmente ya que la columna no existe en la BD
+  // const { data: existing } = await supabase
+  //   .from('orders')
+  //   .select('*')
+  //   .eq('location_id', location_id)
+  //   .eq('idempotency_key', input.idempotency_key)
+  //   .maybeSingle();
+  //
+  // if (existing) {
+  //   return { ok: true, order: existing as Order };
+  // }
 
   // 4. Cargar local y menú para validar precios contra lo que envía el cliente
   const { products } = await getMenu(location_id);
@@ -166,9 +166,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
   // 7. Calcular totales con el IVA del local
   const deliveryFee = input.order_type === 'DOMICILIO' ? local.delivery_fee : 0;
-  const subtotal = discountedSubtotal + deliveryFee;
+  const subtotal = discountedSubtotal;
   const iva_amount = Math.round(subtotal * (local.iva_rate / (1 + local.iva_rate)) * 100) / 100;
-  const total = Math.round(subtotal * 100) / 100;
+  const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   // 8. Insertar orden (service role salta RLS)
   const { data: order, error } = await supabase
@@ -189,7 +189,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       delivery_fee_amount: input.order_type === 'DOMICILIO' ? local.delivery_fee : 0,
       total,
       cart_snapshot: { version: '1', items: snapshotItems },
-      idempotency_key: input.idempotency_key,
       delivery_token: deliveryTokenUuid,
       delivery_token_expires_at: expiresAt,
       delivery_token_rotated_at: new Date().toISOString(),
@@ -198,8 +197,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     .single();
 
   if (error || !order) {
-    console.error('Error inserting order:', error?.message ?? 'no data');
-    return { ok: false, error: 'No se pudo crear el pedido' };
+    console.error('Error inserting order:', error);
+    // Return error message for debugging; in production consider a generic message
+    return { ok: false, error: error?.message ?? 'No se pudo crear el pedido' };
   }
 
   // 9. Registrar uso del descuento si se aplicó uno
