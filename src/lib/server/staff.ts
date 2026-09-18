@@ -4,30 +4,25 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import type { StaffRole } from '@/lib/types';
 
 // --- Schemas ---
 
 const StaffSchema = z.object({
   email: z.string().email('Email inválido'),
   full_name: z.string().min(1, 'El nombre es requerido'),
-  role: z.enum(['ADMIN', 'CAJERO', 'COCINERO', 'REPARTIDOR'] as [StaffRole, ...StaffRole[]]),
   is_active: z.boolean().default(true),
 });
 
 const InviteStaffSchema = z.object({
   email: z.string().email('Email inválido'),
   full_name: z.string().min(1, 'El nombre es requerido'),
-  role: z.enum(['ADMIN', 'CAJERO', 'COCINERO', 'REPARTIDOR'] as [StaffRole, ...StaffRole[]]),
 });
 
 // --- Helpers ---
 
-async function getAdminContext() {
+async function getStaffContext() {
   const { staff } = await getCurrentStaff();
-  if (staff.role !== 'ADMIN') {
-    throw new Error('No autorizado: Se requieren permisos de administrador');
-  }
+  // No role check - any staff can proceed
   return staff;
 }
 
@@ -46,13 +41,12 @@ export async function listStaff(): Promise<Array<{
   location_id: string;
   email: string;
   full_name: string;
-  role: StaffRole;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   auth_user_id: string | null;
 }>> {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   await setLocationGUC(supabase, staff.location_id);
@@ -68,7 +62,6 @@ export async function listStaff(): Promise<Array<{
     location_id: string;
     email: string;
     full_name: string;
-    role: StaffRole;
     is_active: boolean;
     created_at: string;
     updated_at: string;
@@ -77,7 +70,7 @@ export async function listStaff(): Promise<Array<{
 }
 
 export async function createStaff(payload: z.infer<typeof StaffSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = StaffSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -96,7 +89,9 @@ export async function createStaff(payload: z.infer<typeof StaffSchema>) {
   const { data, error } = await supabase
     .from('staff')
     .insert({
-      ...validated,
+      email: validated.email,
+      full_name: validated.full_name,
+      is_active: validated.is_active,
       location_id: staff.location_id,
       created_by: staff.id,
     })
@@ -110,7 +105,7 @@ export async function createStaff(payload: z.infer<typeof StaffSchema>) {
 }
 
 export async function updateStaff(id: string, payload: z.infer<typeof StaffSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = StaffSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -130,7 +125,9 @@ export async function updateStaff(id: string, payload: z.infer<typeof StaffSchem
   const { data, error } = await supabase
     .from('staff')
     .update({
-      ...validated,
+      email: validated.email,
+      full_name: validated.full_name,
+      is_active: validated.is_active,
       updated_by: staff.id,
     })
     .eq('id', id)
@@ -145,7 +142,7 @@ export async function updateStaff(id: string, payload: z.infer<typeof StaffSchem
 }
 
 export async function deleteStaff(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // No permitir auto-eliminación
@@ -165,7 +162,7 @@ export async function deleteStaff(id: string) {
 }
 
 export async function toggleStaffActive(id: string, isActive: boolean) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // No permitir auto-desactivación
@@ -190,7 +187,7 @@ export async function toggleStaffActive(id: string, isActive: boolean) {
 // --- Invitation Flow (Magic Link) ---
 
 export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = InviteStaffSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -212,9 +209,8 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
     .insert({
       email: validated.email,
       full_name: validated.full_name,
-      role: validated.role,
-      location_id: staff.location_id,
       is_active: true,
+      location_id: staff.location_id,
       created_by: staff.id,
     })
     .select()
@@ -227,7 +223,6 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(validated.email, {
     data: {
       location_id: staff.location_id,
-      role: validated.role,
       full_name: validated.full_name,
     },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/staff/auth/callback`,

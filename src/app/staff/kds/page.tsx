@@ -8,12 +8,6 @@ export const dynamic = 'force-dynamic';
 export default async function KdsPage() {
   const { staff } = await getCurrentStaff();
 
-  // Solo cocineros (o admin) pueden ver el KDS; el layout ya protege la sesión.
-  const role = staff.role?.toUpperCase();
-  if (role !== 'COCINERO' && role !== 'ADMIN') {
-    redirect('/staff');
-  }
-
-  // Pasamos locationId; el componente (client) se encarga de cargar + suscribirse.
+  // Cualquier usuario autenticado con staff puede acceder
   return <KitchenDisplay locationId={staff.location_id} />;
 }

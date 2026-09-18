@@ -20,18 +20,15 @@ const ReservationSchema = z.object({
   notes: z.string().nullish(),
 });
 
-async function getAdminContext() {
+async function getStaffContext() {
   const { staff } = await getCurrentStaff();
-  if (staff.role !== 'ADMIN') {
-    throw new Error('No autorizado: Se requieren permisos de administrador');
-  }
   return staff;
 }
 
 // --- Zone Capacity ---
 
 export async function getZoneCapacities() {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   const { data, error } = await supabase
@@ -46,7 +43,7 @@ export async function getZoneCapacities() {
 // --- Reservations ---
 
 export async function listReservations(startDate: string, endDate: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   await supabase.rpc('set_config', {
@@ -68,7 +65,7 @@ export async function listReservations(startDate: string, endDate: string) {
 }
 
 export async function createReservation(payload: z.infer<typeof ReservationSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ReservationSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -89,7 +86,7 @@ export async function createReservation(payload: z.infer<typeof ReservationSchem
 }
 
 export async function updateReservation(id: string, payload: Partial<z.infer<typeof ReservationSchema>>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // Verify ownership
@@ -119,7 +116,7 @@ export async function updateReservation(id: string, payload: Partial<z.infer<typ
 }
 
 export async function deleteReservation(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   const { error } = await supabase

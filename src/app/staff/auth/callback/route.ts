@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       const adminSupabase = createServerClient();
       const { data: staff, error: staffError } = await adminSupabase
         .from('staff')
-        .select('id, location_id, role, full_name, auth_user_id')
+        .select('id, location_id, full_name, auth_user_id')
         .eq('email', sessionData.session.user.email)
         .single();
 
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         // Update the auth user's user_metadata using service_role
         await adminSupabase.auth.admin.updateUserById(
           sessionData.session.user.id,
-          { user_metadata: { location_id: staff.location_id, role: staff.role, full_name: staff.full_name } }
+          { user_metadata: { location_id: staff.location_id, full_name: staff.full_name } }
         );
         // Also link staff record to auth user for future reliable lookups
         if (!staff.auth_user_id) {
@@ -34,6 +34,9 @@ export async function GET(request: Request) {
             .update({ auth_user_id: sessionData.session.user.id })
             .eq('id', staff.id);
         }
+
+        // Refresh session to get new JWT with updated metadata in cookies
+        await supabase.auth.refreshSession();
       }
 
       return NextResponse.redirect(`${origin}${next}`);

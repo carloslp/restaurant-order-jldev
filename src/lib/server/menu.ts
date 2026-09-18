@@ -28,18 +28,15 @@ const ProductSchema = z.object({
 });
 
 // --- Helpers ---
-async function getAdminContext() {
+async function getStaffContext() {
   const { staff } = await getCurrentStaff();
-  if (staff.role !== 'ADMIN') {
-    throw new Error('No autorizado: Se requieren permisos de administrador');
-  }
   return staff;
 }
 
 // --- Categories ---
 
 export async function listCategories(): Promise<Category[]> {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   await supabase.rpc('set_config', {
@@ -58,7 +55,7 @@ export async function listCategories(): Promise<Category[]> {
 }
 
 export async function createCategory(payload: z.infer<typeof CategorySchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = CategorySchema.parse(payload);
   const supabase = createServerClient();
 
@@ -78,7 +75,7 @@ export async function createCategory(payload: z.infer<typeof CategorySchema>) {
 }
 
 export async function updateCategory(id: string, payload: z.infer<typeof CategorySchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = CategorySchema.parse(payload);
   const supabase = createServerClient();
 
@@ -97,7 +94,7 @@ export async function updateCategory(id: string, payload: z.infer<typeof Categor
 }
 
 export async function deleteCategory(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   const { error } = await supabase
@@ -115,7 +112,7 @@ export async function deleteCategory(id: string) {
 // --- Products ---
 
 export async function listProducts(categoryId?: string): Promise<Product[]> {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   await supabase.rpc('set_config', {
@@ -140,7 +137,7 @@ export async function listProducts(categoryId?: string): Promise<Product[]> {
 }
 
 export async function createProduct(payload: z.infer<typeof ProductSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ProductSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -160,7 +157,7 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
 }
 
 export async function updateProduct(id: string, payload: z.infer<typeof ProductSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ProductSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -179,7 +176,7 @@ export async function updateProduct(id: string, payload: z.infer<typeof ProductS
 }
 
 export async function deleteProduct(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   const { error } = await supabase
@@ -212,7 +209,7 @@ const ModifierOptionSchema = z.object({
 });
 
 export async function listModifierGroups(productId: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   await supabase.rpc('set_config', {
@@ -242,7 +239,7 @@ export async function listModifierGroups(productId: string) {
 }
 
 export async function createModifierGroup(payload: z.infer<typeof ModifierGroupSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ModifierGroupSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -269,7 +266,7 @@ export async function createModifierGroup(payload: z.infer<typeof ModifierGroupS
 }
 
 export async function updateModifierGroup(id: string, payload: z.infer<typeof ModifierGroupSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ModifierGroupSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -298,7 +295,7 @@ export async function updateModifierGroup(id: string, payload: z.infer<typeof Mo
 }
 
 export async function deleteModifierGroup(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // Verify ownership through product
@@ -326,7 +323,7 @@ export async function deleteModifierGroup(id: string) {
 // --- Modifier Options ---
 
 export async function createModifierOption(payload: z.infer<typeof ModifierOptionSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ModifierOptionSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -354,7 +351,7 @@ export async function createModifierOption(payload: z.infer<typeof ModifierOptio
 }
 
 export async function updateModifierOption(id: string, payload: z.infer<typeof ModifierOptionSchema>) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const validated = ModifierOptionSchema.parse(payload);
   const supabase = createServerClient();
 
@@ -383,7 +380,7 @@ export async function updateModifierOption(id: string, payload: z.infer<typeof M
 }
 
 export async function deleteModifierOption(id: string) {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // Verify ownership
@@ -411,7 +408,7 @@ export async function deleteModifierOption(id: string) {
 // --- Image Upload ---
 
 export async function uploadMenuImage(file: File, folder: 'categories' | 'products'): Promise<string> {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // Validate file type
@@ -443,7 +440,7 @@ export async function uploadMenuImage(file: File, folder: 'categories' | 'produc
 }
 
 export async function deleteMenuImage(publicUrl: string): Promise<{ ok: boolean }> {
-  const staff = await getAdminContext();
+  const staff = await getStaffContext();
   const supabase = createServerClient();
 
   // Extract path from public URL

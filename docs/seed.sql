@@ -33,11 +33,11 @@ BEGIN
     RETURNING id INTO v_local;
 
     -- ── Staff ────────────────────────────────────────────────────────────
-    INSERT INTO staff (location_id, email, full_name, role)
+    INSERT INTO staff (location_id, email, full_name)
     VALUES
-        (v_local, 'admin@demo.com',   'Admin Demo',   'ADMIN'),
-        (v_local, 'cajero@demo.com',  'Cajero Demo',  'CAJERO'),
-        (v_local, 'cocina@demo.com',  'Cocina Demo',  'COCINERO');
+        (v_local, 'admin@demo.com',   'Admin Demo'),
+        (v_local, 'cajero@demo.com',  'Cajero Demo'),
+        (v_local, 'cocina@demo.com',  'Cocina Demo');
 
     SELECT id INTO v_admin FROM staff WHERE email = 'admin@demo.com' AND location_id = v_local;
     SELECT id INTO v_cajero FROM staff WHERE email = 'cajero@demo.com' AND location_id = v_local;

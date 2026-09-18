@@ -5,10 +5,27 @@ import { createServerClient } from '@/lib/supabase/server';
 import { DiscountSchema } from '@/lib/validation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { getCurrentStaff } from '@/app/staff/page';
+
+async function getStaffContext() {
+  const { staff } = await getCurrentStaff();
+  return staff;
+}
+
+function setLocationGUC(supabase: ReturnType<typeof createServerClient>, locationId: string) {
+  return supabase.rpc('set_config', {
+    name: 'app.local_id',
+    value: locationId,
+    is_local: true,
+  });
+}
 
 export async function listDiscounts() {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
+
+  await setLocationGUC(supabase, staff.location_id);
+
   const { data, error } = await supabase
     .from('discounts')
     .select('*')
@@ -19,99 +36,109 @@ export async function listDiscounts() {
 }
 
 export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
-  const { data: local } = await supabase
-    .from('locals')
-    .select('id')
-    .single();
-
-  if (!local) throw new Error('No local associated with this session');
 
   const validated = DiscountSchema.parse(payload);
-  
+
   const { data, error } = await supabase
     .from('discounts')
     .insert({
       ...validated,
-      location_id: local.id,
+      location_id: staff.location_id,
     })
     .select()
     .single();
 
   if (error) throw new Error(`Error creating discount: ${error.message}`);
-  
+
   revalidatePath('/staff/admin');
   return data;
 }
 
 export async function updateDiscount(id: string, payload: z.infer<typeof DiscountSchema>) {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
+
+  await setLocationGUC(supabase, staff.location_id);
+
   const validated = DiscountSchema.parse(payload);
-  
+
   const { data, error } = await supabase
     .from('discounts')
     .update(validated)
     .eq('id', id)
+    .eq('location_id', staff.location_id)
     .select()
     .single();
 
   if (error) throw new Error(`Error updating discount: ${error.message}`);
-  
+
   revalidatePath('/staff/admin');
   return data;
 }
 
 export async function deleteDiscount(id: string) {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
+
+  await setLocationGUC(supabase, staff.location_id);
+
   const { error } = await supabase
     .from('discounts')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .eq('location_id', staff.location_id);
 
   if (error) throw new Error(`Error deleting discount: ${error.message}`);
-  
+
   revalidatePath('/staff/admin');
   return { success: true };
 }
 
 export async function toggleDiscountStatus(id: string, is_active: boolean) {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
+
+  await setLocationGUC(supabase, staff.location_id);
+
   const { data, error } = await supabase
     .from('discounts')
     .update({ is_active })
     .eq('id', id)
+    .eq('location_id', staff.location_id)
     .select()
     .single();
 
   if (error) throw new Error(`Error toggling discount status: ${error.message}`);
-  
+
   revalidatePath('/staff/admin');
   return data;
 }
 
 export async function applyManualDiscount(orderId: string, amount: number, reason: string) {
+  const staff = await getStaffContext();
   const supabase = await createServerClient();
-  
+
+  await setLocationGUC(supabase, staff.location_id);
+
   // 1. Get order to find location_id and current total
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .select('*')
     .eq('id', orderId)
+    .eq('location_id', staff.location_id)
     .single();
 
   if (orderError || !order) throw new Error('Orden no encontrada');
 
   // 2. Find a "Manual Discount" template or just create a usage.
-  // For simplicity, we'll look for an active discount marked as 'MANUAL' 
+  // For simplicity, we'll look for an active discount marked as 'MANUAL'
   // or we create a generic one if it doesn't exist.
   const { data: manualDiscount, error: discError } = await supabase
     .from('discounts')
     .select('id')
-    .eq('location_id', order.location_id)
+    .eq('location_id', staff.location_id)
     .eq('description', 'Descuento Manual')
     .eq('is_active', true)
     .maybeSingle();
@@ -122,7 +149,7 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
     const { data: newDisc, error: createError } = await supabase
       .from('discounts')
       .insert({
-        location_id: order.location_id,
+        location_id: staff.location_id,
         description: 'Descuento Manual',
         discount_type: 'FIXED_AMOUNT',
         value: 0, // Template value
@@ -151,7 +178,8 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
   const { error: updateError } = await supabase
     .from('orders')
     .update({ total: newTotal })
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('location_id', staff.location_id);
 
   if (updateError) throw new Error(`Error actualizando total de orden: ${updateError.message}`);
 

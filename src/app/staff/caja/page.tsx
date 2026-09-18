@@ -8,11 +8,6 @@ export const dynamic = 'force-dynamic';
 export default async function CajaPage() {
   const { staff } = await getCurrentStaff();
 
-  // Caja: cajero o admin
-  const role = staff.role?.toUpperCase();
-  if (role !== 'CAJERO' && role !== 'ADMIN') {
-    redirect('/staff');
-  }
-
+  // Cualquier usuario autenticado con staff puede acceder
   return <CashierView locationId={staff.location_id} />;
 }

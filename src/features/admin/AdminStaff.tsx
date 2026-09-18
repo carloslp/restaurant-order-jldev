@@ -7,7 +7,6 @@ import {
   toggleStaffActive,
   inviteStaff,
 } from '@/lib/server/staff';
-import type { StaffRole } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 
 interface StaffMember {
@@ -15,7 +14,6 @@ interface StaffMember {
   location_id: string;
   email: string;
   full_name: string;
-  role: StaffRole;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -25,29 +23,13 @@ interface StaffMember {
 interface StaffFormData {
   email: string;
   full_name: string;
-  role: StaffRole;
   is_active: boolean;
 }
 
 const initialFormData: StaffFormData = {
   email: '',
   full_name: '',
-  role: 'CAJERO',
   is_active: true,
-};
-
-const ROLE_LABELS: Record<StaffRole, string> = {
-  ADMIN: 'Administrador',
-  CAJERO: 'Cajero',
-  COCINERO: 'Cocinero',
-  REPARTIDOR: 'Repartidor',
-};
-
-const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
-  ADMIN: 'Acceso total: menú, descuentos, reservas, reportes, staff, configuración',
-  CAJERO: 'Gestión de pedidos en caja, pagos, cierre de caja',
-  COCINERO: 'Kitchen Display System (KDS), gestión de preparación',
-  REPARTIDOR: 'Vista de entregas asignadas, actualización de estado de entrega',
 };
 
 export function AdminStaff() {
@@ -107,7 +89,6 @@ export function AdminStaff() {
       await inviteStaff({
         email: formData.email,
         full_name: formData.full_name,
-        role: formData.role,
       });
       toast({ title: 'Éxito', description: 'Invitación enviada. El staff recibirá un magic link por email.' });
       setShowForm(false);
@@ -127,7 +108,6 @@ export function AdminStaff() {
     setFormData({
       email: staff.email,
       full_name: staff.full_name,
-      role: staff.role,
       is_active: staff.is_active,
     });
     setShowForm(true);
@@ -219,37 +199,6 @@ export function AdminStaff() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rol *</label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as StaffRole })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                >
-                  <option value="CAJERO">Cajero</option>
-                  <option value="COCINERO">Cocinero</option>
-                  <option value="REPARTIDOR">Repartidor</option>
-                  <option value="ADMIN">Administrador</option>
-                </select>
-                <p className="mt-1 text-xs text-gray-500">{ROLE_DESCRIPTIONS[formData.role]}</p>
-              </div>
-
-              {!editingStaff && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="sendInvite"
-                    checked={true}
-                    onChange={() => {}}
-                    className="rounded border-gray-300"
-                    disabled
-                  />
-                  <label htmlFor="sendInvite" className="text-sm cursor-pointer">
-                    Enviar invitación por email (magic link)
-                  </label>
-                </div>
-              )}
-
               {editingStaff && (
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -289,7 +238,6 @@ export function AdminStaff() {
             <tr>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Nombre</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Email</th>
-              <th className="text-left p-3 text-sm font-semibold text-gray-500">Rol</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Estado</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Vinculado a Auth</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Creado</th>
@@ -301,11 +249,6 @@ export function AdminStaff() {
               <tr key={staff.id} className="hover:bg-gray-50">
                 <td className="p-3 font-medium">{staff.full_name}</td>
                 <td className="p-3 text-sm text-gray-600">{staff.email}</td>
-                <td className="p-3">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                    {ROLE_LABELS[staff.role]}
-                  </span>
-                </td>
                 <td className="p-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -353,7 +296,7 @@ export function AdminStaff() {
             ))}
             {staffList.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400">
+                <td colSpan={6} className="p-8 text-center text-gray-400">
                   No hay miembros del staff. Crea el primero para empezar.
                 </td>
               </tr>

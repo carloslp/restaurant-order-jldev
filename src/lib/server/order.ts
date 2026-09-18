@@ -6,7 +6,7 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { verifyToken } from '@/lib/tokens';
-import type { Order, OrderStatus, StaffRole } from '@/lib/types';
+import type { Order, OrderStatus } from '@/lib/types';
 import { getCurrentStaff } from '@/app/staff/page';
 
 /**
@@ -165,28 +165,17 @@ export async function listOrdersForLocation(opts?: {
   return (data ?? []) as Order[];
 }
 
-// Matriz de transiciones por rol (del diseño): cocinero solo cocina.
-const ALLOWED_TRANSITIONS: Record<StaffRole, Partial<Record<OrderStatus, OrderStatus[]>>> = {
-  ADMIN: {
-    CREADO: ['CONFIRMADO_CAJA', 'CANCELADO'],
-    CONFIRMADO_CAJA: ['EN_PREPARACION', 'CANCELADO'],
-    EN_PREPARACION: ['LISTO', 'CANCELADO'],
-    LISTO: ['LISTO_PARA_ENTREGA', 'COMPLETADO', 'CANCELADO'],
-    LISTO_PARA_ENTREGA: ['COMPLETADO', 'CANCELADO'],
-  },
-  CAJERO: {
-    CREADO: ['CONFIRMADO_CAJA', 'CANCELADO'],
-    CONFIRMADO_CAJA: ['EN_PREPARACION', 'CANCELADO'],
-    LISTO: ['LISTO_PARA_ENTREGA', 'COMPLETADO', 'CANCELADO'],
-    LISTO_PARA_ENTREGA: ['COMPLETADO', 'CANCELADO'],
-  },
-  COCINERO: {
-    CONFIRMADO_CAJA: ['EN_PREPARACION'],
-    EN_PREPARACION: ['LISTO'],
-  },
-  REPARTIDOR: {
-    LISTO_PARA_ENTREGA: ['COMPLETADO'],
-  },
+// Transiciones válidas según el flujo de negocio (sin roles)
+// Cualquier usuario autenticado con staff puede hacer cualquier transición válida
+const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  CREADO: ['CONFIRMADO_CAJA', 'CANCELADO'],
+  CONFIRMADO_CAJA: ['EN_PREPARACION', 'CANCELADO'],
+  EN_PREPARACION: ['LISTO', 'CANCELADO'],
+  LISTO: ['LISTO_PARA_ENTREGA', 'COMPLETADO', 'CANCELADO'],
+  LISTO_PARA_ENTREGA: ['COMPLETADO', 'CANCELADO'],
+  // Estados terminales - no se pueden cambiar
+  COMPLETADO: [],
+  CANCELADO: [],
 };
 
 export async function updateOrderStatus(
@@ -212,12 +201,12 @@ export async function updateOrderStatus(
     return { ok: false, error: 'No autorizado para esta orden' };
   }
 
-  // 3. Validar transición según rol
-  const allowed = ALLOWED_TRANSITIONS[staff.role as StaffRole]?.[order.status as OrderStatus] ?? [];
+  // 3. Validar transición según flujo de negocio (sin roles)
+  const allowed = VALID_TRANSITIONS[order.status as OrderStatus] ?? [];
   if (!allowed.includes(nextStatus)) {
     return {
       ok: false,
-      error: `Transición ${order.status} → ${nextStatus} no permitida para tu rol`,
+      error: `Transición ${order.status} → ${nextStatus} no permitida`,
     };
   }
 

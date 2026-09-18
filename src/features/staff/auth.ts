@@ -39,7 +39,7 @@ export async function signInWithEmailPassword(prevState: { error?: string } | nu
     const adminSupabase = createServerClient();
     const { data: staff } = await adminSupabase
       .from('staff')
-      .select('id, location_id, role, full_name, auth_user_id')
+      .select('id, location_id, full_name, auth_user_id')
       .eq('email', data.session.user.email)
       .single();
 
@@ -47,7 +47,7 @@ export async function signInWithEmailPassword(prevState: { error?: string } | nu
       // Update user_metadata for JWT claims (used by RLS policies)
       await adminSupabase.auth.admin.updateUserById(
         data.session.user.id,
-        { user_metadata: { location_id: staff.location_id, role: staff.role, full_name: staff.full_name } }
+        { user_metadata: { location_id: staff.location_id, full_name: staff.full_name } }
       );
       // Link auth_user_id if not already linked
       if (!staff.auth_user_id) {
@@ -56,6 +56,9 @@ export async function signInWithEmailPassword(prevState: { error?: string } | nu
           .update({ auth_user_id: data.session.user.id })
           .eq('id', staff.id);
       }
+
+      // Refresh session to get new JWT with updated metadata in cookies
+      await supabase.auth.refreshSession();
     }
   }
 

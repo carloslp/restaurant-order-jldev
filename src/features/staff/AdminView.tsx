@@ -2,18 +2,18 @@
 'use client';
 
 import { useState } from 'react';
-import type { StaffRole } from '@/lib/types';
 import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
 import { AdminMenuProducts } from '@/features/admin/AdminMenuProducts';
 import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
 import { AdminReservations } from '@/features/admin/AdminReservations';
 import { AdminStaff } from '@/features/admin/AdminStaff';
+import { AdminReports } from '@/features/admin/AdminReports';
+import { CashierView } from '@/features/staff/CashierView';
 
 interface AdminViewProps {
   staff: {
     email: string;
     full_name: string;
-    role: StaffRole;
     location_id: string;
   };
   local: {
@@ -25,7 +25,7 @@ interface AdminViewProps {
   } | null;
 }
 
-type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff';
+type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff' | 'reports';
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -71,16 +71,26 @@ export function AdminView({ staff, local }: AdminViewProps) {
                     Reservas
                   </button>
                   <button
-                                      onClick={() => setActiveTab('discounts')}
-                                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                                        activeTab === 'discounts'
-                                          ? 'bg-white text-gray-900 shadow-sm'
-                                          : 'text-gray-500 hover:text-gray-700'
-                                      }`}
-                                    >
-                                      Descuentos
-                                    </button>
-                                    <button
+                                        onClick={() => setActiveTab('discounts')}
+                                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                          activeTab === 'discounts'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                      >
+                                        Descuentos
+                                      </button>
+                                      <button
+                                        onClick={() => setActiveTab('reports')}
+                                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                          activeTab === 'reports'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                      >
+                                        Reportes
+                                      </button>
+                                      <button
                                       onClick={() => setActiveTab('staff')}
                                       className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                                         activeTab === 'staff'
@@ -137,10 +147,6 @@ export function AdminView({ staff, local }: AdminViewProps) {
                         <dt className="text-gray-500">Email</dt>
                         <dd className="font-medium">{staff.email}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <dt className="text-gray-500">Rol</dt>
-                        <dd className="font-medium">{staff.role}</dd>
-                      </div>
                     </dl>
                   </div>
                 </div>
@@ -171,7 +177,9 @@ export function AdminView({ staff, local }: AdminViewProps) {
 
             {activeTab === 'discounts' && <AdminDiscounts />}
 
-            {activeTab === 'staff' && <AdminStaff />}
+                        {activeTab === 'staff' && <AdminStaff />}
+
+                        {activeTab === 'reports' && <AdminReports />}
     </div>
   );
 }

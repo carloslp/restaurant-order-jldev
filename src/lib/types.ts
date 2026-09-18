@@ -14,7 +14,6 @@ export type PaymentMethod = 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA
 export type PaymentStatus = 'PENDIENTE' | 'COBRADO';
 export type ReservationStatus = 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA' | 'NO_SHOW';
 export type DepositStatus = 'SIN_DEPOSITO' | 'DEPOSITO_PENDIENTE' | 'DEPOSITADO';
-export type StaffRole = 'ADMIN' | 'CAJERO' | 'COCINERO' | 'REPARTIDOR';
 
 export type DiscountType = 'PERCENTAGE' | 'FIXED_AMOUNT';
 
@@ -131,6 +130,7 @@ export type CartSnapshot = Cart;
 
 // --- Pedido ---
 export interface Order {
+  id: string;
   location_id: string;
   customer_name: string;
   customer_phone: string;

@@ -120,8 +120,10 @@ CREATE TABLE staff (
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('ADMIN', 'CAJERO', 'COCINERO', 'REPARTIDOR')),
     is_active BOOLEAN NOT NULL DEFAULT true,
+    auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_by UUID REFERENCES staff(id) ON DELETE SET NULL,
+    updated_by UUID REFERENCES staff(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -536,7 +538,7 @@ CREATE INDEX idx_orders_created_at ON orders(created_at);
 CREATE INDEX idx_orders_customer_phone ON orders(customer_phone);
 CREATE INDEX idx_reservations_location_date ON reservations(location_id, reservation_date);
 CREATE INDEX idx_reservations_status ON reservations(status);
-CREATE INDEX idx_staff_location_role ON staff(location_id, role);
+CREATE INDEX idx_staff_location ON staff(location_id);
 CREATE INDEX idx_delivery_tokens_order_id ON delivery_tokens(order_id);
 CREATE INDEX idx_discounts_location_active ON discounts(location_id, is_active);
 CREATE INDEX idx_product_allergens_product ON product_allergens(product_id);
