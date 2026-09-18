@@ -41,11 +41,11 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 14 | `AdminReservations.tsx` — Calendario mensual/semanal. Vista con franjas, aforo por zona (`local_zone_capacity`), indicador de disponibilidad. | ⬜ Pendiente | 12h |
-| 15 | `ReservationForm.tsx` — Crear/editar reserva. Titular, teléfono, fecha/hora, comensales, zona preferida, notas, estado depósito. | ⬜ Pendiente | 8h |
-| 16 | Recordatorios (WhatsApp/email) — Job cron (Supabase pg_cron o Vercel Cron) 24h y 2h antes. Plantilla en `notifications/email/`. | ⬜ Pendiente | 6h |
-| 17 | Lista del día en dashboard admin. Tarjetas con hora, zona, comensales, estado depósito, acciones (confirmar, cancelar, marcar depositado). | ⬜ Pendiente | 4h |
-| 18 | Server Actions CRUD reservas. Validación de aforo, conflictos de horario, depósito. | ⬜ Pendiente | 6h |
+|| 14 | `AdminReservations.tsx` — Calendario mensual/semanal. Vista con franjas, aforo por zona (`local_zone_capacity`), indicador de disponibilidad. | ✅ Completado | 12h |
+|| 15 | `ReservationForm.tsx` — Crear/editar reserva. Titular, teléfono, fecha/hora, comensales, zona preferida, notas, estado depósito. | ✅ Completado | 8h |
+|| 16 | Recordatorios (WhatsApp/email) — Job cron (Supabase pg_cron o Vercel Cron) 24h y 2h antes. Plantilla en `notifications/email/`. | ✅ Completado | 6h |
+|| 17 | Lista del día en dashboard admin. Tarjetas con hora, zona, comensales, estado depósito, acciones (confirmar, cancelar, marcar depositado). | ✅ Completado | 4h |
+|| 18 | Server Actions CRUD reservas. Validación de aforo, conflictos de horario, depósito. | ✅ Completado | 6h |
 
 ### 2.4 Reportes y Estadísticas (26h)
 
@@ -90,7 +90,7 @@
 | 31 | Auditoría RLS completa. Revisar cada policy contra amenazas: escalada de privilegio, enumeración cross-tenant, fuga de PII. Probar con `supabase.test` helpers. | ⬜ Pendiente | 8h |
 | 32 | Error handling centralizado. `lib/errors.ts` con clases `AppError`, `ValidationError`, `AuthError`, `NotFoundError`. Wrapper `withErrorHandling` para server actions. Log a `console.error` + opcional Sentry. | ⬜ Pendiente | 6h |
 | 33 | Logging estructurado. `lib/logger.ts` con niveles, contexto (requestId, userId, locationId). Middleware que inyecta requestId. | ⬜ Pendiente | 4h |
-| 34 | Tests unitarios (Vitest). `pricing.ts`, `validation.ts`, `tokens.ts`, engine de promos, transiciones de estado, cálculos IVA. | ✅ Completado | 20h |
+|| 34 | Tests unitarios (Vitest). `pricing.ts`, `validation.ts`, `tokens.ts`, engine de promos, transiciones de estado, cálculos IVA. | ⬜ Pendiente | 20h |
 | 35 | Tests de integración (Playwright). Flujos: checkout completo, auth staff, KDS realtime, cashier transitions, admin CRUD menú, aplicación promo. | ⬜ Pendiente | 16h |
 | 36 | Seed de datos realista para tests. `scripts/seed-test-data.ts` usando service role. | ⬜ Pendiente | 4h |
 
@@ -112,8 +112,8 @@
 
 | # | Decisión | Estado | Impacto |
 |---|----------|--------|---------|
-| 42 | **Imágenes de productos**: Supabase Storage (gratis 1GB) | ⬜ Pendiente | Afecta Admin Menú (upload) |
-| 43 | **Notificaciones WhatsApp**: Se va llamar un webhook, deja listo para solo poner el endpoint para activarlo. | ⬜ Pendiente | Afecta recordatorios reservas |
+|| 42 | **Imágenes de productos**: Supabase Storage (gratis 1GB) | ✅ Confirmado | Implementado en Admin Menú |
+|| 43 | **Notificaciones WhatsApp**: Webhook externo | ✅ Confirmado | Implementado en reminders |
 | 44 | **Mapa repartidor**: ¿Leaflet + OSM (gratis, self-hosted tiles) o Mapbox (pago, mejor UX)? | ⬜ Pendiente | Afecta vista track repartidor |
 | 45 | **Gráficas**:  Chart.js + wrapper  | ⬜ Pendiente | Afecta Admin Reportes |
 | 46 | **Tests E2E**: Playwright (recomendado) | ⬜ Pendiente | Afecta infra testing |
@@ -121,50 +121,41 @@
 
 ---
 
-## 7. Resumen por Fases
+## 7. Resumen por Fases (Actualizado)
 
-| Fase | Horas | Prioridad | Entregable |
-|------|-------|-----------|------------|
-| **Fase 1: Admin Core** (Menú + Promos + Settings) | ~82h | **Crítica** | Admin funcional para operar el negocio día a día |
-| **Fase 2: Reservas + Reportes** | ~62h | **Alta** | Gestión de mesas y visibilidad de negocio |
-| **Fase 3: Repartidor + Staff Mgmt** | ~26h | **Media** | Flujo delivery completo y gestión de equipo |
-| **Fase 4: Calidad + Infra** | ~70h | **Alta** | Tests, logging, RLS auditado, docs, despliegue |
-| **Fase 5: Pulido Público** | ~13h | **Baja** | IVA badge, modificadores en carrito, stock realtime |
-| **TOTAL** | **~253h** | | |
-
----
-
-## 8. Orden Sugerido de Ejecución (Sprints de 2 semanas)
-
-### Sprint 1-2: Menú Admin + Promociones Base
-- **Semana 1**: CRUD Categorías + Productos (sin modificadores aún)
-- **Semana 2**: Modificadores anidados + Engine de promos (códigos + automáticas) + integración checkout
-
-### Sprint 3-4: Promociones Completas + Settings + Staff
-- **Semana 3**: Descuento manual en caja, validación no-stacking, tests unitarios promos
-- **Semana 4**: AdminSettings (timezone, IVA, delivery fee, aforo), AdminStaff (CRUD + invitación)
-
-### Sprint 5-6: Reservas + Reportes
-- **Semana 5**: Calendario reservas, aforo por zona, formulario, recordatorios (cron)
-- **Semana 6**: Dashboard reportes (KPIs, gráficas, export, cierre de caja)
-
-### Sprint 7: Repartidor + Calidad
-- **Semana 7**: Rol repartidor, asignación en caja/admin, vista tracking mejorada, notificaciones
-- **Semana 8**: Auditoría RLS, error handling centralizado, logging, health check
-
-### Sprint 8-9: Tests + Despliegue + Pulido
-- **Semana 8**: Tests unitarios (Vitest) + integración (Playwright) para flujos críticos
-- **Semana 9**: Docs despliegue, métricas, alertas, IVA badge, modificadores en carrito público
+| Fase | Estado | Prioridad | Entregable |
+|------|--------|-----------|------------|
+| **Fase 1: Admin Core** (Menú + Promos) | 🔄 Casi listo | **Crítica** | CRUD Menú y Motor de Promos |
+| **Fase 2: Reservas** | ✅ Completado | **Alta** | Gestión de mesas y calendario |
+| **Fase 3: Reportes + Staff + Settings** | ⬜ Pendiente | **Alta** | KPIs, Gestión de Equipo y Config Local |
+| **Fase 4: Repartidor** | ⬜ Pendiente | **Media** | Flujo delivery completo |
+| **Fase 5: Calidad + Infra** | ⬜ Pendiente | **Alta** | Tests, Auditoría RLS y Docs |
 
 ---
 
-## 9. Próximos Pasos Inmediatos (Esta Semana)
+## 8. Nuevo Plan de Ejecución (Pendientes)
 
-1. **Confirmar decisiones técnicas** (§6) con el stakeholder.
-2. **Crear branch `feat/admin-menu`** y empezar con `AdminMenuCategories.tsx` + server actions.
-3. **Configurar Vitest + Playwright** en el repo (`npm install -D vitest @playwright/test`).
-4. **Añadir `SENTRY_DSN`** a `.env.example` y `next.config.ts` para error tracking desde día 1.
-5. **Ejecutar auditoría RLS rápida** (script que intente cross-tenant access con distintos JWTs).
+### Sprint A: Cierre de Admin Core & Reportes
+- **Tarea 13**: Tests unitarios del engine de promociones.
+- **Tarea 19-22**: Módulo de Reportes y Cierre de Caja (`AdminReports.tsx` + Gráficas).
+- **Tarea 25-26**: Configuración del Local (`AdminSettings.tsx`).
+
+### Sprint B: Staff & Delivery Flow
+- **Tarea 23-24**: Gestión de Staff e Invitaciones (`AdminStaff.tsx`).
+- **Tarea 27-30**: Rol Repartidor, Asignación y Vista de Tracking.
+
+### Sprint C: Hardening & Deployment
+- **Tarea 31-33**: Auditoría RLS, Error Handling y Logging.
+- **Tarea 34-36**: Implementación de Vitest y Playwright (Tests E2E).
+- **Tarea 37-38**: Documentación final y Guía de Despliegue.
+
+---
+
+## 9. Próximos Pasos Inmediatos
+
+1. Implementar `AdminReports.tsx` para dar visibilidad de ventas.
+2. Crear `AdminSettings.tsx` para parametrizar el local (IVA, Zonas).
+3. Desarrollar `AdminStaff.tsx` para gestionar el equipo.
 
 ---
 

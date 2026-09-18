@@ -1,6 +1,7 @@
 // src/app/staff/admin/page.tsx
 import { getCurrentStaff } from '@/app/staff/page';
 import { AdminView } from '@/features/staff/AdminView';
+import { ToastProvider } from '@/components/ui/use-toast';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,5 +17,9 @@ export default async function AdminPage() {
     );
   }
 
-  return <AdminView staff={staff} local={local} />;
+  return (
+    <ToastProvider>
+      <AdminView staff={staff} local={local} />
+    </ToastProvider>
+  );
 }
