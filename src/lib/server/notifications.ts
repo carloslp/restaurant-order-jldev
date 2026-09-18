@@ -1,8 +1,6 @@
 // src/lib/server/notifications.ts
 'use server';
 
-import { logger } from './local'; // Assuming some logger exists or just use console
-
 export async function sendReservationReminder(
   phone: string, 
   email: string | null, 

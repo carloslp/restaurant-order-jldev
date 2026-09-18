@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { listModifierGroups, createModifierGroup, updateModifierGroup, deleteModifierGroup, createModifierOption, updateModifierOption, deleteModifierOption } from '@/lib/server/menu';
-import { toast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ModifierGroupFormData {
   name: string;
@@ -13,6 +13,7 @@ interface ModifierGroupFormData {
 }
 
 export function AdminModifierGroups({ productId }: { productId: string }) {
+  const { toast } = useToast();
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

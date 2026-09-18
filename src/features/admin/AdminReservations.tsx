@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listReservations, deleteReservation, changeReservationStatus, getZoneCapacities } from '@/lib/server/reservations';
 import { ReservationForm } from './ReservationForm';
-import DailyReservationsList from './DailyReservationsList';
+import { DailyReservationsList } from './DailyReservationsList';
 import type { ReservationStatus, Zone } from '@/lib/types';
 import { format, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, differenceInMinutes, setHours, setMinutes } from 'date-fns';
 
 const TIME_SLOT_MINUTES = 30;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 22;
+
+function addMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60000);
+}
 
 export function AdminReservations() {
   const [view, setView] = useState<'day' | 'week' | 'month'>('day');
@@ -17,6 +21,17 @@ export function AdminReservations() {
   const [loading, setLoading] = useState(true);
   const [editingReservation, setEditingReservation] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    holder_name: '',
+    holder_phone: '',
+    reservation_date: '',
+    reservation_time: '',
+    party_size: 1,
+    preferred_zone: '',
+    status: 'PENDIENTE',
+    deposit_status: 'SIN_DEPOSITO',
+    notes: '',
+  });
 
   // Time slots for the day
   const timeSlots = () => {
@@ -38,7 +53,7 @@ export function AdminReservations() {
         getZoneCapacities(),
         listReservations(format(startOfWeek(selectedDate), 'yyyy-MM-dd'), format(endOfWeek(selectedDate), 'yyyy-MM-dd')),
       ]);
-      const capacities: Record<Zone, number> = {};
+      const capacities: Record<Zone, number> = { INTERIOR: 0, TERRAZA: 0, BARRA: 0 };
       caps.forEach((c: any) => {
         capacities[c.zone as Zone] = c.capacity;
       });
@@ -110,6 +125,22 @@ export function AdminReservations() {
     try {
       await changeReservationStatus(id, status);
       await loadData();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingReservation) {
+        // Update logic would go here
+        console.log('Update reservation:', formData);
+      } else {
+        // Create logic would go here
+        console.log('Create reservation:', formData);
+      }
+      await handleSubmitSuccess();
     } catch (err: any) {
       alert('Error: ' + err.message);
     }
@@ -187,8 +218,8 @@ export function AdminReservations() {
       {view === 'day' ? (
         <DailyReservationsList reservations={reservations} selectedDate={selectedDate} onUpdate={loadData} />
       ) : (
-        {/* Calendar Grid */}
         <div className="grid gap-4">
+          {/* Calendar Grid */}
           {/* Header with times and zone columns */}
           <div className="grid grid-cols-[60px_1fr] items-start">
             {/* Time column header */}
@@ -374,27 +405,4 @@ export function AdminReservations() {
       )}
     </div>
   );
-}
-
-// Helper function to add minutes
-function addMinutes(date: Date, minutes: number): Date {
-  return new Date(date.getTime() + minutes * 60000);
-}
-
-// Form data state (placeholder, should be defined earlier)
-const [formData, setFormData] = useState({
-  holder_name: '',
-  holder_phone: '',
-  reservation_date: '',
-  reservation_time: '',
-  party_size: 1,
-  preferred_zone: '',
-  status: 'PENDIENTE',
-  deposit_status: 'SIN_DEPOSITO',
-  notes: '',
-});
-
-function handleSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  // Implementation omitted for brevity; assume it calls createReservation or updateReservation
 }

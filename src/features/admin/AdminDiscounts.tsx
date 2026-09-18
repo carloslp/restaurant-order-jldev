@@ -62,7 +62,8 @@ export function AdminDiscounts() {
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) {
-    const { name, value, type, checked } = e.target;
+    const target = e.target as HTMLInputElement;
+    const { name, value, type, checked } = target;
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
@@ -93,20 +94,19 @@ export function AdminDiscounts() {
       // Convert empty strings to null for optional fields
       const payload = {
         ...formData,
-        min_purchase: formData.min_purchase === '' ? '0' : formData.min_purchase,
+        min_purchase: formData.min_purchase === '' ? 0 : parseFloat(formData.min_purchase) || 0,
         code: formData.code === '' ? null : formData.code,
         starts_at: formData.starts_at ?? null,
         ends_at: formData.ends_at ?? null,
         time_of_day_start: formData.time_of_day_start ?? null,
         time_of_day_end: formData.time_of_day_end ?? null,
-        usage_limit_total: formData.usage_limit_total === '' ? null : formData.usage_limit_total,
-        usage_limit_per_customer: formData.usage_limit_per_customer === '' ? null : formData.usage_limit_per_customer,
-        usage_limit_per_day: formData.usage_limit_per_day === '' ? null : formData.usage_limit_per_day,
+        usage_limit_total: formData.usage_limit_total === '' || formData.usage_limit_total === null ? null : (parseFloat(formData.usage_limit_total) || null),
+        usage_limit_per_customer: formData.usage_limit_per_customer === '' || formData.usage_limit_per_customer === null ? null : (parseFloat(formData.usage_limit_per_customer) || null),
+        usage_limit_per_day: formData.usage_limit_per_day === '' || formData.usage_limit_per_day === null ? null : (parseFloat(formData.usage_limit_per_day) || null),
         applies_to_product_ids: formData.applies_to_product_ids,
         applies_to_category_ids: formData.applies_to_category_ids,
         days_of_week: formData.days_of_week.length > 0 ? formData.days_of_week : null,
         value: parseFloat(formData.value),
-        min_purchase: parseFloat(formData.min_purchase),
       };
 
       if (editingId) {
@@ -140,9 +140,9 @@ export function AdminDiscounts() {
       days_of_week: discount.days_of_week ?? [],
       time_of_day_start: discount.time_of_day_start ? new Date(discount.time_of_day_start).toTimeString().slice(0, 5) : null,
       time_of_day_end: discount.time_of_day_end ? new Date(discount.time_of_day_end).toTimeString().slice(0, 5) : null,
-      usage_limit_total: discount.usage_limit_total ?? null,
-      usage_limit_per_customer: discount.usage_limit_per_customer ?? null,
-      usage_limit_per_day: discount.usage_limit_per_day ?? null,
+      usage_limit_total: discount.usage_limit_total?.toString() ?? null,
+      usage_limit_per_customer: discount.usage_limit_per_customer?.toString() ?? null,
+      usage_limit_per_day: discount.usage_limit_per_day?.toString() ?? null,
       is_active: discount.is_active,
     });
   }
@@ -277,7 +277,7 @@ export function AdminDiscounts() {
               <input
                 type="text"
                 name="code"
-                value={formData.code}
+                value={formData.code ?? ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="Dejar vacío para promoción automática"

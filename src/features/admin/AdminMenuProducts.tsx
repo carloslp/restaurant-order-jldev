@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { listProducts, createProduct, updateProduct, deleteProduct, uploadMenuImage } from '@/lib/server/menu';
 import { listCategories } from '@/lib/server/menu';
 import type { Product, Category } from '@/lib/types';
-import { toast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ProductFormData {
   name: string;
@@ -30,6 +30,7 @@ const initialFormData: ProductFormData = {
 };
 
 export function AdminMenuProducts() {
+  const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);

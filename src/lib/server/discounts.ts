@@ -1,11 +1,13 @@
+'use server';
+
 // src/lib/server/discounts.ts
-import { createClient } from '@/lib/supabase/server';
+import { createServerClient } from '@/lib/supabase/server';
 import { DiscountSchema } from '@/lib/validation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 export async function listDiscounts() {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   const { data, error } = await supabase
     .from('discounts')
@@ -17,7 +19,7 @@ export async function listDiscounts() {
 }
 
 export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   const { data: local } = await supabase
     .from('locals')
@@ -44,7 +46,7 @@ export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
 }
 
 export async function updateDiscount(id: string, payload: z.infer<typeof DiscountSchema>) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   const validated = DiscountSchema.parse(payload);
   
@@ -62,7 +64,7 @@ export async function updateDiscount(id: string, payload: z.infer<typeof Discoun
 }
 
 export async function deleteDiscount(id: string) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   const { error } = await supabase
     .from('discounts')
@@ -76,7 +78,7 @@ export async function deleteDiscount(id: string) {
 }
 
 export async function toggleDiscountStatus(id: string, is_active: boolean) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   const { data, error } = await supabase
     .from('discounts')
@@ -92,7 +94,7 @@ export async function toggleDiscountStatus(id: string, is_active: boolean) {
 }
 
 export async function applyManualDiscount(orderId: string, amount: number, reason: string) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
   
   // 1. Get order to find location_id and current total
   const { data: order, error: orderError } = await supabase

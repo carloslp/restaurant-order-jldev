@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createCategory, updateCategory, deleteCategory, listCategories } from '@/lib/server/menu';
 import type { Category } from '@/lib/types';
-import { toast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 
 interface CategoryFormData {
   name: string;
@@ -23,6 +23,7 @@ const initialFormData: CategoryFormData = {
 };
 
 export function AdminMenuCategories() {
+  const { toast } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

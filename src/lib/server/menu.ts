@@ -448,7 +448,7 @@ export async function deleteMenuImage(publicUrl: string): Promise<{ ok: boolean 
 
   // Extract path from public URL
   const url = new URL(publicUrl);
-  const pathMatch = url.pathname.match(/\\/menu-images\\/(.+)$/);
+  const pathMatch = url.pathname.match(new RegExp('/menu-images/(.+)$'));
   if (!pathMatch) throw new Error('URL de imagen inválida');
 
   const filePath = pathMatch[1];
