@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.2.3] — 2026-09-19
+
+### Changed — Imagen opcional y sin huérfanos en Storage
+- **Imagen explícitamente opcional**: etiquetas "Imagen (opcional)" + hint
+  "Puedes guardar sin imagen" en los forms de productos y categorías. Verificado:
+  `""`/`"   "`/`null`/`undefined` parsean; URLs inválidas siguen rechazadas; insert
+  real en `categories` con `image_url: null` en la DB + limpieza de la fila de prueba.
+- **Sin huérfanos**: `deleteCategory`/`deleteProduct` leen `image_url` antes de borrar
+  y eliminan el archivo del bucket con `deleteMenuImage` (best-effort, no bloquea el delete).
+
+### Validación
+- `npx tsc --noEmit` → 0 errores; `npm run build` → OK.
+
+## [0.2.2] — 2026-09-19
+
+### Added — Imágenes del menú en Supabase Storage
+- **Bucket `menu-images` creado en el proyecto activo** (public, 5MB, jpeg/png/webp)
+  vía Storage API: `scripts/setup-menu-images-bucket.mjs` (idempotente). Referencia SQL
+  en `docs/storage-menu-images.sql` (no hace falta ejecutarla). Estructura de archivos:
+  `{location_id}/categories|products/{uuid}.{ext}`.
+- **Categorías con upload**: reemplazado el input manual "URL de Imagen" por el mismo
+  flujo de productos — file picker → `uploadMenuImage(file, 'categories')` → la URL
+  pública queda en `image_url`. Preview + botón "Quitar" + botón "Reemplazar".
+- **Ciclo de vida** (productos y categorías): al reemplazar o quitar imagen se elimina
+  la anterior del bucket con `deleteMenuImage` (best-effort, no bloquea el guardado).
+- **Menú público**: `MenuClient` ahora muestra la foto del producto (aspect 4:3,
+  lazy-load) y el thumbnail de la categoría junto a su título.
+
+### Fixed
+- **500 en createCategory/updateCategory/updateProduct**: el form enviaba
+  `image_url: ""` (campo vacío) y `z.string().url()` lo rechazaba. Nuevo
+  `imageUrlSchema` con `z.preprocess`: `""` → `null`; valores no vacíos siguen
+  validando como URL. Aplica a `CategorySchema` y `ProductSchema`.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores; `npm run build` → OK.
+- Prueba end-to-end contra el bucket real (`scripts/test-menu-images-bucket.mjs`):
+  upload OK → lectura pública HTTP 200 → remove OK.
+- No se requieren policies de storage: los uploads salen del server con service role
+  (salta RLS) y la lectura es pública por bucket público.
+
 ## [0.2.1] — 2026-09-19
 
 ### Added — Contraseña en el registro y recuperación

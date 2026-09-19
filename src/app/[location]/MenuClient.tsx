@@ -310,9 +310,19 @@ export default function MenuClient({
             return (
               <div key={cat.id} id={cat.id} className="mb-10 last:mb-0">
                 <div className="flex items-baseline justify-between mb-4 border-b border-zinc-200/80 pb-2">
-                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">
-                    {cat.name}
-                  </h2>
+                  <div className="flex items-center gap-3">
+                    {cat.image_url && (
+                      <img
+                        src={cat.image_url}
+                        alt=""
+                        loading="lazy"
+                        className="w-9 h-9 rounded-lg object-cover border border-zinc-200 bg-zinc-100 shrink-0"
+                      />
+                    )}
+                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">
+                      {cat.name}
+                    </h2>
+                  </div>
                   <span className="text-xs font-medium text-zinc-400">
                     {items.length} {items.length === 1 ? 'platillo' : 'platillos'}
                   </span>
@@ -331,6 +341,16 @@ export default function MenuClient({
                         }`}
                       >
                         <div>
+                          {/* Foto del producto (Supabase Storage) */}
+                          {p.image_url && (
+                            <img
+                              src={p.image_url}
+                              alt={p.name}
+                              loading="lazy"
+                              className="w-full aspect-[4/3] object-cover rounded-xl border border-zinc-200/80 bg-zinc-100 mb-3"
+                            />
+                          )}
+
                           {/* Título y Estado */}
                           <div className="flex items-start justify-between gap-3 mb-1.5">
                             <h3 className="font-bold text-zinc-900 text-base group-hover:text-orange-600 transition-colors">

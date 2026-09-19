@@ -8,10 +8,18 @@ import { revalidatePath } from 'next/cache';
 import type { Category, Product } from '@/lib/types';
 
 // --- Schemas ---
+
+// image_url: el form manda "" cuando no hay imagen → se normaliza a null;
+// un valor no vacío debe ser URL válida (pública del bucket o externa).
+const imageUrlSchema = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().url('URL de imagen inválida').nullable().optional()
+);
+
 const CategorySchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().nullish(),
-  image_url: z.string().url().nullish(),
+  image_url: imageUrlSchema,
   is_active: z.boolean().default(true),
   sort_order: z.number().int().min(0).default(0),
 });
@@ -20,7 +28,7 @@ const ProductSchema = z.object({
   category_id: z.string().uuid('Categoría inválida'),
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().nullish(),
-  image_url: z.string().url().nullish(),
+  image_url: imageUrlSchema,
   base_price: z.number().positive('El precio debe ser mayor a 0'),
   is_available: z.boolean().default(true),
   allergens: z.array(z.string()).optional(),
@@ -97,6 +105,14 @@ export async function deleteCategory(id: string) {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
+  // Leer la imagen antes de borrar para limpiarla del bucket (best-effort)
+  const { data: category } = await supabase
+    .from('categories')
+    .select('image_url')
+    .eq('id', id)
+    .eq('location_id', staff.location_id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('categories')
     .delete()
@@ -104,6 +120,14 @@ export async function deleteCategory(id: string) {
     .eq('location_id', staff.location_id);
 
   if (error) throw error;
+
+  if (category?.image_url) {
+    try {
+      await deleteMenuImage(category.image_url as string);
+    } catch {
+      // best-effort: no bloquear si la imagen ya no existe
+    }
+  }
 
   revalidatePath('/staff/admin');
   return { ok: true };
@@ -179,6 +203,14 @@ export async function deleteProduct(id: string) {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
+  // Leer la imagen antes de borrar para limpiarla del bucket (best-effort)
+  const { data: product } = await supabase
+    .from('products')
+    .select('image_url')
+    .eq('id', id)
+    .eq('location_id', staff.location_id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('products')
     .delete()
@@ -186,6 +218,14 @@ export async function deleteProduct(id: string) {
     .eq('location_id', staff.location_id);
 
   if (error) throw error;
+
+  if (product?.image_url) {
+    try {
+      await deleteMenuImage(product.image_url as string);
+    } catch {
+      // best-effort: no bloquear si la imagen ya no existe
+    }
+  }
 
   revalidatePath('/staff/admin');
   return { ok: true };

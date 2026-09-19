@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createCategory, updateCategory, deleteCategory, listCategories } from '@/lib/server/menu';
+import { createCategory, updateCategory, deleteCategory, listCategories, uploadMenuImage, deleteMenuImage } from '@/lib/server/menu';
 import type { Category } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -30,6 +30,44 @@ export function AdminMenuCategories() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState<CategoryFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const url = await uploadMenuImage(file, 'categories');
+      // Limpieza best-effort de la imagen anterior (si era del bucket)
+      const previous = formData.image_url;
+      setFormData({ ...formData, image_url: url });
+      if (previous) {
+        try {
+          await deleteMenuImage(previous);
+        } catch {
+          // Si la vieja era externa o ya no existe, ignorar
+        }
+      }
+      toast({ title: 'Éxito', description: 'Imagen subida a Supabase Storage' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    const previous = formData.image_url;
+    setFormData({ ...formData, image_url: '' });
+    if (previous) {
+      try {
+        await deleteMenuImage(previous);
+      } catch {
+        // best-effort
+      }
+    }
+  };
 
   const loadCategories = useCallback(async () => {
     setLoading(true);
@@ -147,14 +185,36 @@ export function AdminMenuCategories() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL de Imagen</label>
-                <input
-                  type="url"
-                  value={formData.image_url}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                  placeholder="https://..."
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Imagen (opcional)</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                    className="hidden"
+                    id="category-image"
+                  />
+                  <label
+                    htmlFor="category-image"
+                    className="cursor-pointer rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    {uploading ? 'Subiendo...' : formData.image_url ? 'Reemplazar' : 'Subir Imagen'}
+                  </label>
+                  {formData.image_url && (
+                    <>
+                      <img src={formData.image_url} alt="Preview" className="h-10 w-10 rounded object-cover" />
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Quitar
+                      </button>
+                    </>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">JPEG, PNG o WebP · máx. 5MB · Puedes guardar sin imagen</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
