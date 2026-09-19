@@ -1,69 +1,34 @@
 # Idea Principal
 
-Plataforma multi-tenant de pedidos y reservas para restaurantes, construida con Next.js 16 y Supabase. Cada restaurante opera como un local independiente con aislamiento de datos mediante RLS y subdominios. El sistema cubre el flujo completo: menú público, carrito, checkout, panel de staff (cocina, caja, admin), seguimiento de pedidos para repartidores y gestión de promociones.
+Plataforma de pedidos y reservas para restaurantes, construida con Next.js 16 y Supabase. **Modelo: 1 restaurante = 1 dominio propio (con su propio deployment y su propia DB de Supabase).** El dominio es irrelevante para la app; cada **sucursal (location)** se identifica por su **ruta** `tudominio.com/{slug}`. Aislamiento de datos entre sucursales mediante RLS (patrón GUC `app.local_id`). **El staff opera sin roles** (decisión del dueño: auth con user/password + magic link, no se toca); la autorización es por local.
 
-## Características clave ya implementadas
+Flujo completo cubierto: menú público → carrito con modificadores → checkout (pago contra entrega, IVA incluido, cupones) → cocina (KDS realtime) → caja (transiciones, descuento manual, reparto) → tracking de cliente y repartidor (links de un solo uso) → admin (menú, promos, reservas, reportes, staff, locales).
 
-- **Multi-local**: Cada local tiene su propio subdominio y configuración (IVA, zona horaria, costo de envío).
-- **Autenticación de staff**: Magic link exclusivamente para emails existentes en la tabla `staff`. No hay registro abierto.
-- **Panel de staff por rol**:
-  - Cocinero: Vista de cocina (KDS) con columnas Por preparar, En preparación y Listos, actualizada en tiempo real.
-  - Cajero: Gestión de pedidos activos (confirmar, enviar a cocina, marcar como entregado/cancelado) y historial.
-  - Admin: Dashboard con datos del local y módulos pendientes (menú, promos, reservas, reportes).
-- **Realtime**: Suscripción a cambios en `orders` mediante Supabase Realtime, con filtros por `location_id` y policy de seguridad que usa JWT del staff.
-- **Vista segura**: `staff_orders_view` expone solo datos necesarios para staff (sin teléfono completo ni tokens de entrega).
-- **Enriquecimiento de metadata**: Tras magic link, el callback escribe `location_id`, `role` y `full_name` en `user_metadata` del usuario de Supabase Auth.
-- **Middleware de protección**: Proxy de Next.js 16 que protege rutas `/staff/*` redirigiendo al login cuando no hay sesión.
+## Características clave implementadas (v0.5.0)
 
-## Lo que falta por desarrollar
+- **Multi-sucursal por rutas**: `/` índice de sucursales, `/{slug}` menú, `/{slug}/checkout`, `/track/{token}` (cliente), `/track/repartidor/{token}` (un solo uso, hash bcrypt).
+- **Menú de 4 niveles**: categorías → productos → grupos de modificadores → opciones, con alérgenos/etiquetas dietarias (tablas puente) e imágenes en Supabase Storage (bucket `menu-images`).
+- **IVA incluido** en precios públicos con desglose interno para contabilidad (`subtotal * rate/(1+rate)`); tasa y tarifa de envío configurables por local.
+- **Motor de promociones**: códigos + automáticas, sin apilar (prioridad código > auto > manual), ventanas temporales, días/horas, límites de uso, alcance por producto. Descuento manual en caja.
+- **Reservas** por zona (INTERIOR/TERRAZA/BARRA) con aforo configurable, calendario día/semana/mes y recordatorios automáticos 24h/2h (cron protegido con `CRON_SECRET`).
+- **Reportes y cierre de caja**: KPIs, ingresos por día (gráfica sin dependencias), top productos, export CSV, efectivo/tarjeta esperado por día.
+- **Reparto**: asignación de repartidor desde caja + link de reparto revocable y regenerable (`orders.driver_id`, ver `docs/migration-driver-id.sql`).
+- **Errores amigables**: catálogo central (`lib/errors.ts`) que traduce PG/PGRST a español; los formularios muestran error por campo y conservan los datos (ver `docs/FORMULARIOS.md`).
+- **Operación**: `/api/health`, `lib/logger.ts`, scripts de diagnóstico (`check-seed.mjs`, `seed-test-data.mjs`), 53 tests unit (Vitest).
 
-### 1. Frontend público (cliente)
-- [ ] **Landing page**: Menú por categorías, filtros, búsqueda y carrito persistente.
-- [ ] **Checkout**: Recogida de datos (nombre, teléfono, tipo de orden, dirección si es domicilio), simulación de pago (por ahora sin pasarela) y creación de orden.
-- [ ] **Página de tracking**: `/track/[token]` para que el cliente vea el estado de su pedido en tiempo real.
-- [ ] ** Leyenda de IVA incluido**: Mensaje visible en menú y checkout según regulación mexicana (Ley Federal de Protección al Consumidor Art. 76 Bis).
+## Qué falta (roadmap corto)
 
-### 2. Panel de admin (pendiente)
-- [ ] **Gestión de menú**: CRUD de categorías y productos (precio, descripción, imagen, alérgenos, etiquetas dietarias, disponibilidad).
-- [ ] **Motor de promociones**: 
-  - Códigos de descuento (únicos o múltiples usos).
-  - Promociones automáticas (ej. 2x1, descuento por categoría).
-  - Descuento manual en checkout (por staff, sin apilar con otras promociones).
-  - UI para crear, editar y ver promociones activas.
-- [ ] **Gestión de reservas**: 
-  - Calendario de disponibilidad por local y franja horaria.
-  - Creación de reserva con depósito manual (el cliente paga vía WhatsApp y el staff marca como pagada).
-  - Recordatorios y lista de reservas del día.
-- [ ] **Reportes y estadísticas**: Ventas diarias, productos más vendidos, promedio de ticket, etc.
-- [ ] **Gestión de staff**: Alta/baja/edición de staff (solo admin puede crear staff, vinculado a un local y rol).
+- **Playwright E2E** (tarea 35 del TODO): checkout completo, auth staff, KDS realtime.
+- **Mapa del repartidor**: Leaflet+OSM (gratis) vs Mapbox — decisión pendiente.
+- **Notificación al repartidor** al asignar (webhook externo).
+- **Export PDF** de reportes.
+- `locals.prep_minutes` (tiempo estimado de prep por defecto) — requiere migración.
+- Endurecer policies públicas por `location_id` si una DB llegara a alojar varios restaurantes (ver `docs/rls-audit.md`).
 
-### 3. Repartidor y tracking
-- [ ] **View de track para repartidor**: Enlace único (ej. `/track/repartidor/[token]`) que muestra solo pedidos asignados al repartidor, con estado y opción de marcar como entregado (luego pasa a solo lectura).
-- [ ] **Asignación de repartidor**: Campo en la orden para asignar a un repartidor (por ahora manual en admin o vía script).
+## Decisiones cerradas
 
-### 4. Configuración por local
-- [ ] **Zona horaria**: Configurable por local (predeterminado Ciudad de México).
-- [ ] **IVA ajustable**: Por local con valor por defecto 16% (editable en admin).
-- [ ] **Costo de envío**: Por zona de delivery (configurable en admin).
-- [ ] **Aforo y tiempos**: Configuración de capacidad máxima y tiempo estimado de preparación por local.
-
-### 5.Datos y seguridad
-- [ ] **Alérgenos y etiquetas dietarias**: Lista fija (ej. contiene gluten, vegetariano, vegano, sin lactosa) asociada a productos.
-- [ ] **Políticas de RLS**: Revisar y asegurar que todas las tablas tengan políticas adecuadas para multi-tenant.
-- [ ] **Manejo de errores y logging**: Centralizado en el servidor y en el cliente.
-- [ ] **Pruebas**: Tests unitarios y de integración para flujos críticos (checkout, auth, actualización de estado).
-
-### 6. Infraestructura y despliegue
-- [ ] **Variables de entorno**: Documentar todas las variables necesarias (Supabase URL, claves, etc.).
-- [ ] **Script de despliegue**: Guía para desplegar en Vercel o similar y configurar Supabase.
-- [ ] **Monitoreo**: Alertas de caída y métricas de uso.
-
-## Próximos pasos sugeridos
-
-1. Construir el frontend público (landing, menú, checkout) usando los mismos componentes y estilos que el staff panel.
-2. Implementar el motor de promociones en el panel de admin.
-3. Añadir la vista de track para repartidor y el flujo de asignación.
-4. Configurar la zona horaria y el IVA por local en el admin.
-5. Escribir pruebas y ajustar el rendimiento antes del lanzamiento.
-
-Nota: Todas las features deben seguir el principio de "preferir funcionalidad nativa de WooCommerce" aunque aquí estamos construyendo desde cero, por lo que usaremos las capacidades de Supabase y Next.js para replicar lo necesario sin sobreingeniería.
+- ❌ Roles de staff (`admin/cajero/cocinero/repartidor`) — **fuera de alcance por decisión del dueño**; el auth actual no se toca.
+- ❌ Pagos en línea — todo contra entrega (efectivo exacto/con cambio, tarjeta contra entrega).
+- ❌ "Comer en el local" (mesas vinculadas a pedidos) — fuera de v1; las reservas son por zona.
+- ❌ Menú por tramos horarios — catálogo único todo el día.
+- ✅ Sin pasarelas, sin signup abierto, moneda MXN / es-MX.

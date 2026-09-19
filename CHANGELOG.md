@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.5.0] — 2026-09-19
+
+### Added — Calidad y docs (Fase 4)
+- **`tests/domain.test.ts` (28 tests)**: engine de promociones completo
+  (tarea 13: no-stacking código>auto, case-insensitive, % subtotal y por
+  producto, fijo limitado al subtotal, min purchase, ventanas temporales,
+  día de semana, límites total/cliente/día, inactiva, mejor automática) +
+  tokens (alfabeto sin ambiguos, roundtrip bcrypt) + pricing/IVA interno +
+  validation + slugs. **Total suite: 53 tests ✓ (`npm run test`)**.
+- **`lib/logger.ts`** (tarea 33): logging estructurado (niveles, scopes
+  anidados, JSON en prod / legible en dev) conectado en los cron routes.
+- **`docs/rls-audit.md`** (tarea 31): verificado (GUC por policy, vista
+  `security_invoker`, tokens hash-only) + hallazgos abiertos con mitigación
+  (policies públicas sin `location_id` — impacto bajo en modelo
+  1-DB-por-restaurante) + checklist operativo.
+- **`scripts/seed-test-data.mjs [slug] [n]`** (tarea 36): órdenes de test
+  (estados/tipos/pagos variados, últimos 7 días) para ejercitar Reportes y
+  Cierre de Caja; idempotente.
+- **`idea.md` reescrita**: refleja el modelo actual por rutas (sin
+  subdominios), sin roles (decisión del dueño) y el estado real v0.5.0;
+  `TODO.md` actualizado con cierre de fases y pendiente real.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores · `npm run test` → 53/53 ✓ ·
+  `npm run build` → OK.
+
 ## [0.4.0] — 2026-09-19
 
 ### ⚠️ Requiere acción manual (una vez, por proyecto/DB)

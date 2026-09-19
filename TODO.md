@@ -35,7 +35,7 @@
 | 10 | Lógica de aplicación en checkout (`applyDiscounts`). Server action que evalúa reglas, prioridad (código > automática > manual), no-apilar, registra en `discount_usages`. | ✅ Completado | 8h |
 | 11 | Integración en `CheckoutForm` — campo código promocional. Input + botón "Aplicar", muestra descuento en resumen, valida contra server action. | ✅ Completado | 4h |
 | 12 | Descuento manual (staff en caja). Botón en `CashierView` solo para ADMIN/CAJERO, modal con motivo, no apila con otras promos. | ✅ Completado | 6h |
-| 13 | Tests unitarios del engine. Casos: 2x1, % categoría, código único, límites uso/día/cliente, ventanas temporales, no-stacking. | ⬜ Pendiente | 6h |
+| 13 | Tests unitarios del engine. Casos: 2x1, % categoría, código único, límites uso/día/cliente, ventanas temporales, no-stacking. ✅ `tests/domain.test.ts`: 14 tests del engine (no-stacking código>auto, case-insensitive, % subtotal y por producto, fijo limitado al subtotal, min purchase, ventana temporal, día de semana, límites total/cliente/día, inactiva, mejor auto). | ✅ Completado | 6h |
 
 ### 2.3 Gestión de Reservas (36h)
 
@@ -87,12 +87,12 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 31 | Auditoría RLS completa. Revisar cada policy contra amenazas: escalada de privilegio, enumeración cross-tenant, fuga de PII. Probar con `supabase.test` helpers. | ⬜ Pendiente | 8h |
+| 31 | Auditoría RLS completa. ✅ `docs/rls-audit.md`: lo verificado (GUC por policy, vista security_invoker, tokens hash-only), hallazgos abiertos (policies públicas sin location_id — impacto bajo en modelo 1-DB-por-restaurante; auto-creación de staff — decisión del dueño) y checklist operativo con `scripts/check-seed.mjs`. | ✅ Completado | 8h |
 | 32 | Error handling centralizado. ✅ `lib/errors.ts` (`AppError`, `parsePostgrestError` PG/PGRST→ES, `toUserMessage` anti-crudo, `parseOrThrow`, `queryOrThrow`) + `useServerForm` + `FormAlert/FieldError` migrados a TODAS las Server Actions y formularios. Convención: `docs/FORMULARIOS.md`. | ✅ Completado | 6h |
-| 33 | Logging estructurado. `lib/logger.ts` con niveles, contexto (requestId, userId, locationId). Middleware que inyecta requestId. | ⬜ Pendiente | 4h |
-|| 34 | Tests unitarios (Vitest). ✅ Infra: `vitest.config.ts` (alias `@`, excluye db-verify) + `npm run test` / `test:db` + `tests/errors.test.ts` (25 tests del catálogo de errores y `zNumberES`). Faltan: pricing, tokens, promos, transiciones, IVA. | 🔄 En progreso | 20h |
+| 33 | Logging estructurado. ✅ `lib/logger.ts` (niveles, scopes anidados, JSON en prod / legible en dev) conectado en los cron routes; el resto de módulos usa `console.error` con acción prefijada. requestId de middleware diferido. | ✅ Completado | 4h |
+|| 34 | Tests unitarios (Vitest). ✅ 53 tests: `errors.test.ts` (25) + `domain.test.ts` (28: engine promos, tokens, pricing/IVA, validation, slugs). Scripts `npm run test` / `test:db`. | ✅ Completado | 20h |
 | 35 | Tests de integración (Playwright). Flujos: checkout completo, auth staff, KDS realtime, cashier transitions, admin CRUD menú, aplicación promo. | ⬜ Pendiente | 16h |
-| 36 | Seed de datos realista para tests. `scripts/seed-test-data.ts` usando service role. | ⬜ Pendiente | 4h |
+| 36 | Seed de datos realista para tests. ✅ `scripts/seed-test-data.mjs [slug] [n]`: órdenes de test (estados/tipos/pagos variados, últimos 7 días) para ejercitar Reportes/Cierre de Caja; idempotente (limpia las `test-seed` previas). | ✅ Completado | 4h |
 
 ---
 
@@ -121,41 +121,34 @@
 
 ---
 
-## 7. Resumen por Fases (Actualizado)
+## 7. Resumen por Fases (Actualizado — post 0.5.0)
 
 | Fase | Estado | Prioridad | Entregable |
 |------|--------|-----------|------------|
-| **Fase 1: Admin Core** (Menú + Promos) | 🔄 Casi listo | **Crítica** | CRUD Menú y Motor de Promos |
-| **Fase 2: Reservas** | ✅ Completado | **Alta** | Gestión de mesas y calendario |
-| **Fase 3: Reportes + Staff + Settings** | ⬜ Pendiente | **Alta** | KPIs, Gestión de Equipo y Config Local |
-| **Fase 4: Repartidor** | ⬜ Pendiente | **Media** | Flujo delivery completo |
-| **Fase 5: Calidad + Infra** | ⬜ Pendiente | **Alta** | Tests, Auditoría RLS y Docs |
+| **Fase 1: Admin Core** (Menú + Promos) | ✅ Completado | **Crítica** | CRUD Menú, Motor de Promos + tests del engine |
+| **Fase 2: Reservas** | ✅ Completado | **Alta** | Gestión de mesas y calendario + recordatorios cron (con CRON_SECRET) |
+| **Fase 3: Reportes + Staff + Settings** | ✅ Completado | **Alta** | KPIs + gráfica ingresos + Cierre de Caja + Staff + Aforo por zona |
+| **Fase 4: Repartidor** | ✅ Casi completo | **Media** | Asignación + link un solo uso (⚠️ ejecutar `docs/migration-driver-id.sql`); mapa/notificación diferidos |
+| **Fase 5: Calidad + Infra** | 🔄 Casi listo | **Alta** | 53 unit tests, auditoría RLS, logger, errors centralizados, DEPLOY.md, /api/health; falta Playwright (35) |
 
 ---
 
 ## 8. Nuevo Plan de Ejecución (Pendientes)
 
-### Sprint A: Cierre de Admin Core & Reportes
-- **Tarea 13**: Tests unitarios del engine de promociones.
-- **Tarea 19-22**: Módulo de Reportes y Cierre de Caja (`AdminReports.tsx` + Gráficas).
-- **Tarea 25-26**: Configuración del Local (`AdminSettings.tsx`).
+### Cerrado (v0.2.6 → v0.5.0)
+- Error 500/PGRST saneado en todos los formularios (`lib/errors.ts`, `useServerForm`, `docs/FORMULARIOS.md`).
+- Menú resiliente (`getMenu` allSettled) + fix disponibilidad RLS + script diagnóstico `check-seed.mjs`.
+- Aforo por zona, gráfica de ingresos, Cierre de Caja, asignación de repartidor + link un solo uso.
+- 53 unit tests, auditoría RLS documentada, `lib/logger.ts`, `/api/health`, `CRON_SECRET`, `DEPLOY.md`.
 
-### Sprint B: Staff & Delivery Flow
-- **Tarea 23-24**: Gestión de Staff e Invitaciones (`AdminStaff.tsx`).
-- **Tarea 27-30**: Rol Repartidor, Asignación y Vista de Tracking.
+### Pendiente real
+- **Tarea 35**: Playwright E2E (checkout, auth staff, KDS realtime, CRUD menú).
+- **Tarea 21 (PDF)**: export PDF de reportes (decidir lib: jsPDF vs server-side).
+- **Tarea 28 (mapa)**: Leaflet+OSM vs Mapbox en track de repartidor.
+- **Tarea 29**: notificación al repartidor al asignar (webhook).
+- `locals.prep_minutes` (tiempo prep por defecto) — requiere columna nueva.
+- Endurecer policies públicas por `location_id` si una DB aloja varios restaurantes (ver `docs/rls-audit.md`).
 
-### Sprint C: Hardening & Deployment
-- **Tarea 31-33**: Auditoría RLS, Error Handling y Logging.
-- **Tarea 34-36**: Implementación de Vitest y Playwright (Tests E2E).
-- **Tarea 37-38**: Documentación final y Guía de Despliegue.
-
----
-
-## 9. Próximos Pasos Inmediatos
-
-1. Implementar `AdminReports.tsx` para dar visibilidad de ventas.
-2. Crear `AdminSettings.tsx` para parametrizar el local (IVA, Zonas).
-3. Desarrollar `AdminStaff.tsx` para gestionar el equipo.
 
 ---
 
