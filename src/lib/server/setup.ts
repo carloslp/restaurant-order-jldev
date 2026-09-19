@@ -6,15 +6,27 @@ import { locationSlugSchema } from '@/lib/slugs';
 
 // --- Schemas ---
 
-const SetupSchema = z.object({
-  localName: z.string().min(1, 'El nombre del local es requerido'),
-  slug: locationSlugSchema,
-  adminEmail: z.string().email('Email inválido'),
-  adminName: z.string().min(1, 'El nombre es requerido'),
-  timezone: z.string().default('America/Mexico_City'),
-  iva_rate: z.number().min(0).max(1).default(0.16),
-  delivery_fee: z.number().min(0).default(0),
-});
+const passwordSchema = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .max(72, 'Máximo 72 caracteres');
+
+const SetupSchema = z
+  .object({
+    localName: z.string().min(1, 'El nombre del local es requerido'),
+    slug: locationSlugSchema,
+    adminEmail: z.string().email('Email inválido'),
+    adminName: z.string().min(1, 'El nombre es requerido'),
+    adminPassword: passwordSchema,
+    adminPasswordConfirm: z.string(),
+    timezone: z.string().default('America/Mexico_City'),
+    iva_rate: z.number().min(0).max(1).default(0.16),
+    delivery_fee: z.number().min(0).default(0),
+  })
+  .refine((data) => data.adminPassword === data.adminPasswordConfirm, {
+    message: 'Las contraseñas no coinciden',
+    path: ['adminPasswordConfirm'],
+  });
 
 // --- Server Action ---
 
@@ -67,23 +79,30 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
     throw staffError;
   }
 
-  // 4. Enviar magic link via Supabase Auth Admin API
-  const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(validated.adminEmail, {
-    data: {
+  // 4. Crear el usuario de Auth con la contraseña elegida (activo de inmediato,
+  //    sin depender de magic link). Antes: inviteUserByEmail (requería email).
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: validated.adminEmail,
+    password: validated.adminPassword,
+    email_confirm: true,
+    user_metadata: {
       location_id: local.id,
       full_name: validated.adminName,
     },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/staff/auth/callback`,
   });
 
   if (authError) {
-    // Rollback: eliminar staff y local si falla auth
+    // Rollback: eliminar staff y local si falla la creación del usuario
     await supabase.from('staff').delete().eq('id', staff.id);
     await supabase.from('locals').delete().eq('id', local.id);
-    throw new Error(`Error enviando invitación: ${authError.message}`);
+
+    if (authError.code === 'email_exists' || /already (registered|exists)/i.test(authError.message)) {
+      throw new Error('Ese email ya está registrado. Usa otro o recupera la contraseña desde /recuperar.');
+    }
+    throw new Error(`Error creando el usuario: ${authError.message}`);
   }
 
-  // 5. Vincular auth_user_id al registro staff
+  // 5. Vincular auth_user_id al registro staff (directo, el usuario ya existe)
   const { error: linkError } = await supabase
     .from('staff')
     .update({ auth_user_id: authData.user?.id })
@@ -91,7 +110,8 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
 
   if (linkError) {
     console.error('Error vinculando auth_user_id:', linkError);
-    // No fallar aquí, el trigger lo vinculará automáticamente al hacer login
+    // No fallar aquí: el login por email+password ya funciona; el fallback
+    // de getCurrentStaff (búsqueda por email) cubre mientras se re-vincula.
   }
 
   return { local, staff, authUser: authData.user };

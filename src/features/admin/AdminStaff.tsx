@@ -27,6 +27,7 @@ export function AdminStaff() {
   const [formData, setFormData] = useState<StaffFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [invitePassword, setInvitePassword] = useState('');
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -70,16 +71,28 @@ export function AdminStaff() {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (invitePassword && invitePassword.length < 8) {
+      toast({ title: 'Error', description: 'La contraseña debe tener al menos 8 caracteres', variant: 'destructive' });
+      return;
+    }
     setInviting(true);
     try {
-      await inviteStaff({
+      const result = await inviteStaff({
         email: formData.email,
         full_name: formData.full_name,
+        password: invitePassword || undefined,
       });
-      toast({ title: 'Éxito', description: 'Invitación enviada. El staff recibirá un magic link por email.' });
+      toast({
+        title: 'Éxito',
+        description:
+          result.mode === 'password'
+            ? 'Staff creado con contraseña. Ya puede iniciar sesión con email + contraseña.'
+            : 'Invitación enviada. El staff recibirá un magic link por email.',
+      });
       setShowForm(false);
       setEditingStaff(null);
       setFormData(initialFormData);
+      setInvitePassword('');
       loadStaff();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -199,6 +212,25 @@ export function AdminStaff() {
                 </div>
               )}
 
+              {!editingStaff && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contraseña (opcional)
+                  </label>
+                  <input
+                    type="password"
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                    autoComplete="new-password"
+                    minLength={8}
+                    placeholder="Mínimo 8 caracteres"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Si la defines, el staff entra directo con email + contraseña. Si la dejas vacía, se le envía un magic link por email.
+                  </p>
+                </div>
+              )}
               
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={handleCancel} className="btn-secondary">
@@ -293,13 +325,13 @@ export function AdminStaff() {
       </div>
 
       <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
-        <h3 className="mb-2 text-sm font-semibold text-gray-700">Cómo funciona la invitación</h3>
+        <h3 className="mb-2 text-sm font-semibold text-gray-700">Cómo funciona el acceso del staff</h3>
         <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-          <li>Al crear un nuevo staff, se envía un <strong>magic link</strong> al email indicado.</li>
-          <li>El staff hace clic en el link y accede directamente sin contraseña.</li>
+          <li>Si defines una <strong>contraseña</strong> al crear el staff, puede iniciar sesión de inmediato con email + contraseña.</li>
+          <li>Si no la defines, se envía un <strong>magic link</strong> al email indicado (acceso sin contraseña).</li>
           <li>Al primer acceso, se vincula automáticamente su cuenta Supabase Auth al registro de staff.</li>
-          <li>El staff puede cerrar sesión y volver a entrar con el mismo magic link.</li>
-          <li>Un staff desactivado no puede acceder al panel aunque tenga el link.</li>
+          <li>Si olvida su contraseña, puede recuperarla desde <code>/recuperar</code>.</li>
+          <li>Un staff desactivado no puede acceder al panel aunque tenga credenciales válidas.</li>
         </ul>
       </div>
     </div>

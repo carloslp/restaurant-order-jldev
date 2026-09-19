@@ -3,6 +3,22 @@
 import { initializeSystem } from '@/lib/server/setup';
 import { validateLocationSlug } from '@/lib/slugs';
 import { useState } from 'react';
+import Link from 'next/link';
+import { 
+  Store, 
+  Globe, 
+  Mail, 
+  User, 
+  Lock,
+  Clock, 
+  Percent, 
+  Bike, 
+  CheckCircle2, 
+  ArrowRight, 
+  Loader2, 
+  SlidersHorizontal,
+  ChevronDown
+} from 'lucide-react';
 
 export function SetupForm() {
   const [formData, setFormData] = useState({
@@ -10,6 +26,8 @@ export function SetupForm() {
     slug: '',
     adminEmail: '',
     adminName: '',
+    adminPassword: '',
+    adminPasswordConfirm: '',
     timezone: 'America/Mexico_City',
     iva_rate: 0.16,
     delivery_fee: 0,
@@ -20,10 +38,10 @@ export function SetupForm() {
   const [success, setSuccess] = useState(false);
 
   const handleChange = (field: keyof typeof formData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     // Limpiar error al modificar el campo
     if (errors[field]) {
-      setErrors(prev => {
+      setErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[field];
         return newErrors;
@@ -55,6 +73,20 @@ export function SetupForm() {
       newErrors.adminName = 'El nombre es requerido';
     }
 
+    if (!formData.adminPassword) {
+      newErrors.adminPassword = 'La contraseña es requerida';
+    } else if (formData.adminPassword.length < 8) {
+      newErrors.adminPassword = 'Mínimo 8 caracteres';
+    } else if (formData.adminPassword.length > 72) {
+      newErrors.adminPassword = 'Máximo 72 caracteres';
+    }
+
+    if (!formData.adminPasswordConfirm) {
+      newErrors.adminPasswordConfirm = 'Confirma la contraseña';
+    } else if (formData.adminPassword !== formData.adminPasswordConfirm) {
+      newErrors.adminPasswordConfirm = 'Las contraseñas no coinciden';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -68,10 +100,8 @@ export function SetupForm() {
     try {
       await initializeSystem(formData as any);
       setSuccess(true);
-      // Pequeña pausa para mostrar el mensaje de éxito
       setTimeout(() => {
-        // Redirigir a la página de login para que el usuario use su magic link
-        window.location.href = '/staff/login?setup=complete';
+        window.location.href = '/login?setup=complete';
       }, 1500);
     } catch (err: any) {
       setErrors({ general: err.message || 'Error desconocido' });
@@ -82,137 +112,233 @@ export function SetupForm() {
 
   if (success) {
     return (
-      <div className="text-center">
-        <div className="flex items-center justify-center h-12">
-          <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-          </svg>
+      <div className="bg-white rounded-3xl border border-zinc-200/80 p-8 shadow-xl shadow-zinc-950/5 text-center animate-in fade-in zoom-in-95 duration-300">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 ring-8 ring-emerald-50">
+          <CheckCircle2 className="w-9 h-9" />
         </div>
-        <h3 className="mt-4 text-lg font-medium text-gray-900">
-          Configuración completada
+        <h3 className="text-2xl font-extrabold text-zinc-900 tracking-tight">
+          ¡Configuración Completada!
         </h3>
-        <p className="mt-2 text-sm text-gray-600">
-          Se ha enviado un magic link a <strong>{formData.adminEmail}</strong>.
-          Revisa tu email para completar la configuración y acceder al panel.
+        <p className="mt-2 text-sm text-zinc-600 leading-relaxed max-w-md mx-auto">
+          Tu local <strong>{formData.localName}</strong> está listo y la cuenta de <strong>{formData.adminEmail}</strong> ya está activa con la contraseña que definiste.
         </p>
-        <p className="mt-4 text-xs text-gray-500">
-          Si no ves el email, revisa tu carpeta de spam.
-        </p>
+        <div className="mt-4 p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl text-xs text-zinc-500">
+          Redirigiendo automáticamente a la pantalla de acceso...
+        </div>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-zinc-200/80 p-6 sm:p-8 shadow-xl shadow-zinc-950/5 space-y-5">
+      {/* Nombre del Local */}
       <div>
-        <label htmlFor="localName" className="block text-sm font-medium text-gray-700 mb-1">
-          Nombre del Local *
+        <label htmlFor="localName" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+          Nombre de tu Local o Restaurante *
         </label>
-        <input
-          id="localName"
-          type="text"
-          value={formData.localName}
-          onChange={(e) => handleChange('localName', e.target.value)}
-          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-          required
-        />
+        <div className="relative">
+          <Store className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            id="localName"
+            type="text"
+            value={formData.localName}
+            onChange={(e) => handleChange('localName', e.target.value)}
+            className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+              errors.localName
+                ? 'border-red-500 ring-2 ring-red-500/20'
+                : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+            }`}
+            placeholder="Ej. Taquería El Barrio"
+            required
+          />
+        </div>
         {errors.localName && (
-          <p className="mt-1 text-sm text-red-600">{errors.localName}</p>
+          <p className="mt-1 text-xs text-red-600 font-medium">{errors.localName}</p>
         )}
       </div>
 
+      {/* Ruta / Slug */}
       <div>
-        <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-1">
-          Ruta de la sucursal (URL) *
+        <label htmlFor="slug" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+          Ruta web de la sucursal (URL) *
         </label>
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500">tudominio.com/</span>
+        <div className="relative flex items-center">
+          <Globe className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <span className="absolute left-10 text-xs font-medium text-zinc-400 select-none hidden xs:inline">
+            tudominio.com/
+          </span>
           <input
             id="slug"
             type="text"
             value={formData.slug}
-            onChange={(e) => handleChange('slug', e.target.value.toLowerCase())}
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            onChange={(e) => handleChange('slug', e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+            className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 xs:pl-34 pr-3.5 py-2.5 transition-all outline-none font-mono ${
+              errors.slug
+                ? 'border-red-500 ring-2 ring-red-500/20'
+                : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+            }`}
             required
             placeholder="centro"
           />
         </div>
-        <p className="mt-1 text-xs text-gray-500">
-          Cada sucursal se identifica por su ruta: <code>tudominio.com/centro</code>, <code>tudominio.com/polanco</code>, etc.
+        <p className="mt-1.5 text-xs text-zinc-400">
+          Tus clientes accederán directamente por esta ruta: <code className="bg-zinc-100 text-zinc-700 px-1 py-0.5 rounded text-[11px]">/{formData.slug || 'sucursal'}</code>
         </p>
         {errors.slug && (
-          <p className="mt-1 text-sm text-red-600">{errors.slug}</p>
+          <p className="mt-1 text-xs text-red-600 font-medium">{errors.slug}</p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Email y Nombre Administrador en 2 columnas */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-1">
         <div>
-          <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-700 mb-1">
-            Email Administrador *
+          <label htmlFor="adminName" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+            Nombre del Administrador *
           </label>
-          <input
-            id="adminEmail"
-            type="email"
-            value={formData.adminEmail}
-            onChange={(e) => handleChange('adminEmail', e.target.value)}
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            required
-          />
-          {errors.adminEmail && (
-            <p className="mt-1 text-sm text-red-600">{errors.adminEmail}</p>
+          <div className="relative">
+            <User className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="adminName"
+              type="text"
+              value={formData.adminName}
+              onChange={(e) => handleChange('adminName', e.target.value)}
+              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                errors.adminName
+                  ? 'border-red-500 ring-2 ring-red-500/20'
+                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+              }`}
+              placeholder="Ej. Carlos Martínez"
+              required
+            />
+          </div>
+          {errors.adminName && (
+            <p className="mt-1 text-xs text-red-600 font-medium">{errors.adminName}</p>
           )}
         </div>
 
         <div>
-          <label htmlFor="adminName" className="block text-sm font-medium text-gray-700 mb-1">
-            Nombre Administrador *
+          <label htmlFor="adminEmail" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+            Email del Administrador *
           </label>
-          <input
-            id="adminName"
-            type="text"
-            value={formData.adminName}
-            onChange={(e) => handleChange('adminName', e.target.value)}
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            required
-          />
-          {errors.adminName && (
-            <p className="mt-1 text-sm text-red-600">{errors.adminName}</p>
+          <div className="relative">
+            <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="adminEmail"
+              type="email"
+              value={formData.adminEmail}
+              onChange={(e) => handleChange('adminEmail', e.target.value)}
+              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                errors.adminEmail
+                  ? 'border-red-500 ring-2 ring-red-500/20'
+                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+              }`}
+              placeholder="admin@tulocal.com"
+              required
+            />
+          </div>
+          {errors.adminEmail && (
+            <p className="mt-1 text-xs text-red-600 font-medium">{errors.adminEmail}</p>
           )}
         </div>
       </div>
 
-      <div className="border-t pt-4">
-        <div className="text-sm font-medium text-gray-500 mb-2">
-          Configuración avanzada (opcional)
+      {/* Contraseña del Administrador */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="adminPassword" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+            Contraseña *
+          </label>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="adminPassword"
+              type="password"
+              value={formData.adminPassword}
+              onChange={(e) => handleChange('adminPassword', e.target.value)}
+              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                errors.adminPassword
+                  ? 'border-red-500 ring-2 ring-red-500/20'
+                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+              }`}
+              placeholder="Mínimo 8 caracteres"
+              autoComplete="new-password"
+              minLength={8}
+              maxLength={72}
+              required
+            />
+          </div>
+          {errors.adminPassword && (
+            <p className="mt-1 text-xs text-red-600 font-medium">{errors.adminPassword}</p>
+          )}
         </div>
+
+        <div>
+          <label htmlFor="adminPasswordConfirm" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+            Confirmar Contraseña *
+          </label>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="adminPasswordConfirm"
+              type="password"
+              value={formData.adminPasswordConfirm}
+              onChange={(e) => handleChange('adminPasswordConfirm', e.target.value)}
+              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                errors.adminPasswordConfirm
+                  ? 'border-red-500 ring-2 ring-red-500/20'
+                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+              }`}
+              placeholder="Repite la contraseña"
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          {errors.adminPasswordConfirm && (
+            <p className="mt-1 text-xs text-red-600 font-medium">{errors.adminPasswordConfirm}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Configuración Avanzada / Operativa */}
+      <div className="border-t border-zinc-100 pt-4">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <span>Configuración Operativa (Opcional)</span>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Zona horaria */}
           <div>
-            <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="timezone" className="block text-xs font-medium text-zinc-600 mb-1">
               Zona horaria
             </label>
-            <select
-              id="timezone"
-              value={formData.timezone}
-              onChange={(e) => handleChange('timezone', e.target.value)}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            >
-              <option value="America/Mexico_City">México Centro</option>
-              <option value="America/Cancun">Quintana Roo</option>
-              <option value="America/Merida">Yucatán</option>
-              <option value="America/Monterrey">Nuevo León</option>
-              <option value="America/Tijuana">Baja California</option>
-              <option value="America/Bogotá">Colombia</option>
-              <option value="America/Lima">Perú</option>
-              <option value="America/Santiago">Chile</option>
-              <option value="America/Buenos_Aires">Argentina</option>
-            </select>
+            <div className="relative">
+              <select
+                id="timezone"
+                value={formData.timezone}
+                onChange={(e) => handleChange('timezone', e.target.value)}
+                className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-xs px-3 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none appearance-none"
+              >
+                <option value="America/Mexico_City">México Centro</option>
+                <option value="America/Cancun">Quintana Roo</option>
+                <option value="America/Merida">Yucatán</option>
+                <option value="America/Monterrey">Nuevo León</option>
+                <option value="America/Tijuana">Baja California</option>
+                <option value="America/Bogota">Colombia</option>
+                <option value="America/Lima">Perú</option>
+                <option value="America/Santiago">Chile</option>
+                <option value="America/Buenos_Aires">Argentina</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
 
+          {/* Tasa IVA */}
           <div>
-            <label htmlFor="iva_rate" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="iva_rate" className="block text-xs font-medium text-zinc-600 mb-1">
               Tasa IVA
             </label>
-            <div className="flex items-center">
+            <div className="relative flex items-center">
               <input
                 id="iva_rate"
                 type="number"
@@ -221,51 +347,63 @@ export function SetupForm() {
                 max="1"
                 value={formData.iva_rate}
                 onChange={(e) => handleChange('iva_rate', parseFloat(e.target.value) || 0)}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-xs px-3 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none"
               />
-              <span className="ml-2 text-xs text-gray-500">
-                {formData.iva_rate * 100}%
+              <span className="absolute right-3 text-xs font-bold text-zinc-400 pointer-events-none">
+                {(formData.iva_rate * 100).toFixed(0)}%
               </span>
             </div>
           </div>
 
+          {/* Tarifa Delivery */}
           <div>
-            <label htmlFor="delivery_fee" className="block text-sm font-medium text-gray-700 mb-1">
-              Tarifa Delivery ($)
+            <label htmlFor="delivery_fee" className="block text-xs font-medium text-zinc-600 mb-1">
+              Costo de Envío ($)
             </label>
             <input
               id="delivery_fee"
               type="number"
-              step="0.01"
+              step="1"
               min="0"
               value={formData.delivery_fee}
               onChange={(e) => handleChange('delivery_fee', parseFloat(e.target.value) || 0)}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-xs px-3 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none"
+              placeholder="0"
             />
           </div>
         </div>
       </div>
 
       {errors.general && (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+        <div className="rounded-xl bg-red-50 border border-red-200 p-3.5 text-xs text-red-700 font-medium">
           {errors.general}
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => window.location.href = '/staff/login'}
-          className="text-sm font-medium text-gray-600 hover:text-gray-900"
+      {/* Acciones del formulario */}
+      <div className="pt-3 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+        <Link
+          href="/login"
+          className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 text-center sm:text-left transition-colors"
         >
           ¿Ya tienes un local? Iniciar sesión
-        </button>
+        </Link>
         <button
           type="submit"
           disabled={loading}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-bold text-white shadow-md shadow-orange-600/25 hover:bg-orange-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all select-none"
         >
-          {loading ? 'Configurando...' : 'Crear Local y Administrador'}
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Configurando sistema...</span>
+            </>
+          ) : (
+            <>
+              <span>Crear Local y Administrador</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
+          )}
         </button>
       </div>
     </form>

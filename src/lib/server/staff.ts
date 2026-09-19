@@ -16,6 +16,11 @@ const StaffSchema = z.object({
 const InviteStaffSchema = z.object({
   email: z.string().email('Email inválido'),
   full_name: z.string().min(1, 'El nombre es requerido'),
+  // Opcional: si se provee (mín. 8), el usuario se crea activo con esa contraseña;
+  // si viene vacío/undefined, se envía magic link por email.
+  password: z
+    .union([z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'Máximo 72 caracteres'), z.literal('')])
+    .optional(),
 });
 
 
@@ -189,7 +194,7 @@ export async function toggleStaffActive(id: string, isActive: boolean) {
   return data;
 }
 
-// --- Invitation Flow (Magic Link) ---
+// --- Invitation Flow (Magic Link o Contraseña) ---
 
 export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   const staff = await getStaffContext();
@@ -223,13 +228,45 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
 
   if (staffError) throw staffError;
 
-  // 2. Enviar magic link via Supabase Auth Admin API
-  // Usamos service role para crear/invitar usuario
+  const metadata = {
+    location_id: staff.location_id,
+    full_name: validated.full_name,
+  };
+
+  // 2a. Con contraseña: crear usuario activo de inmediato (sin email)
+  if (validated.password) {
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: validated.email,
+      password: validated.password,
+      email_confirm: true,
+      user_metadata: metadata,
+    });
+
+    if (authError) {
+      await supabase.from('staff').delete().eq('id', newStaff.id);
+      if (authError.code === 'email_exists' || /already (registered|exists)/i.test(authError.message)) {
+        throw new Error('Ese email ya está registrado en Supabase Auth.');
+      }
+      throw new Error(`Error creando el usuario: ${authError.message}`);
+    }
+
+    // Vincular auth_user_id al registro staff
+    const { error: linkError } = await supabase
+      .from('staff')
+      .update({ auth_user_id: authData.user?.id })
+      .eq('id', newStaff.id);
+
+    if (linkError) {
+      console.error('Error vinculando auth_user_id:', linkError);
+    }
+
+    revalidatePath('/staff/admin');
+    return { staff: newStaff, authUser: authData.user, mode: 'password' as const };
+  }
+
+  // 2b. Sin contraseña: enviar magic link via Supabase Auth Admin API
   const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(validated.email, {
-    data: {
-      location_id: staff.location_id,
-      full_name: validated.full_name,
-    },
+    data: metadata,
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/staff/auth/callback`,
   });
 
@@ -251,5 +288,5 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   }
 
   revalidatePath('/staff/admin');
-  return { staff: newStaff, authUser: authData.user };
+  return { staff: newStaff, authUser: authData.user, mode: 'magic_link' as const };
 }

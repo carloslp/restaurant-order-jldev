@@ -85,6 +85,12 @@ export function SignInForm() {
           </button>
         </form>
 
+        <div className="mt-4 text-center">
+          <a href="/recuperar" className="text-xs font-semibold text-orange-600 hover:text-orange-700 transition-colors">
+            ¿Olvidaste tu contraseña?
+          </a>
+        </div>
+
         <div className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-center gap-1.5 text-[11px] text-zinc-400">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>Acceso restringido por roles (Caja, Cocina, Admin)</span>

@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.1] — 2026-09-19
+
+### Added — Contraseña en el registro y recuperación
+- **Setup con contraseña**: `initializeSystem` crea el admin con
+  `auth.admin.createUser({ email, password, email_confirm: true })` — la cuenta queda
+  activa al instante, sin depender del magic link. `SetupForm` agrega
+  "Contraseña" y "Confirmar contraseña" (mín. 8, validación cliente + Zod con refine
+  de igualdad en server). Pantalla de éxito actualizada y redirect a `/login`.
+- **Invitación de staff con contraseña opcional**: `InviteStaffSchema` gana `password`
+  (opcional, mín. 8). Si se define → usuario creado activo con esa contraseña;
+  si se deja vacía → se mantiene el magic link por email. `AdminStaff` muestra el
+  campo con la explicación de ambos modos y el toast informa el modo usado.
+- **Recuperar contraseña**:
+  - Nueva ruta `/recuperar`: formulario de email → `resetPasswordForEmail` con
+    redirect a `/staff/auth/callback?next=/recuperar/nueva` (reutiliza el callback
+    PKCE existente, sin tocarlo).
+  - Nueva ruta `/recuperar/nueva`: define la nueva contraseña vía `auth.updateUser`
+    usando la sesión que crea el enlace de recovery; si no hay sesión → redirect a
+    `/login?error=recovery_expired`. Acciones en `src/lib/server/auth-recovery.ts`
+    (respuesta genérica para no filtrar existencia de cuentas).
+  - Login: enlace "¿Olvidaste tu contraseña?" → `/recuperar`.
+- **Fixed**: el setup redirigía a `/staff/login` (ruta inexistente) → ahora `/login`.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores; `npm run build` → OK
+  (rutas nuevas: `/recuperar` estática, `/recuperar/nueva` dinámica).
+- Smoke test: `/recuperar` 200 con formulario, `/login` 200 con enlace de recuperación,
+  `/recuperar/nueva` sin sesión redirige a login.
+
 ## [0.2.0] — 2026-09-19
 
 ### ⚠️ Requirre acción manual (una vez, por proyecto/DB)
