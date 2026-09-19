@@ -2,11 +2,11 @@
 import { redirect } from 'next/navigation';
 import { createSessionServerClient } from '@/lib/supabase/session';
 import { createServerClient } from '@/lib/supabase/server';
-import { signOut } from '@/features/staff/auth';
 
 export const dynamic = 'force-dynamic';
 
 // Función helper: obtener sesión + staff + local del usuario autenticado.
+// Auto-crea el registro de staff si no existe (cualquier usuario autenticado puede acceder).
 export async function getCurrentStaff() {
   const supabase = await createSessionServerClient();
   const {
@@ -17,32 +17,68 @@ export async function getCurrentStaff() {
     redirect('/login');
   }
 
-  // Buscar en tabla staff por auth_user_id (vinculación directa con auth.users)
-  // Use service role client to bypass RLS on staff table
   const adminSupabase = createServerClient();
-  const { data: staff, error } = await adminSupabase
+
+  // 1. Buscar por auth_user_id
+  let { data: staff } = await adminSupabase
     .from('staff')
-    .select('*')
+    .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at, created_by, updated_by')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
-  // Fallback: si no hay auth_user_id vinculado, buscar por email (compatibilidad)
-  let foundStaff = staff;
-  if (!foundStaff && !error) {
+  // 2. Fallback: buscar por email
+  if (!staff) {
     const { data: staffByEmail } = await adminSupabase
       .from('staff')
-      .select('*')
+      .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at, created_by, updated_by')
       .eq('email', user.email)
       .maybeSingle();
-    foundStaff = staffByEmail;
+    staff = staffByEmail;
   }
 
-  if (!foundStaff) {
-    console.error('No staff profile for user:', error ?? 'not found');
-    redirect('/login?error=no_staff');
+  // 3. Si existe por email pero sin auth_user_id, vincularlo
+  if (staff && !staff.auth_user_id) {
+    await adminSupabase
+      .from('staff')
+      .update({ auth_user_id: user.id })
+      .eq('id', staff.id);
+    staff.auth_user_id = user.id;
   }
 
-  // Cargar local (para nombre y timezone)
+  // 4. Si no existe, auto-crear en el primer local disponible
+  if (!staff) {
+    const { data: firstLocal } = await adminSupabase
+      .from('locals')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (!firstLocal) {
+      console.error('No hay locales configurados. Ejecuta el setup primero.');
+      redirect('/setup');
+    }
+
+    const { data: newStaff, error: createError } = await adminSupabase
+      .from('staff')
+      .insert({
+        email: user.email!,
+        full_name: user.user_metadata?.full_name ?? user.email!.split('@')[0],
+        is_active: true,
+        location_id: firstLocal.id,
+        auth_user_id: user.id,
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creando staff automáticamente:', createError);
+      redirect('/login?error=staff_create_failed');
+    }
+
+    staff = newStaff;
+  }
+
+  // 5. Cargar local
   const { data: local } = await supabase
     .from('locals')
     .select('id, name, subdomain, timezone, iva_rate, delivery_fee')
@@ -51,7 +87,7 @@ export async function getCurrentStaff() {
 
   return {
     user,
-    staff: foundStaff,
+    staff,
     local: local ?? null,
   };
 }

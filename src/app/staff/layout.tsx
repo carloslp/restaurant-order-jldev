@@ -2,6 +2,7 @@
 import { redirect } from 'next/navigation';
 import { createSessionServerClient } from '@/lib/supabase/session';
 import { StaffNav } from '@/features/staff/StaffNav';
+import { checkSystemInitialized } from '@/lib/server/setup';
 import type { ReactNode } from 'react';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,12 @@ export default async function StaffLayout({ children }: { children: ReactNode })
 
   if (!user) {
     redirect('/login');
+  }
+
+  // Si no hay locales en BD, redirigir al setup (solo para staff)
+  const isInitialized = await checkSystemInitialized();
+  if (!isInitialized) {
+    redirect('/setup');
   }
 
   return (

@@ -43,6 +43,7 @@ CREATE TYPE deposit_status AS ENUM (
 
 CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
 
+
 -- ---------------------------------------------------------------------------
 -- Locals (multi-tenant root)
 -- ---------------------------------------------------------------------------
@@ -334,11 +335,24 @@ ALTER TABLE product_diet_labels ENABLE ROW LEVEL SECURITY;
 -- (y 'app.token_plain' para el flujo de repartidor) ANTES de las consultas.
 -- current_setting(x, true) = no lanza error si la GUC no está definida (devuelve NULL).
 
--- Locals: staff ve/edita solo su propio local
-CREATE POLICY locals_staff_access ON locals
+-- Función helper para obtener el role del JWT actual
+CREATE OR REPLACE FUNCTION get_current_user_role() RETURNS TEXT AS $$
+BEGIN
+  RETURN current_setting('request.jwt.claims', true)::jsonb ->> 'user_metadata' ->> 'role';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Locals: SUPER_ADMIN ve todos, staff normal ve solo su local
+CREATE POLICY locals_super_admin_access ON locals
 FOR ALL
-USING (id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (id = current_setting('app.local_id', true)::uuid);
+USING (
+  get_current_user_role() = 'SUPER_ADMIN'
+  OR id = current_setting('app.local_id', true)::uuid
+)
+WITH CHECK (
+  get_current_user_role() = 'SUPER_ADMIN'
+  OR id = current_setting('app.local_id', true)::uuid
+);
 
 -- Categorías: staff (su local) + público puede leer activas (menú)
 CREATE POLICY categories_staff_access ON categories

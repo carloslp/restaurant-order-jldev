@@ -18,6 +18,7 @@ const InviteStaffSchema = z.object({
   full_name: z.string().min(1, 'El nombre es requerido'),
 });
 
+
 // --- Helpers ---
 
 async function getStaffContext() {
@@ -53,7 +54,7 @@ export async function listStaff(): Promise<Array<{
 
   const { data, error } = await supabase
     .from('staff')
-    .select('*')
+    .select('id, location_id, email, full_name, is_active, created_at, updated_at, auth_user_id')
     .order('created_at', { ascending: false });
 
   if (error) throw error;

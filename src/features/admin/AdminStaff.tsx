@@ -8,23 +8,9 @@ import {
   inviteStaff,
 } from '@/lib/server/staff';
 import { useToast } from '@/components/ui/use-toast';
+import type { Staff, StaffFormData } from '@/lib/types';
 
-interface StaffMember {
-  id: string;
-  location_id: string;
-  email: string;
-  full_name: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  auth_user_id: string | null;
-}
-
-interface StaffFormData {
-  email: string;
-  full_name: string;
-  is_active: boolean;
-}
+interface StaffMember extends Staff {}
 
 const initialFormData: StaffFormData = {
   email: '',
@@ -213,6 +199,7 @@ export function AdminStaff() {
                 </div>
               )}
 
+              
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={handleCancel} className="btn-secondary">
                   Cancelar

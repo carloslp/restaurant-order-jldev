@@ -8,24 +8,16 @@ import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
 import { AdminReservations } from '@/features/admin/AdminReservations';
 import { AdminStaff } from '@/features/admin/AdminStaff';
 import { AdminReports } from '@/features/admin/AdminReports';
+import { AdminLocals } from '@/features/admin/AdminLocals';
 import { CashierView } from '@/features/staff/CashierView';
+import type { Staff, Local } from '@/lib/types';
 
 interface AdminViewProps {
-  staff: {
-    email: string;
-    full_name: string;
-    location_id: string;
-  };
-  local: {
-    name: string;
-    subdomain: string;
-    timezone: string;
-    iva_rate: number;
-    delivery_fee: number;
-  } | null;
+  staff: Staff;
+  local: Local | null;
 }
 
-type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff' | 'reports';
+type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff' | 'reports' | 'locals';
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -71,35 +63,45 @@ export function AdminView({ staff, local }: AdminViewProps) {
                     Reservas
                   </button>
                   <button
-                                        onClick={() => setActiveTab('discounts')}
-                                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                                          activeTab === 'discounts'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                        }`}
-                                      >
-                                        Descuentos
-                                      </button>
-                                      <button
-                                        onClick={() => setActiveTab('reports')}
-                                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                                          activeTab === 'reports'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                        }`}
-                                      >
-                                        Reportes
-                                      </button>
-                                      <button
-                                      onClick={() => setActiveTab('staff')}
-                                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                                        activeTab === 'staff'
-                                          ? 'bg-white text-gray-900 shadow-sm'
-                                          : 'text-gray-500 hover:text-gray-700'
-                                      }`}
-                                    >
-                                      Staff
-                                    </button>
+                    onClick={() => setActiveTab('discounts')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'discounts'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Descuentos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('reports')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'reports'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Reportes
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('staff')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'staff'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Staff
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('locals')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === 'locals'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Locales
+                  </button>
                 </nav>
       </div>
 
@@ -180,6 +182,8 @@ export function AdminView({ staff, local }: AdminViewProps) {
                         {activeTab === 'staff' && <AdminStaff />}
 
                         {activeTab === 'reports' && <AdminReports />}
+
+            {activeTab === 'locals' && <AdminLocals />}
     </div>
   );
 }
