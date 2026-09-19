@@ -4,12 +4,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listModifierGroups, createModifierGroup, updateModifierGroup, deleteModifierGroup, createModifierOption, updateModifierOption, deleteModifierOption } from '@/lib/server/menu';
 import { useToast } from '@/components/ui/use-toast';
+import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 
 interface ModifierGroupFormData {
   name: string;
   is_required: boolean;
   min_selections: number;
   max_selections: number;
+}
+
+interface OptionDraft {
+  groupId: string;
+  optionId: string | null;
+  name: string;
+  price: string;
 }
 
 export function AdminModifierGroups({ productId }: { productId: string }) {
@@ -25,6 +34,10 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
     min_selections: 0,
     max_selections: 0,
   });
+  // Modal de opción (reemplaza prompt() que no valida y no muestra errores).
+  const [optionDraft, setOptionDraft] = useState<OptionDraft | null>(null);
+  const [optionError, setOptionError] = useState<string | null>(null);
+  const { formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   const loadGroups = useCallback(async () => {
     setLoading(true);
@@ -44,71 +57,81 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
 
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    try {
+    const ok = await submit(async () => {
       if (editingGroupId) {
         await updateModifierGroup(editingGroupId, { ...groupFormData, product_id: productId });
       } else {
         await createModifierGroup({ ...groupFormData, product_id: productId });
       }
-      toast({ title: 'Éxito', description: 'Grupo actualizado' });
-      setShowGroupForm(false);
-      setEditingGroupId(null);
-      loadGroups();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
+      toast({ title: 'Éxito', description: 'Grupo guardado' });
+    });
+    if (!ok) return;
+    setShowGroupForm(false);
+    setEditingGroupId(null);
+    loadGroups();
   };
 
-  const handleAddOption = async (groupId: string) => {
-    const name = prompt('Nombre de la opción:');
-    const price = prompt('Impacto de precio (ej: 1.50):');
-    if (!name) return;
-
-    try {
-      await createModifierOption({
-        modifier_group_id: groupId,
-        name,
-        price_impact: Number(price || 0),
-        is_active: true,
-      });
-      toast({ title: 'Éxito', description: 'Opción añadida' });
-      loadGroups();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    }
+  const openAddOption = (groupId: string) => {
+    setOptionError(null);
+    setOptionDraft({ groupId, optionId: null, name: '', price: '' });
   };
 
-  const handleUpdateOption = async (optionId: string, current: any) => {
-    const name = prompt('Nuevo nombre:', current.name);
-    const price = prompt('Nuevo precio:', current.price_impact);
-    if (name === null) return;
+  const openEditOption = (groupId: string, option: any) => {
+    setOptionError(null);
+    setOptionDraft({ groupId, optionId: option.id, name: option.name, price: String(option.price_impact ?? 0) });
+  };
 
-    try {
-      await updateModifierOption(optionId, {
-        modifier_group_id: current.modifier_group_id,
-        name,
-        price_impact: Number(price || 0),
-        is_active: current.is_active,
-      });
-      toast({ title: 'Éxito', description: 'Opción actualizada' });
-      loadGroups();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+  const handleSaveOption = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!optionDraft) return;
+    const price = parseFloat(optionDraft.price);
+    if (!optionDraft.name.trim()) {
+      setOptionError('El nombre de la opción es requerido.');
+      return;
     }
+    if (isNaN(price)) {
+      setOptionError('El impacto de precio debe ser un número (ej: 1.50).');
+      return;
+    }
+    const ok = await submit(async () => {
+      if (optionDraft.optionId) {
+        await updateModifierOption(optionDraft.optionId, {
+          modifier_group_id: optionDraft.groupId,
+          name: optionDraft.name.trim(),
+          price_impact: price,
+          is_active: true,
+        });
+      } else {
+        await createModifierOption({
+          modifier_group_id: optionDraft.groupId,
+          name: optionDraft.name.trim(),
+          price_impact: price,
+          is_active: true,
+        });
+      }
+      toast({ title: 'Éxito', description: 'Opción guardada' });
+    });
+    if (!ok) return;
+    setOptionDraft(null);
+    loadGroups();
   };
 
   const handleDeleteOption = async (optionId: string) => {
     if (!confirm('¿Eliminar esta opción?')) return;
-    try {
+    const ok = await submit(async () => {
       await deleteModifierOption(optionId);
       toast({ title: 'Eliminado', description: 'Opción eliminada' });
-      loadGroups();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    }
+    });
+    if (ok) loadGroups();
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm('¿Eliminar grupo y todas sus opciones?')) return;
+    const ok = await submit(async () => {
+      await deleteModifierGroup(groupId);
+      toast({ title: 'Eliminado', description: 'Grupo eliminado' });
+    });
+    if (ok) loadGroups();
   };
 
   if (loading) return <div className="text-center py-4">Cargando modificadores...</div>;
@@ -214,13 +237,7 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
                   Editar
                 </button>
                 <button 
-                  onClick={async () => {
-                    if(confirm('¿Eliminar grupo y todas sus opciones?')) {
-                      await deleteModifierGroup(group.id);
-                      toast({ title: 'Eliminado', description: 'Grupo eliminado' });
-                      loadGroups();
-                    }
-                  }}
+                  onClick={() => handleDeleteGroup(group.id)}
                   className="text-xs text-red-600 hover:underline"
                 >
                   Eliminar
@@ -243,9 +260,9 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
                       <td className="py-2">${opt.price_impact.toFixed(2)}</td>
                       <td className="py-2 text-right">
                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleUpdateOption(opt.id, opt)} className="text-primary hover:underline">Editar</button>
-                          <button onClick={() => handleDeleteOption(opt.id)} className="text-red-600 hover:underline">Borrar</button>
-                        </div>
+                        <button onClick={() => openEditOption(group.id, opt)} className="text-primary hover:underline">Editar</button>
+                        <button onClick={() => handleDeleteOption(opt.id)} className="text-red-600 hover:underline">Borrar</button>
+                      </div>
                       </td>
                     </tr>
                   ))}
@@ -257,7 +274,7 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
                 </tbody>
               </table>
               <button 
-                onClick={() => handleAddOption(group.id)} 
+                onClick={() => openAddOption(group.id)} 
                 className="mt-3 w-full py-2 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-500 hover:border-primary hover:text-primary transition-colors"
               >
                 + Añadir Opción
@@ -271,6 +288,62 @@ export function AdminModifierGroups({ productId }: { productId: string }) {
           </div>
         )}
       </div>
+
+      {/* Modal de opción (antes: prompt() sin validación ni errores) */}
+      {optionDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between border-b p-4">
+              <h3 className="text-lg font-semibold">
+                {optionDraft.optionId ? 'Editar Opción' : 'Nueva Opción'}
+              </h3>
+              <button
+                onClick={() => setOptionDraft(null)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveOption} className="p-4 space-y-4">
+              <FormAlert message={optionError ?? formError} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  value={optionDraft.name}
+                  onChange={(e) => { setOptionDraft({ ...optionDraft, name: e.target.value }); setOptionError(null); }}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                  required
+                  autoFocus
+                  {...fieldAria('opt-name-error', !!fieldErrors.name)}
+                />
+                <FieldError id="opt-name-error" message={fieldErrors.name} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Impacto de precio ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={optionDraft.price}
+                  onChange={(e) => { setOptionDraft({ ...optionDraft, price: e.target.value }); setOptionError(null); }}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                  placeholder="0.00"
+                />
+                <p className="mt-1 text-xs text-gray-500">Use negativo para descuentos (ej: -1.50).</p>
+              </div>
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <button type="button" onClick={() => setOptionDraft(null)} className="btn-secondary">
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary">
+                  Guardar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

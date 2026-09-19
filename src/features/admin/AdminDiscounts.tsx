@@ -12,6 +12,8 @@ import {
 } from '@/lib/server/discounts';
 import { z } from 'zod';
 import { DiscountSchema } from '@/lib/validation';
+import { FormAlert } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 
 interface DiscountFormState {
   description: string;
@@ -35,10 +37,10 @@ interface DiscountFormState {
 export function AdminDiscounts() {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<DiscountFormState>(initialFormState());
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { saving: isSubmitting, formError, clearErrors, submit } = useServerForm();
+  const error = formError;
 
   // Fetch discounts on mount and when needed
   useEffect(() => {
@@ -47,13 +49,13 @@ export function AdminDiscounts() {
 
   async function fetchDiscounts() {
     setLoading(true);
-    setError(null);
+    clearErrors();
     try {
       const data = await listDiscounts();
       setDiscounts(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
-      console.error(err);
+      console.error('fetchDiscounts:', err);
+      await submit(async () => { throw err; });
     } finally {
       setLoading(false);
     }
@@ -85,44 +87,39 @@ export function AdminDiscounts() {
     });
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
 
-    try {
-      // Convert empty strings to null for optional fields
-      const payload = {
-        ...formData,
-        min_purchase: formData.min_purchase === '' ? 0 : parseFloat(formData.min_purchase) || 0,
-        code: formData.code === '' ? null : formData.code,
-        starts_at: formData.starts_at ?? null,
-        ends_at: formData.ends_at ?? null,
-        time_of_day_start: formData.time_of_day_start ?? null,
-        time_of_day_end: formData.time_of_day_end ?? null,
-        usage_limit_total: formData.usage_limit_total === '' || formData.usage_limit_total === null ? null : (parseFloat(formData.usage_limit_total) || null),
-        usage_limit_per_customer: formData.usage_limit_per_customer === '' || formData.usage_limit_per_customer === null ? null : (parseFloat(formData.usage_limit_per_customer) || null),
-        usage_limit_per_day: formData.usage_limit_per_day === '' || formData.usage_limit_per_day === null ? null : (parseFloat(formData.usage_limit_per_day) || null),
-        applies_to_product_ids: formData.applies_to_product_ids,
-        applies_to_category_ids: formData.applies_to_category_ids,
-        days_of_week: formData.days_of_week.length > 0 ? formData.days_of_week : null,
-        value: parseFloat(formData.value),
-      };
+    // Convert empty strings to null for optional fields
+    const payload = {
+      ...formData,
+      min_purchase: formData.min_purchase === '' ? 0 : parseFloat(formData.min_purchase) || 0,
+      code: formData.code === '' ? null : formData.code,
+      starts_at: formData.starts_at ?? null,
+      ends_at: formData.ends_at ?? null,
+      time_of_day_start: formData.time_of_day_start ?? null,
+      time_of_day_end: formData.time_of_day_end ?? null,
+      usage_limit_total: formData.usage_limit_total === '' || formData.usage_limit_total === null ? null : (parseFloat(formData.usage_limit_total) || null),
+      usage_limit_per_customer: formData.usage_limit_per_customer === '' || formData.usage_limit_per_customer === null ? null : (parseFloat(formData.usage_limit_per_customer) || null),
+      usage_limit_per_day: formData.usage_limit_per_day === '' || formData.usage_limit_per_day === null ? null : (parseFloat(formData.usage_limit_per_day) || null),
+      applies_to_product_ids: formData.applies_to_product_ids,
+      applies_to_category_ids: formData.applies_to_category_ids,
+      days_of_week: formData.days_of_week.length > 0 ? formData.days_of_week : null,
+      value: parseFloat(formData.value),
+    };
 
+    const ok = await submit(async () => {
       if (editingId) {
-        updateDiscount(editingId, payload);
+        await updateDiscount(editingId, payload);
       } else {
-        createDiscount(payload);
+        await createDiscount(payload);
       }
+    });
+    if (!ok) return;
 
-      setFormData(initialFormState());
-      setEditingId(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error de validación');
-      console.error(err);
-    } finally {
-      setIsSubmitting(false);
-    }
+    setFormData(initialFormState());
+    setEditingId(null);
+    await fetchDiscounts();
   }
 
   function handleEdit(discount: Discount) {
@@ -149,23 +146,17 @@ export function AdminDiscounts() {
 
   async function handleDelete(id: string) {
     if (!confirm('¿Estás seguro de eliminar esta promoción?')) return;
-    try {
+    const ok = await submit(async () => {
       await deleteDiscount(id);
-      await fetchDiscounts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al eliminar');
-      console.error(err);
-    }
+    });
+    if (ok) await fetchDiscounts();
   }
 
   async function handleToggle(id: string, is_active: boolean) {
-    try {
+    const ok = await submit(async () => {
       await toggleDiscountStatus(id, !is_active);
-      await fetchDiscounts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cambiar estado');
-      console.error(err);
-    }
+    });
+    if (ok) await fetchDiscounts();
   }
 
   function initialFormState(): DiscountFormState {
@@ -190,10 +181,10 @@ export function AdminDiscounts() {
   }
 
   if (loading) return <p className="text-center py-8">Cargando promociones...</p>;
-  if (error) return <p className="text-red-500 text-center py-8">{error}</p>;
 
   return (
     <div className="space-y-6">
+      <FormAlert message={error} />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Promociones y Descuentos</h1>
         <button

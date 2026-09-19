@@ -2,6 +2,12 @@ import { z } from 'zod';
 
 // Validaciones de dominio compartidas (server y cliente).
 
+// z.coerce.number() sin mensaje custom produce "Invalid input: expected
+// number, received NaN" en inglés cuando el input viene con basura.
+// Este helper centraliza el mensaje en español para todos los schemas numéricos.
+export const zNumberES = (msg = 'Ingresa un número válido') =>
+  z.coerce.number({ error: msg });
+
 // Días de la semana: 0=Dom .. 6=Sáb (ISO)
 export const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 

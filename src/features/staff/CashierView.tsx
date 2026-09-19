@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { updateOrderStatus } from '@/lib/server/order';
 import { applyManualDiscount } from '@/lib/server/discounts';
 import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
+import { toUserMessage } from '@/lib/errors';
 import type { Order } from '@/lib/types';
 import { formatMXN } from '@/lib/pricing';
 
@@ -46,7 +47,7 @@ export function CashierView({ locationId }: CashierViewProps) {
   async function handleApplyManualDiscount(orderId: string) {
     const amount = parseFloat(manualAmount);
     if (isNaN(amount) || amount <= 0) {
-      setError('Ingrese un monto válido');
+      setError('Ingrese un monto válido mayor a 0');
       return;
     }
 
@@ -56,7 +57,7 @@ export function CashierView({ locationId }: CashierViewProps) {
       setDiscountingOrderId(null);
       setManualAmount('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al aplicar descuento');
+      setError(toUserMessage(err, 'No se pudo aplicar el descuento. Inténtalo de nuevo.'));
     }
   }
 

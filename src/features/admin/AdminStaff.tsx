@@ -8,6 +8,8 @@ import {
   inviteStaff,
 } from '@/lib/server/staff';
 import { useToast } from '@/components/ui/use-toast';
+import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 import type { Staff, StaffFormData } from '@/lib/types';
 
 interface StaffMember extends Staff {}
@@ -22,12 +24,12 @@ export function AdminStaff() {
   const { toast } = useToast();
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [formData, setFormData] = useState<StaffFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
+  const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -48,8 +50,7 @@ export function AdminStaff() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    try {
+    const ok = await submit(async () => {
       if (editingStaff) {
         await updateStaff(editingStaff.id, formData);
         toast({ title: 'Éxito', description: 'Staff actualizado' });
@@ -57,16 +58,12 @@ export function AdminStaff() {
         await createStaff(formData);
         toast({ title: 'Éxito', description: 'Staff creado (sin invitación de acceso)' });
       }
-      setShowForm(false);
-      setEditingStaff(null);
-      setFormData(initialFormData);
-      loadStaff();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
+    });
+    if (!ok) return;
+    setShowForm(false);
+    setEditingStaff(null);
+    setFormData(initialFormData);
+    loadStaff();
   };
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -76,7 +73,7 @@ export function AdminStaff() {
       return;
     }
     setInviting(true);
-    try {
+    const ok = await submit(async () => {
       const result = await inviteStaff({
         email: formData.email,
         full_name: formData.full_name,
@@ -89,17 +86,14 @@ export function AdminStaff() {
             ? 'Staff creado con contraseña. Ya puede iniciar sesión con email + contraseña.'
             : 'Invitación enviada. El staff recibirá un magic link por email.',
       });
-      setShowForm(false);
-      setEditingStaff(null);
-      setFormData(initialFormData);
-      setInvitePassword('');
-      loadStaff();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    } finally {
-      setInviting(false);
-    }
+    });
+    setInviting(false);
+    if (!ok) return;
+    setShowForm(false);
+    setEditingStaff(null);
+    setFormData(initialFormData);
+    setInvitePassword('');
+    loadStaff();
   };
 
   const handleEdit = (staff: StaffMember) => {
@@ -126,25 +120,19 @@ export function AdminStaff() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar este miembro del staff? Esta acción no se puede deshacer.')) return;
-    try {
+    const ok = await submit(async () => {
       await deleteStaff(id);
       toast({ title: 'Eliminado', description: 'Miembro del staff eliminado' });
-      loadStaff();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    }
+    });
+    if (ok) loadStaff();
   };
 
   const handleToggleActive = async (id: string, isActive: boolean) => {
-    try {
+    const ok = await submit(async () => {
       await toggleStaffActive(id, isActive);
       toast({ title: 'Éxito', description: isActive ? 'Staff activado' : 'Staff desactivado' });
-      loadStaff();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    }
+    });
+    if (ok) loadStaff();
   };
 
   if (loading) {
@@ -172,16 +160,19 @@ export function AdminStaff() {
               </button>
             </div>
             <form onSubmit={editingStaff ? handleSubmit : handleInvite} className="p-4 space-y-4">
+              <FormAlert message={formError} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                 <input
                   type="email"
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, email: e.target.value }); clearFieldError('email'); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
                   disabled={!!editingStaff}
+                  {...fieldAria('staff-email-error', !!fieldErrors.email)}
                 />
+                <FieldError id="staff-email-error" message={fieldErrors.email} />
                 {editingStaff && (
                   <p className="mt-1 text-xs text-gray-500">El email no se puede cambiar. Elimina y recrea si es necesario.</p>
                 )}
@@ -192,10 +183,12 @@ export function AdminStaff() {
                 <input
                   type="text"
                   value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, full_name: e.target.value }); clearFieldError('full_name'); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
+                  {...fieldAria('staff-name-error', !!fieldErrors.full_name)}
                 />
+                <FieldError id="staff-name-error" message={fieldErrors.full_name} />
               </div>
 
               {editingStaff && (

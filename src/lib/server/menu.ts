@@ -6,6 +6,7 @@ import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import { zNumberES } from '@/lib/validation';
 import type { Category, Product } from '@/lib/types';
 
 // --- Schemas ---
@@ -24,7 +25,7 @@ const CategorySchema = z.object({
   description: z.string().nullish(),
   image_url: imageUrlSchema,
   is_active: z.boolean().default(true),
-  sort_order: z.coerce.number().int().min(0, 'El orden no puede ser negativo').default(0),
+  sort_order: zNumberES('El orden debe ser un número').int().min(0, 'El orden no puede ser negativo').default(0),
 });
 
 const ProductSchema = z.object({
@@ -32,7 +33,7 @@ const ProductSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().nullish(),
   image_url: imageUrlSchema,
-  base_price: z.coerce.number().positive('El precio debe ser mayor a 0'),
+  base_price: zNumberES('El precio debe ser un número').positive('El precio debe ser mayor a 0'),
   is_available: z.boolean().default(true),
   allergens: z.array(z.string()).optional(),
   diet_labels: z.array(z.string()).optional(),
@@ -405,14 +406,14 @@ const ModifierGroupSchema = z.object({
   product_id: z.string().uuid('Producto inválido'),
   name: z.string().min(1, 'El nombre es requerido'),
   is_required: z.boolean().default(true),
-  min_selections: z.coerce.number().int().min(0, 'El mínimo no puede ser negativo').default(0),
-  max_selections: z.coerce.number().int().min(0, 'El máximo no puede ser negativo').default(0),
+  min_selections: zNumberES('El mínimo debe ser un número').int().min(0, 'El mínimo no puede ser negativo').default(0),
+  max_selections: zNumberES('El máximo debe ser un número').int().min(0, 'El máximo no puede ser negativo').default(0),
 });
 
 const ModifierOptionSchema = z.object({
   modifier_group_id: z.string().uuid('Grupo de modificadores inválido'),
   name: z.string().min(1, 'El nombre es requerido'),
-  price_impact: z.coerce.number().default(0),
+  price_impact: zNumberES('El impacto de precio debe ser un número').default(0),
   is_active: z.boolean().default(true),
 });
 

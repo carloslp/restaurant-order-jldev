@@ -1,12 +1,14 @@
 {
   "name": "restaurant-order-jldev",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:db": "vitest run tests/db-verify.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

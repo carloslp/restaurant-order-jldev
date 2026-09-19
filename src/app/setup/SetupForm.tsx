@@ -2,6 +2,7 @@
 
 import { initializeSystem } from '@/lib/server/setup';
 import { validateLocationSlug } from '@/lib/slugs';
+import { toUserMessage, toUserFieldErrors } from '@/lib/errors';
 import { useState } from 'react';
 import Link from 'next/link';
 import { 
@@ -104,7 +105,11 @@ export function SetupForm() {
         window.location.href = '/login?setup=complete';
       }, 1500);
     } catch (err: any) {
-      setErrors({ general: err.message || 'Error desconocido' });
+      // Mensaje traducido; el crudo queda en el log del servidor.
+      setErrors({
+        ...(toUserFieldErrors(err) ?? {}),
+        general: toUserMessage(err, 'No se pudo completar la configuración. Inténtalo de nuevo.'),
+      });
     } finally {
       setLoading(false);
     }

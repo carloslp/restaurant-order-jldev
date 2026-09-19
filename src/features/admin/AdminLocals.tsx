@@ -9,6 +9,8 @@ import {
   getLocalById,
 } from '@/lib/server/locals';
 import { useToast } from '@/components/ui/use-toast';
+import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 import { validateLocationSlug } from '@/lib/slugs';
 
 interface Local {
@@ -42,11 +44,11 @@ export function AdminLocals() {
   const { toast } = useToast();
   const [localsList, setLocalsList] = useState<Local[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [editingLocal, setEditingLocal] = useState<Local | null>(null);
   const [formData, setFormData] = useState<LocalFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
+  const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   const loadLocals = useCallback(async () => {
     setLoading(true);
@@ -75,8 +77,7 @@ export function AdminLocals() {
     }
     setSlugError(null);
 
-    setSaving(true);
-    try {
+    const ok = await submit(async () => {
       if (editingLocal) {
         await updateLocal(editingLocal.id, formData);
         toast({ title: 'Éxito', description: 'Local actualizado' });
@@ -84,16 +85,13 @@ export function AdminLocals() {
         await createLocal(formData);
         toast({ title: 'Éxito', description: 'Local creado' });
       }
-      setShowForm(false);
-      setEditingLocal(null);
-      setFormData(initialFormData);
-      loadLocals();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
+    });
+    if (!ok) return;
+
+    setShowForm(false);
+    setEditingLocal(null);
+    setFormData(initialFormData);
+    loadLocals();
   };
 
   const handleEdit = (local: Local) => {
@@ -125,14 +123,11 @@ export function AdminLocals() {
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`¿Eliminar el local "${name}"? Esta acción no se puede deshacer y eliminará todos los datos asociados (staff, menú, órdenes, reservas, etc.).`)) return;
-    try {
+    const ok = await submit(async () => {
       await deleteLocal(id);
       toast({ title: 'Eliminado', description: 'Local eliminado correctamente' });
-      loadLocals();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error desconocido';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    }
+    });
+    if (ok) loadLocals();
   };
 
   if (loading) {
@@ -160,15 +155,18 @@ export function AdminLocals() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <FormAlert message={formError} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, name: e.target.value }); clearFieldError('name'); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
+                  {...fieldAria('local-name-error', !!fieldErrors.name)}
                 />
+                <FieldError id="local-name-error" message={fieldErrors.name} />
               </div>
 
               <div>
@@ -180,19 +178,19 @@ export function AdminLocals() {
                     const value = e.target.value.toLowerCase();
                     setFormData({ ...formData, slug: value });
                     setSlugError(validateLocationSlug(value));
+                    clearFieldError('slug');
                   }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
                   disabled={!!editingLocal}
                   placeholder="centro"
+                  {...fieldAria('local-slug-error', !!slugError || !!fieldErrors.slug)}
                 />
                 <p className="mt-1 text-xs text-gray-500">URL pública: <code>tudominio.com/{formData.slug || 'centro'}</code></p>
                 {editingLocal && (
                   <p className="mt-1 text-xs text-gray-500">La ruta no se puede cambiar. Elimina y recrea si es necesario.</p>
                 )}
-                {slugError && (
-                  <p className="mt-1 text-xs text-red-600">{slugError}</p>
-                )}
+                <FieldError id="local-slug-error" message={slugError ?? fieldErrors.slug} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -219,9 +217,11 @@ export function AdminLocals() {
                     min="0"
                     max="1"
                     value={formData.iva_rate}
-                    onChange={(e) => setFormData({ ...formData, iva_rate: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => { setFormData({ ...formData, iva_rate: parseFloat(e.target.value) || 0 }); clearFieldError('iva_rate'); }}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                    {...fieldAria('local-iva-error', !!fieldErrors.iva_rate)}
                   />
+                  <FieldError id="local-iva-error" message={fieldErrors.iva_rate} />
                 </div>
               </div>
 
@@ -232,9 +232,11 @@ export function AdminLocals() {
                   step="0.01"
                   min="0"
                   value={formData.delivery_fee}
-                  onChange={(e) => setFormData({ ...formData, delivery_fee: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => { setFormData({ ...formData, delivery_fee: parseFloat(e.target.value) || 0 }); clearFieldError('delivery_fee'); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                  {...fieldAria('local-fee-error', !!fieldErrors.delivery_fee)}
                 />
+                <FieldError id="local-fee-error" message={fieldErrors.delivery_fee} />
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t">

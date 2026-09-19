@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { createReservation, updateReservation } from '@/lib/server/reservations';
 import type { ReservationStatus, Zone } from '@/lib/types';
+import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 
 interface ReservationFormProps {
   reservation?: any | null;
@@ -11,6 +13,7 @@ interface ReservationFormProps {
 
 export function ReservationForm({ reservation, initialData, onSuccess, onCancel }: ReservationFormProps) {
   const [formData, setFormData] = useState<any>(null);
+  const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   useEffect(() => {
     if (reservation) {
@@ -32,16 +35,14 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
+    const ok = await submit(async () => {
       if (reservation) {
         await updateReservation(reservation.id, formData);
       } else {
         await createReservation(formData);
       }
-      onSuccess();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
+    });
+    if (ok) onSuccess();
   };
 
   if (!formData) return null;
@@ -58,26 +59,31 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <FormAlert message={formError} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
               <input
                 type="text"
                 value={formData.holder_name}
-                onChange={(e) => setFormData({ ...formData, holder_name: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, holder_name: e.target.value }); clearFieldError('holder_name'); }}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                 required
+                {...fieldAria('res-name-error', !!fieldErrors.holder_name)}
               />
+              <FieldError id="res-name-error" message={fieldErrors.holder_name} />
             </div>
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
               <input
                 type="tel"
                 value={formData.holder_phone}
-                onChange={(e) => setFormData({ ...formData, holder_phone: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, holder_phone: e.target.value }); clearFieldError('holder_phone'); }}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                 required
+                {...fieldAria('res-phone-error', !!fieldErrors.holder_phone)}
               />
+              <FieldError id="res-phone-error" message={fieldErrors.holder_phone} />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
@@ -160,8 +166,8 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
             <button type="button" onClick={onCancel} className="btn-secondary">
               Cancelar
             </button>
-            <button type="submit" className="btn-primary">
-              {reservation ? 'Actualizar' : 'Crear'}
+            <button type="submit" disabled={saving} className="btn-primary">
+              {saving ? 'Guardando...' : reservation ? 'Actualizar' : 'Crear'}
             </button>
           </div>
         </form>

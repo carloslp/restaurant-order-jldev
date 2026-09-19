@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { listReservations, deleteReservation, changeReservationStatus, getZoneCapacities } from '@/lib/server/reservations';
 import { ReservationForm } from './ReservationForm';
 import { DailyReservationsList } from './DailyReservationsList';
+import { FormAlert } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
+import { toUserMessage } from '@/lib/errors';
 import type { ReservationStatus, Zone } from '@/lib/types';
 import { format, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, differenceInMinutes, setHours, setMinutes } from 'date-fns';
 
@@ -21,17 +24,7 @@ export function AdminReservations() {
   const [loading, setLoading] = useState(true);
   const [editingReservation, setEditingReservation] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    holder_name: '',
-    holder_phone: '',
-    reservation_date: '',
-    reservation_time: '',
-    party_size: 1,
-    preferred_zone: '',
-    status: 'PENDIENTE',
-    deposit_status: 'SIN_DEPOSITO',
-    notes: '',
-  });
+  const { formError, setFormError, submit } = useServerForm();
 
   // Time slots for the day
   const timeSlots = () => {
@@ -60,11 +53,13 @@ export function AdminReservations() {
       setZoneCapacities(capacities);
       setReservations(res);
     } catch (err: any) {
-      console.error('Error loading reservations:', err);
+      // No silenciar: el usuario debe saber que la lista no está completa.
+      console.error('loadData/reservations:', err);
+      setFormError(toUserMessage(err, 'No se pudieron cargar las reservas. Recarga la página.'));
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, setFormError]);
 
   useEffect(() => {
     loadData();
@@ -113,37 +108,17 @@ export function AdminReservations() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar esta reserva?')) return;
-    try {
+    const ok = await submit(async () => {
       await deleteReservation(id);
-      await loadData();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
+    });
+    if (ok) await loadData();
   };
 
   const handleStatusChange = async (id: string, status: ReservationStatus) => {
-    try {
+    const ok = await submit(async () => {
       await changeReservationStatus(id, status);
-      await loadData();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingReservation) {
-        // Update logic would go here
-        console.log('Update reservation:', formData);
-      } else {
-        // Create logic would go here
-        console.log('Create reservation:', formData);
-      }
-      await handleSubmitSuccess();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
+    });
+    if (ok) await loadData();
   };
 
   // Get reservations for a specific slot and zone
@@ -184,6 +159,7 @@ export function AdminReservations() {
 
   return (
     <div className="space-y-6">
+      <FormAlert message={formError} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Gestión de Reservas</h1>
@@ -279,129 +255,13 @@ export function AdminReservations() {
         </div>
       )}
       
-      {/* Reservation Form Modal */}
+      {/* Reservation Form Modal (componente con validación y errores por campo) */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-auto">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="text-lg font-semibold">
-                {editingReservation ? 'Editar Reserva' : 'Nueva Reserva'}
-              </h3>
-              <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600">
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
-                  <input
-                    type="text"
-                    value={formData.holder_name}
-                    onChange={(e) => setFormData({ ...formData, holder_name: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                  <input
-                    type="tel"
-                    value={formData.holder_phone}
-                    onChange={(e) => setFormData({ ...formData, holder_phone: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                    required
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-                  <input
-                    type="date"
-                    value={formData.reservation_date}
-                    onChange={(e) => setFormData({ ...formData, reservation_date: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
-                  <input
-                    type="time"
-                    value={formData.reservation_time}
-                    onChange={(e) => setFormData({ ...formData, reservation_time: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tamaño del grupo *</label>
-                  <input
-                    type="number"
-                    value={formData.party_size}
-                    onChange={(e) => setFormData({ ...formData, party_size: Number(e.target.value) || 1 })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Zona preferida *</label>
-                  <select
-                    value={formData.preferred_zone}
-                    onChange={(e) => setFormData({ ...formData, preferred_zone: e.target.value as Zone })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                    required
-                  >
-                    <option value="">Selecciona una zona</option>
-                    <option value="INTERIOR">Interior</option>
-                    <option value="TERRAZA">Terraza</option>
-                    <option value="BARRA">Barra</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="PENDIENTE">Pendiente</option>
-                    <option value="CONFIRMADA">Confirmada</option>
-                    <option value="CANCELADA">Cancelada</option>
-                    <option value="NO_SHOW">No Show</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Depósito</label>
-                  <select
-                    value={formData.deposit_status}
-                    onChange={(e) => setFormData({ ...formData, deposit_status: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="SIN_DEPOSITO">Sin depósito</option>
-                    <option value="DEPOSITO_PENDIENTE">Depósito pendiente</option>
-                    <option value="DEPOSITADO">Depositado</option>
-                  </select>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus-ring-primary"
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <button type="button" onClick={handleCancel} className="btn-secondary">
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editingReservation ? 'Actualizar' : 'Crear'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ReservationForm
+          reservation={editingReservation}
+          onSuccess={handleSubmitSuccess}
+          onCancel={handleCancel}
+        />
       )}
     </div>
   );

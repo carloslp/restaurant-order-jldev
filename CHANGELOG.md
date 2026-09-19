@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.3.0] — 2026-09-19
+
+### Added — Saneamiento del error 500/PGRST en formularios (Fase 2 completa)
+- **`src/lib/errors.ts`** (catálogo central): `AppError`, `parsePostgrestError()`
+  (23505/23503/23514/23502/PGRST116/PGRST200-204/storage → español),
+  `formatZodError`, `toUserMessage()` (barrera anti-crudo en cliente),
+  `parseOrThrow()` (safeParse con fieldErrors) y `queryOrThrow()` (log crudo en
+  servidor + AppError mostrable + detección de data null por RLS).
+- **`src/lib/forms.ts`** — hook `useServerForm()`: `saving`, error general
+  persistente (`formError`), errores por campo (`fieldErrors`) y wrapper
+  `submit()` que traduce cualquier crudo. Los forms conservan valores al fallar.
+- **`src/components/ui/form-error.tsx`** — `FormAlert` + `FieldError` +
+  `fieldAria()` (accesibilidad input↔error).
+- **`src/lib/validation.ts`** — `zNumberES()`: `z.coerce.number()` con mensaje
+  en español; elimina el `"Invalid input: expected number, received NaN"`
+  que veían los usuarios con inputs numéricos inválidos.
+- **`vitest.config.ts`** (alias `@`, `db-verify` excluido) + scripts
+  `npm run test` / `npm run test:db` + `tests/errors.test.ts` (25 tests ✓).
+- **`docs/FORMULARIOS.md`** — convención obligatoria para formularios nuevos.
+
+### Changed — Server Actions y formularios migrados al nuevo patrón
+- Server Actions: `menu.ts` (todo), `locals.ts`, `staff.ts` (+invite),
+  `reservations.ts`, `discounts.ts` (+descuento manual valida monto),
+  `setup.ts`, `order.ts` (mensajes de transición legibles) y
+  `checkout/actions.ts` (mensaje público genérico, nunca el crudo de la DB).
+- Formularios: `AdminMenuCategories`, `AdminMenuProducts`, `AdminStaff`,
+  `AdminLocals`, `AdminDiscounts`, `AdminModifierGroups` (modal de opciones
+  en lugar de `prompt()`), `AdminReservations` (usa `ReservationForm`,
+  sin duplicado muerto ni errores silenciados), `ReservationForm` (sin
+  `alert`), `SetupForm` (fieldErrors del server), `CashierView` (toUserMessage).
+- Zod numérico con `zNumberES` en: producto (precio/orden), grupos/opciones
+  (min/max/impacto), local (IVA/envío), reserva (comensales), setup.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores · `npm run test` → 25/25 ✓.
+
 ## [0.2.6] — 2026-09-19
 
 ### Fixed — 500 en `createLocal`/`updateLocal` + menú vacío + tokens de reparto

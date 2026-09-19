@@ -196,9 +196,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     .single();
 
   if (error || !order) {
-    console.error('Error inserting order:', error);
-    // Return error message for debugging; in production consider a generic message
-    return { ok: false, error: error?.message ?? 'No se pudo crear el pedido' };
+    console.error('createOrder/insert:', error);
+    // Nunca exponer el error crudo de la DB al cliente público.
+    return { ok: false, error: 'No se pudo crear el pedido. Verifica tus datos e inténtalo de nuevo.' };
   }
 
   // 9. Registrar uso del descuento si se aplicó uno
@@ -224,8 +224,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
 
   if (tokenError) {
-    console.error('Failed to insert delivery token:', tokenError);
-    return { ok: false, error: 'No se pudo crear el token de reparto' };
+    console.error('createOrder/deliveryToken:', tokenError);
+    return { ok: false, error: 'No se pudo generar el enlace de seguimiento. Inténtalo de nuevo.' };
   }
 
   revalidatePath('/');

@@ -88,9 +88,9 @@
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
 | 31 | Auditoría RLS completa. Revisar cada policy contra amenazas: escalada de privilegio, enumeración cross-tenant, fuga de PII. Probar con `supabase.test` helpers. | ⬜ Pendiente | 8h |
-| 32 | Error handling centralizado. `lib/errors.ts` con clases `AppError`, `ValidationError`, `AuthError`, `NotFoundError`. Wrapper `withErrorHandling` para server actions. Log a `console.error` + opcional Sentry. | ⬜ Pendiente | 6h |
+| 32 | Error handling centralizado. ✅ `lib/errors.ts` (`AppError`, `parsePostgrestError` PG/PGRST→ES, `toUserMessage` anti-crudo, `parseOrThrow`, `queryOrThrow`) + `useServerForm` + `FormAlert/FieldError` migrados a TODAS las Server Actions y formularios. Convención: `docs/FORMULARIOS.md`. | ✅ Completado | 6h |
 | 33 | Logging estructurado. `lib/logger.ts` con niveles, contexto (requestId, userId, locationId). Middleware que inyecta requestId. | ⬜ Pendiente | 4h |
-|| 34 | Tests unitarios (Vitest). `pricing.ts`, `validation.ts`, `tokens.ts`, engine de promos, transiciones de estado, cálculos IVA. | ⬜ Pendiente | 20h |
+|| 34 | Tests unitarios (Vitest). ✅ Infra: `vitest.config.ts` (alias `@`, excluye db-verify) + `npm run test` / `test:db` + `tests/errors.test.ts` (25 tests del catálogo de errores y `zNumberES`). Faltan: pricing, tokens, promos, transiciones, IVA. | 🔄 En progreso | 20h |
 | 35 | Tests de integración (Playwright). Flujos: checkout completo, auth staff, KDS realtime, cashier transitions, admin CRUD menú, aplicación promo. | ⬜ Pendiente | 16h |
 | 36 | Seed de datos realista para tests. `scripts/seed-test-data.ts` usando service role. | ⬜ Pendiente | 4h |
 

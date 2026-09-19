@@ -6,6 +6,7 @@ import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import { zNumberES } from '@/lib/validation';
 import type { ReservationStatus, Zone } from '@/lib/types';
 
 // --- Schemas ---
@@ -14,7 +15,7 @@ const ReservationSchema = z.object({
   holder_phone: z.string().min(5, 'El teléfono es requerido'),
   reservation_date: z.string().min(1, 'La fecha es requerida'), // ISO date string (YYYY-MM-DD)
   reservation_time: z.string().min(1, 'La hora es requerida'), // HH:mm format
-  party_size: z.coerce.number().int().positive('El tamaño del grupo debe ser mayor a 0'),
+  party_size: zNumberES('El tamaño del grupo debe ser un número').int().positive('El tamaño del grupo debe ser mayor a 0'),
   preferred_zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Elige una zona válida.' }),
   status: z.enum(['PENDIENTE', 'CONFIRMADA', 'CANCELADA', 'NO_SHOW']).default('PENDIENTE'),
   deposit_status: z.enum(['SIN_DEPOSITO', 'DEPOSITO_PENDIENTE', 'DEPOSITADO']).default('SIN_DEPOSITO'),

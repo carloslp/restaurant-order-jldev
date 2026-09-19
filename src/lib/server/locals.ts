@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { locationSlugSchema } from '@/lib/slugs';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import { zNumberES } from '@/lib/validation';
 
 // --- Schemas ---
 
@@ -13,8 +14,8 @@ const LocalSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   slug: locationSlugSchema,
   timezone: z.string().default('America/Mexico_City'),
-  iva_rate: z.coerce.number().min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
-  delivery_fee: z.coerce.number().min(0, 'La tarifa no puede ser negativa').default(0),
+  iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
+  delivery_fee: zNumberES('La tarifa debe ser un número').min(0, 'La tarifa no puede ser negativa').default(0),
 });
 
 // --- Helpers ---

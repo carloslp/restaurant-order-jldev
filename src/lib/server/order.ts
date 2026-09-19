@@ -8,6 +8,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { verifyToken } from '@/lib/tokens';
 import type { Order, OrderStatus } from '@/lib/types';
 import { getCurrentStaff } from '@/app/staff/page';
+import { parsePostgrestError } from '@/lib/errors';
 
 /**
  * Fetch an order by its delivery_token (UUID string).
@@ -178,6 +179,17 @@ const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   CANCELADO: [],
 };
 
+// Etiquetas legibles para los mensajes de error de transición.
+const STATUS_LABELS: Record<OrderStatus, string> = {
+  CREADO: 'creado',
+  CONFIRMADO_CAJA: 'confirmado en caja',
+  EN_PREPARACION: 'en preparación',
+  LISTO: 'listo',
+  LISTO_PARA_ENTREGA: 'listo para entrega',
+  COMPLETADO: 'completado',
+  CANCELADO: 'cancelado',
+};
+
 export async function updateOrderStatus(
   orderId: string,
   nextStatus: OrderStatus
@@ -193,12 +205,13 @@ export async function updateOrderStatus(
     .single();
 
   if (fetchError || !order) {
-    return { ok: false, error: 'Orden no encontrada' };
+    if (fetchError) console.error('updateOrderStatus/fetch:', fetchError);
+    return { ok: false, error: 'Orden no encontrada. Es posible que ya haya sido eliminada.' };
   }
 
   // 2. Validar que sea del mismo local
   if (order.location_id !== staff.location_id) {
-    return { ok: false, error: 'No autorizado para esta orden' };
+    return { ok: false, error: 'Esta orden no pertenece a tu local.' };
   }
 
   // 3. Validar transición según flujo de negocio (sin roles)
@@ -206,7 +219,7 @@ export async function updateOrderStatus(
   if (!allowed.includes(nextStatus)) {
     return {
       ok: false,
-      error: `Transición ${order.status} → ${nextStatus} no permitida`,
+      error: `No se puede pasar de ${STATUS_LABELS[order.status as OrderStatus] ?? order.status} a ${STATUS_LABELS[nextStatus] ?? nextStatus}.`,
     };
   }
 
@@ -226,8 +239,8 @@ export async function updateOrderStatus(
     .eq('id', orderId);
 
   if (updateError) {
-    console.error('Error actualizando orden:', updateError);
-    return { ok: false, error: 'No se pudo actualizar la orden' };
+    console.error('updateOrderStatus/update:', updateError);
+    return { ok: false, error: parsePostgrestError(updateError, 'No se pudo actualizar la orden. Inténtalo de nuevo.') };
   }
 
   return { ok: true };
