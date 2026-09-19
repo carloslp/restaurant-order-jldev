@@ -124,7 +124,7 @@ describe('Database seed & auth linking verification', () => {
 
     const { data: groups, error } = await supabase
       .from('modifier_groups')
-      .select('*, options(*)')
+      .select('*, options:modifier_options(*)')
       .in('product_id', productIds);
 
     expect(error).toBeNull();
@@ -208,7 +208,7 @@ describe('Admin API simulation (listProducts)', () => {
     // Simulate listProducts query
     const { data, error } = await supabase
       .from('products')
-      .select('*, modifier_groups(id, name, is_required, min_selections, max_selections, options(id, name, price_impact, is_active))')
+      .select('*, modifier_groups(id, name, is_required, min_selections, max_selections, options:modifier_options(id, name, price_impact, is_active))')
       .order('name', { ascending: true });
 
     expect(error).toBeNull();

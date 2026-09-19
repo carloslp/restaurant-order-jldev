@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.5] — 2026-09-19
+
+### Fixed — 500 en `createProduct`/`updateProduct` (columnas inexistentes)
+- **Causa**: `ProductSchema` incluye `allergens`/`diet_labels`, pero `products`
+  no tiene esas columnas — viven en las tablas puente `product_allergens` /
+  `product_diet_labels`. El insert/update mandaba keys extra → 500.
+- **`createProduct`/`updateProduct`**: separan `allergens`/`diet_labels` del
+  insert/update y los persisten en los puentes (nombre → `id` de `allergens` /
+  `diet_labels`, reemplazo total en update). Validan que la `category_id`
+  pertenezca al `location_id` del staff.
+- **`listProducts`**: enriquece cada producto con `allergens: string[]` /
+  `diet_labels: string[]` desde los puentes, para que el admin/menú los muestren.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores.
+
+## [0.2.4] — 2026-09-19
+
+### Fixed — Productos/categorías en admin (`PGRST200` + `Promise.all`)
+- **500 en `listProducts`/`listModifierGroups`**: los embeds usaban `options(...)`
+  pero la tabla real es `modifier_options` (PostgREST: `Could not find a relationship
+  between 'modifier_groups' and 'options'`). Ahora se usa alias
+  `options:modifier_options(...)` para mantener `ModifierGroup.options` intacto.
+  Toca `listProducts`, `listModifierGroups`, `createModifierGroup`,
+  `updateModifierGroup` + el espejo en `tests/db-verify.test.ts`.
+- **Categorías vacías al crear producto**: `AdminMenuProducts.loadData()` usaba
+  `Promise.all([listProducts(), listCategories()])` — si productos fallaba, se
+  descartaba también la respuesta OK de categorías. Ahora `Promise.allSettled`
+  con toasts independientes: cada lista se muestra aunque la otra falle.
+- **`location_id` NOT NULL**: `createModifierGroup`/`createModifierOption` ahora
+  insertan `location_id: staff.location_id` (antes violaban el NOT NULL).
+
+### Validación
+- `npx tsc --noEmit` → 0 errores.
+
 ## [0.2.3] — 2026-09-19
 
 ### Changed — Imagen opcional y sin huérfanos en Storage

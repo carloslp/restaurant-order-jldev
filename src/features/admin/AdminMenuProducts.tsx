@@ -43,18 +43,25 @@ export function AdminMenuProducts() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [productsData, categoriesData] = await Promise.all([
+      // Cargas independientes: si falla productos, igual se muestran categorías y viceversa.
+      const [productsRes, categoriesRes] = await Promise.allSettled([
         listProducts(),
         listCategories(),
       ]);
-      setProducts(productsData);
-      setCategories(categoriesData);
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      if (productsRes.status === 'fulfilled') {
+        setProducts(productsRes.value);
+      } else {
+        toast({ title: 'Error al cargar productos', description: productsRes.reason?.message ?? 'Error desconocido', variant: 'destructive' });
+      }
+      if (categoriesRes.status === 'fulfilled') {
+        setCategories(categoriesRes.value);
+      } else {
+        toast({ title: 'Error al cargar categorías', description: categoriesRes.reason?.message ?? 'Error desconocido', variant: 'destructive' });
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     loadData();

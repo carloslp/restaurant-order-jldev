@@ -147,7 +147,7 @@ export async function listProducts(categoryId?: string): Promise<Product[]> {
 
   let query = supabase
     .from('products')
-    .select('*, modifier_groups(id, name, is_required, min_selections, max_selections, options(id, name, price_impact, is_active))')
+    .select('*, modifier_groups(id, name, is_required, min_selections, max_selections, options:modifier_options(id, name, price_impact, is_active))')
     .order('name', { ascending: true });
 
   if (categoryId) {
@@ -157,7 +157,102 @@ export async function listProducts(categoryId?: string): Promise<Product[]> {
   const { data, error } = await query;
 
   if (error) throw error;
-  return (data ?? []) as any as Product[];
+
+  const products = (data ?? []) as any as Product[];
+  if (products.length === 0) return products;
+
+  // Enriquecer con alérgenos y etiquetas dietarias (tablas puente).
+  const productIds = products.map((p) => p.id);
+  const [aRes, dRes] = await Promise.all([
+    supabase
+      .from('product_allergens')
+      .select('product_id, allergens(name)')
+      .in('product_id', productIds),
+    supabase
+      .from('product_diet_labels')
+      .select('product_id, diet_labels(name)')
+      .in('product_id', productIds),
+  ]);
+
+  if (aRes.error) throw aRes.error;
+  if (dRes.error) throw dRes.error;
+
+  const allergensByProduct = new Map<string, string[]>();
+  for (const row of (aRes.data ?? []) as any[]) {
+    const name = row.allergens?.name;
+    if (!name) continue;
+    const list = allergensByProduct.get(row.product_id) ?? [];
+    list.push(name);
+    allergensByProduct.set(row.product_id, list);
+  }
+  const dietLabelsByProduct = new Map<string, string[]>();
+  for (const row of (dRes.data ?? []) as any[]) {
+    const name = row.diet_labels?.name;
+    if (!name) continue;
+    const list = dietLabelsByProduct.get(row.product_id) ?? [];
+    list.push(name);
+    dietLabelsByProduct.set(row.product_id, list);
+  }
+
+  return products.map((p) => ({
+    ...p,
+    allergens: allergensByProduct.get(p.id) ?? [],
+    diet_labels: dietLabelsByProduct.get(p.id) ?? [],
+  }));
+}
+
+// `allergens`/`diet_labels` del form son nombres; las tablas puente guardan IDs.
+type ServerSupabase = ReturnType<typeof createServerClient>;
+
+async function resolveAllergenIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
+  if (names.length === 0) return [];
+  const { data, error } = await supabase.from('allergens').select('id, name').in('name', names);
+  if (error) throw error;
+  const found = new Map((data ?? []).map((a: any) => [a.name, a.id]));
+  const missing = names.filter((n) => !found.has(n));
+  if (missing.length > 0) throw new Error(`Alérgenos desconocidos: ${missing.join(', ')}`);
+  return names.map((n) => found.get(n));
+}
+
+async function resolveDietLabelIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
+  if (names.length === 0) return [];
+  const { data, error } = await supabase.from('diet_labels').select('id, name').in('name', names);
+  if (error) throw error;
+  const found = new Map((data ?? []).map((d: any) => [d.name, d.id]));
+  const missing = names.filter((n) => !found.has(n));
+  if (missing.length > 0) throw new Error(`Etiquetas dietarias desconocidas: ${missing.join(', ')}`);
+  return names.map((n) => found.get(n));
+}
+
+// Sincroniza los puentes product_allergens / product_diet_labels (reemplazo total).
+async function syncProductLabels(
+  supabase: ServerSupabase,
+  productId: string,
+  allergens: string[] | undefined,
+  dietLabels: string[] | undefined
+) {
+  if (allergens !== undefined) {
+    const { error: delErr } = await supabase.from('product_allergens').delete().eq('product_id', productId);
+    if (delErr) throw delErr;
+    const ids = await resolveAllergenIds(supabase, allergens);
+    if (ids.length > 0) {
+      const { error: insErr } = await supabase
+        .from('product_allergens')
+        .insert(ids.map((allergen_id) => ({ product_id: productId, allergen_id })));
+      if (insErr) throw insErr;
+    }
+  }
+  if (dietLabels !== undefined) {
+    const { error: delErr } = await supabase.from('product_diet_labels').delete().eq('product_id', productId);
+    if (delErr) throw delErr;
+    const ids = await resolveDietLabelIds(supabase, dietLabels);
+    if (ids.length > 0) {
+      const { error: insErr } = await supabase
+        .from('product_diet_labels')
+        .insert(ids.map((diet_label_id) => ({ product_id: productId, diet_label_id })));
+      if (insErr) throw insErr;
+    }
+  }
 }
 
 export async function createProduct(payload: z.infer<typeof ProductSchema>) {
@@ -165,10 +260,22 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
   const validated = ProductSchema.parse(payload);
   const supabase = createServerClient();
 
+  // La categoría debe pertenecer a este local (error claro en vez de FK/RLS).
+  const { data: category } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('id', validated.category_id)
+    .eq('location_id', staff.location_id)
+    .maybeSingle();
+  if (!category) throw new Error('Categoría inválida o no pertenece a este local');
+
+  // `allergens`/`diet_labels` no son columnas de `products`: van a tablas puente.
+  const { allergens, diet_labels, ...productFields } = validated;
+
   const { data, error } = await supabase
     .from('products')
     .insert({
-      ...validated,
+      ...productFields,
       location_id: staff.location_id,
     })
     .select()
@@ -176,8 +283,10 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
 
   if (error) throw error;
 
+  await syncProductLabels(supabase, data.id, allergens, diet_labels);
+
   revalidatePath('/staff/admin');
-  return data as Product;
+  return { ...data, allergens: allergens ?? [], diet_labels: diet_labels ?? [] } as Product;
 }
 
 export async function updateProduct(id: string, payload: z.infer<typeof ProductSchema>) {
@@ -185,15 +294,29 @@ export async function updateProduct(id: string, payload: z.infer<typeof ProductS
   const validated = ProductSchema.parse(payload);
   const supabase = createServerClient();
 
+  // La categoría debe pertenecer a este local.
+  const { data: category } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('id', validated.category_id)
+    .eq('location_id', staff.location_id)
+    .maybeSingle();
+  if (!category) throw new Error('Categoría inválida o no pertenece a este local');
+
+  // `allergens`/`diet_labels` no son columnas de `products`: van a tablas puente.
+  const { allergens, diet_labels, ...productFields } = validated;
+
   const { data, error } = await supabase
     .from('products')
-    .update(validated)
+    .update(productFields)
     .eq('id', id)
     .eq('location_id', staff.location_id)
     .select()
     .single();
 
   if (error) throw error;
+
+  await syncProductLabels(supabase, id, allergens, diet_labels);
 
   revalidatePath('/staff/admin');
   return data as Product;
@@ -270,7 +393,7 @@ export async function listModifierGroups(productId: string) {
 
   const { data, error } = await supabase
     .from('modifier_groups')
-    .select('*, options(*)')
+    .select('*, options:modifier_options(*)')
     .eq('product_id', productId)
     .order('created_at', { ascending: true });
 
@@ -295,8 +418,8 @@ export async function createModifierGroup(payload: z.infer<typeof ModifierGroupS
 
   const { data, error } = await supabase
     .from('modifier_groups')
-    .insert(validated)
-    .select('*, options(*)')
+    .insert({ ...validated, location_id: staff.location_id })
+    .select('*, options:modifier_options(*)')
     .single();
 
   if (error) throw error;
@@ -325,7 +448,7 @@ export async function updateModifierGroup(id: string, payload: z.infer<typeof Mo
     .from('modifier_groups')
     .update(validated)
     .eq('id', id)
-    .select('*, options(*)')
+    .select('*, options:modifier_options(*)')
     .single();
 
   if (error) throw error;
@@ -380,7 +503,7 @@ export async function createModifierOption(payload: z.infer<typeof ModifierOptio
 
   const { data, error } = await supabase
     .from('modifier_options')
-    .insert(validated)
+    .insert({ ...validated, location_id: staff.location_id })
     .select()
     .single();
 
