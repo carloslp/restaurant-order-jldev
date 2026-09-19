@@ -2,6 +2,7 @@
 
 import type { Product } from '@/lib/types';
 import { formatMXN } from '@/lib/pricing';
+import { Plus } from 'lucide-react';
 
 interface Props {
   product: Product;
@@ -14,15 +15,18 @@ export default function AddToCartButton({ product, quantity, onAdd, disabled = f
   const price = product.base_price * quantity;
   return (
     <button
+      type="button"
       onClick={() => onAdd(product, quantity)}
       disabled={disabled}
-      className={`ml-auto rounded-lg px-4 py-1.5 text-sm font-semibold text-white transition ${
+      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all active:scale-95 select-none ${
         disabled
-          ? 'bg-gray-400 cursor-not-allowed'
-          : 'bg-orange-600 hover:bg-orange-700'
+          ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed shadow-none'
+          : 'bg-orange-600 hover:bg-orange-700 active:bg-orange-800 shadow-orange-600/20'
       }`}
+      aria-label={`Agregar ${quantity} ${product.name} al carrito`}
     >
-      {disabled ? 'No disponible' : `Agregar · ${formatMXN(price)}`}
+      {!disabled && <Plus className="w-4 h-4" />}
+      <span>{disabled ? 'Agotado' : `Agregar · ${formatMXN(price)}`}</span>
     </button>
   );
-}
+}
