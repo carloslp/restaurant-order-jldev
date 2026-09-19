@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.0] — 2026-09-19
+
+### ⚠️ Requiere acción manual (una vez, por proyecto/DB)
+Ejecutar `docs/migration-driver-id.sql` en **Supabase → SQL Editor** (como
+postgres) para habilitar la asignación de repartidor: agrega `orders.driver_id`
+(FK a staff, SET NULL) + índice + recrea `staff_orders_view` con `driver_id`.
+Es idempotente. Sin ella, la UI de reparto responde "Error de configuración".
+
+### Added — Cierre funcional (Fase 3)
+- **Aforo por zona (Settings)**: `ZoneCapacityEditor` en el tab Locales +
+  `upsertZoneCapacity` (upsert por PK `location_id+zone`; capacidad 0 elimina
+  la zona del calendario de reservas).
+- **Reportes**: gráfica de barras de ingresos por día (pure CSS, sin
+  dependencias) y sección **Cierre de Caja** (efectivo/tarjeta esperado +
+  detalle por pedido, con selector de fecha) sobre el `getCashRegisterData`
+  existente.
+- **Reparto en Caja**: selector de repartidor (`assignDriver`, valida staff
+  activo del local; sin roles, por decisión del dueño) y **Link repartidor**
+  (`regenerateDeliveryToken`: revoca los tokens vigentes y genera uno nuevo de
+  un solo uso, 2h; URL copiable).
+- **Infra**: `/api/health` (env vars + ping a Supabase, 503 en fallo),
+  `lib/server/cron-auth.ts` con `CRON_SECRET` protegiendo `/api/cron/*`
+  (Bearer o `?secret=`; sin secret en producción responde 401),
+  `.env.example` completo y `docs/DEPLOY.md` (Vercel + Supabase, Storage,
+  crons, setup, monitoreo, tests).
+
+### Validación
+- `npx tsc --noEmit` → 0 errores · `npm run test` → 25/25 ✓ ·
+  `npm run build` → OK (rutas nuevas: `/api/health`).
+
 ## [0.3.0] — 2026-09-19
 
 ### Added — Saneamiento del error 500/PGRST en formularios (Fase 2 completa)

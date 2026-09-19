@@ -6,6 +6,7 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { verifyToken } from '@/lib/tokens';
+import { generateToken, hashToken } from '@/lib/tokens';
 import type { Order, OrderStatus } from '@/lib/types';
 import { getCurrentStaff } from '@/app/staff/page';
 import { parsePostgrestError } from '@/lib/errors';
@@ -126,6 +127,138 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
   // 3. Return the associated order
   return (tokenRecord as any).orders as Order;
 }
+
+// ---------------------------------------------------------------------------
+// Staff: asignación de repartidor + link de reparto (Caja).
+// Requiere docs/migration-driver-id.sql para orders.driver_id.
+// ---------------------------------------------------------------------------
+
+/**
+ * Asigna un repartidor (staff del mismo local) a una orden de domicilio.
+ * Requiere la migración docs/migration-driver-id.sql (orders.driver_id).
+ */
+export async function assignDriver(
+  orderId: string,
+  driverId: string | null
+): Promise<{ ok: boolean; error?: string }> {
+  const { staff } = await getCurrentStaff();
+  const supabase = createServerClient();
+
+  // 1. La orden debe existir y ser de este local.
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('id, order_type, location_id')
+    .eq('id', orderId)
+    .single();
+
+  if (orderError || !order) {
+    return { ok: false, error: 'Orden no encontrada. Es posible que ya haya sido eliminada.' };
+  }
+  if (order.location_id !== staff.location_id) {
+    return { ok: false, error: 'Esta orden no pertenece a tu local.' };
+  }
+  if (order.order_type !== 'DOMICILIO') {
+    return { ok: false, error: 'Solo se asigna repartidor a pedidos a domicilio.' };
+  }
+
+  // 2. driverId null = desasignar. Si viene, validar que sea staff activo del local.
+  if (driverId) {
+    const { data: driver } = await supabase
+      .from('staff')
+      .select('id')
+      .eq('id', driverId)
+      .eq('location_id', staff.location_id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!driver) {
+      return { ok: false, error: 'Ese repartidor no pertenece a tu local o está inactivo.' };
+    }
+  }
+
+  // 3. Asignar.
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ driver_id: driverId })
+    .eq('id', orderId);
+
+  if (updateError) {
+    console.error('assignDriver/update:', updateError);
+    return {
+      ok: false,
+      error: parsePostgrestError(updateError, 'No se pudo asignar el repartidor. Inténtalo de nuevo.'),
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Revoca los tokens de reparto vigentes de la orden y genera uno nuevo
+ * de un solo uso (2h). Devuelve la URL para el repartidor (un solo uso,
+ * se vuelve de solo lectura tras confirmar la entrega).
+ */
+export async function regenerateDeliveryToken(
+  orderId: string
+): Promise<{ ok: boolean; error?: string; url?: string; token?: string }> {
+  const { staff } = await getCurrentStaff();
+  const supabase = createServerClient();
+
+  // 1. La orden debe existir, ser de este local y estar activa.
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('id, status, location_id, order_type')
+    .eq('id', orderId)
+    .single();
+
+  if (orderError || !order) {
+    return { ok: false, error: 'Orden no encontrada. Es posible que ya haya sido eliminada.' };
+  }
+  if (order.location_id !== staff.location_id) {
+    return { ok: false, error: 'Esta orden no pertenece a tu local.' };
+  }
+  if (['COMPLETADO', 'CANCELADO'].includes(order.status)) {
+    return { ok: false, error: 'El pedido ya está cerrado; no se puede regenerar el link.' };
+  }
+
+  // 2. Revocar tokens vigentes (los usados/expirados se quedan como histórico).
+  const { error: revokeError } = await supabase
+    .from('delivery_tokens')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('order_id', orderId)
+    .is('used_at', null)
+    .is('revoked_at', null);
+
+  if (revokeError) {
+    console.error('regenerateDeliveryToken/revoke:', revokeError);
+    return { ok: false, error: 'No se pudo revocar el link anterior. Inténtalo de nuevo.' };
+  }
+
+  // 3. Generar token nuevo (hash-only en DB; 2h de validez).
+  const plainToken = generateToken();
+  const tokenHash = hashToken(plainToken);
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+  const { error: insertError } = await supabase
+    .from('delivery_tokens')
+    .insert({ order_id: orderId, token_hash: tokenHash, expires_at: expiresAt });
+
+  if (insertError) {
+    console.error('regenerateDeliveryToken/insert:', insertError);
+    return {
+      ok: false,
+      error: parsePostgrestError(insertError, 'No se pudo generar el nuevo link. Inténtalo de nuevo.'),
+    };
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  return {
+    ok: true,
+    token: plainToken,
+    url: `${baseUrl}/track/repartidor/${plainToken}`,
+  };
+}
+
 
 // ---------------------------------------------------------------------------
 // Staff: listar pedidos del local (RLS filtra por app.local_id vía GUC).

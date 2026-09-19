@@ -11,6 +11,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
+import { ZoneCapacityEditor } from '@/features/admin/ZoneCapacityEditor';
 import { validateLocationSlug } from '@/lib/slugs';
 
 interface Local {
@@ -308,6 +309,8 @@ export function AdminLocals() {
           </tbody>
         </table>
       </div>
+
+      <ZoneCapacityEditor />
 
       <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
         <h3 className="mb-2 text-sm font-semibold text-gray-700">Información</h3>

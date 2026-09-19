@@ -1,9 +1,10 @@
 // src/features/staff/CashierView.tsx
 'use client';
 
-import { useState } from 'react';
-import { updateOrderStatus } from '@/lib/server/order';
+import { useCallback, useEffect, useState } from 'react';
+import { updateOrderStatus, assignDriver, regenerateDeliveryToken } from '@/lib/server/order';
 import { applyManualDiscount } from '@/lib/server/discounts';
+import { listStaff } from '@/lib/server/staff';
 import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import { toUserMessage } from '@/lib/errors';
 import type { Order } from '@/lib/types';
@@ -11,6 +12,11 @@ import { formatMXN } from '@/lib/pricing';
 
 interface CashierViewProps {
   locationId: string;
+}
+
+interface StaffOption {
+  id: string;
+  full_name: string;
 }
 
 function orderTypeLabel(type: Order['order_type']): string {
@@ -31,6 +37,12 @@ export function CashierView({ locationId }: CashierViewProps) {
     statuses: ACTIVE_STATUSES,
     limit: 100,
   });
+
+  // Repartidores disponibles (staff activo del local) para asignar a domicilio.
+  const [drivers, setDrivers] = useState<StaffOption[]>([]);
+  // Link de reparto generado: orderId → URL (se muestra con botón copiar).
+  const [deliveryLinks, setDeliveryLinks] = useState<Record<string, string>>({});
+  const [driverSelectFor, setDriverSelectFor] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [discountingOrderId, setDiscountingOrderId] = useState<string | null>(null);
@@ -59,6 +71,47 @@ export function CashierView({ locationId }: CashierViewProps) {
     } catch (err) {
       setError(toUserMessage(err, 'No se pudo aplicar el descuento. Inténtalo de nuevo.'));
     }
+  }
+
+  // Cargar staff del local para el selector de repartidor.
+  const loadDrivers = useCallback(async () => {
+    try {
+      const staff = await listStaff();
+      setDrivers(staff.filter((s) => s.is_active).map((s) => ({ id: s.id, full_name: s.full_name })));
+    } catch (err) {
+      console.error('loadDrivers:', err);
+      setError(toUserMessage(err, 'No se pudo cargar el personal. Refresca la página.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDrivers();
+  }, [loadDrivers]);
+
+  async function handleAssignDriver(orderId: string, driverId: string) {
+    setError(null);
+    const result = await assignDriver(orderId, driverId || null);
+    if (!result.ok) {
+      setError(result.error ?? 'No se pudo asignar el repartidor.');
+      return;
+    }
+    setDriverSelectFor(null);
+  }
+
+  async function handleGetDeliveryLink(orderId: string) {
+    setError(null);
+    const result = await regenerateDeliveryToken(orderId);
+    if (!result.ok || !result.url) {
+      setError(result.error ?? 'No se pudo generar el link.');
+      return;
+    }
+    setDeliveryLinks((prev) => ({ ...prev, [orderId]: result.url as string }));
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard?.writeText(text).catch(() => {
+      // Fallback silencioso; el usuario puede copiar manualmente del input.
+    });
   }
 
   const pendingOrders = orders.filter((o) => !['COMPLETADO', 'CANCELADO'].includes(o.status));
@@ -120,6 +173,58 @@ export function CashierView({ locationId }: CashierViewProps) {
                   {order.cart_snapshot.items.length} líneas · ETA{' '}
                   {new Date(order.eta).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                 </p>
+
+                {/* Reparto (solo DOMICILIO): repartidor asignado + link de un solo uso */}
+                {order.order_type === 'DOMICILIO' && (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                    {driverSelectFor === order.id ? (
+                      <select
+                        defaultValue={order.driver_id ?? ''}
+                        onChange={(e) => handleAssignDriver(order.id, e.target.value)}
+                        onBlur={() => setDriverSelectFor(null)}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs"
+                        autoFocus
+                      >
+                        <option value="">— Sin asignar —</option>
+                        {drivers.map((d) => (
+                          <option key={d.id} value={d.id}>{d.full_name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <button
+                        onClick={() => setDriverSelectFor(order.id)}
+                        className="text-indigo-600 hover:underline"
+                      >
+                        🛵 {order.driver_id
+                          ? drivers.find((d) => d.id === order.driver_id)?.full_name ?? 'Repartidor asignado'
+                          : 'Asignar repartidor'}
+                      </button>
+                    )}
+                    {deliveryLinks[order.id] ? (
+                      <span className="inline-flex items-center gap-1">
+                        <input
+                          readOnly
+                          value={deliveryLinks[order.id]}
+                          onFocus={(e) => e.target.select()}
+                          className="w-56 rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px]"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(deliveryLinks[order.id])}
+                          className="rounded bg-gray-900 px-2 py-1 text-white hover:bg-gray-700"
+                        >
+                          Copiar
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleGetDeliveryLink(order.id)}
+                        className="text-gray-500 hover:underline"
+                      >
+                        Link repartidor
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-4">

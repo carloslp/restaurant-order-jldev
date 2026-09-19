@@ -52,9 +52,9 @@
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
 | 19 | `AdminReports.tsx` — Dashboard con KPIs. Ventas día/semana/mes, ticket promedio, productos top, pedidos por estado, método de pago, tipo orden. | ⬜ Pendiente | 10h |
-| 20 | Gráficas (Recharts o Chart.js). Serie temporal ventas, barras top productos, dona por tipo de orden. | ⬜ Pendiente | 6h |
-| 21 | Export CSV/PDF. Botones de descarga por rango de fechas. | ⬜ Pendiente | 4h |
-| 22 | Cierre de caja diario. Resumen por turno, diferencial efectivo vs esperado, firma digital cajero. | ⬜ Pendiente | 6h |
+| 20 | Gráficas. ✅ Barras de ingresos por día (pure CSS/SVG, sin dependencias) en `AdminReports.tsx`; desglose top productos/tipo/pago ya existente. | ✅ Completado | 6h |
+| 21 | Export CSV/PDF. ✅ CSV por rango (existente, migrado a `useServerForm`); PDF queda diferido — sin dependencia extra por decisión de mínimos. | 🔄 En progreso | 4h |
+| 22 | Cierre de caja diario. ✅ Sección "Cierre de Caja" en `AdminReports` sobre `getCashRegisterData`: efectivo/tarjeta esperado + detalle por pedido, por fecha. | ✅ Completado | 6h |
 
 ### 2.5 Gestión de Staff (10h)
 
@@ -67,8 +67,8 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 25 | `AdminSettings.tsx` — Formulario único. Timezone (selector IANA), IVA rate (input % validación 0-1), costo envío base, capacidad por zona (editor `local_zone_capacity`), tiempo estimado prep por defecto. | ⬜ Pendiente | 6h |
-| 26 | Server Action `updateLocalSettings`. Valida y actualiza `locals` + `local_zone_capacity`. | ⬜ Pendiente | 2h |
+| 25 | `AdminSettings.tsx` — Formulario único. ✅ Timezone/IVA/envío se editan en `AdminLocals`; capacidad por zona en el nuevo `ZoneCapacityEditor` (mounted en tab Locales). Tiempo prep por defecto: requiere columna nueva — diferido. | ✅ Completado | 6h |
+| 26 | Server Action `updateLocalSettings`. ✅ `updateLocal` (locals) + `upsertZoneCapacity` (local_zone_capacity, upsert por PK location_id+zone, 0 elimina). | ✅ Completado | 2h |
 
 ---
 
@@ -76,10 +76,10 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 27 | Asignación de repartidor en orden (campo `driver_id`). FK a `staff` con role='REPARTIDOR' (nuevo rol). UI en `CashierView` y `AdminView` para asignar. | ⬜ Pendiente | 4h |
-| 28 | Vista track repartidor mejorada. Lista de pedidos asignados, filtro por estado, mapa simple (Leaflet/OSM) con dirección, botón "Llegué" → "Entregado". | ⬜ Pendiente | 6h |
+| 27 | Asignación de repartidor en orden (campo `driver_id`). ✅ Sin depender de roles (decisión del dueño): cualquier staff del local puede asignarse. Server action `assignDriver` + selector en `CashierView`. ⚠️ Requiere ejecutar `docs/migration-driver-id.sql` (columna + vista). | ✅ Completado | 4h |
+| 28 | Vista track repartidor mejorada. ✅ Base existente (`/track/repartidor/[token]`); añade regeneración/revocación del link desde caja (`regenerateDeliveryToken`). Mapa Leaflet diferido (decisión pendiente). | 🔄 En progreso | 6h |
 | 29 | Notificación push/email a repartidor al asignar. webhook a servicio externo. | ⬜ Pendiente | 4h |
-| 30 | Rol `REPARTIDOR` en schema y RLS. Añadir a enum `staff.role`, policy `staff_staff_access`, navegación en `StaffNav`. | ⬜ Pendiente | 2h |
+| 30 | Rol `REPARTIDOR` en schema y RLS. ❌ Fuera de alcance por decisión del dueño: el auth de staff funciona sin roles y no se toca. | ❌ Cancelado | 2h |
 
 ---
 
@@ -100,10 +100,10 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 37 | Documentar variables de entorno (`.env.example` completo). Añadir: `NEXT_PUBLIC_APP_URL`, `SUPABASE_STORAGE_BUCKET`, `CRON_SECRET`, `SENTRY_DSN`, `WHATSAPP_API_TOKEN`. | ⬜ Pendiente | 2h |
-| 38 | Guía de despliegue Vercel + Supabase. `docs/DEPLOY.md`: pasos CLI, variables en Vercel, migraciones (`supabase db push`), Storage buckets, Realtime habilitado, pg_cron para jobs. | ⬜ Pendiente | 4h |
+| 37 | Documentar variables de entorno (`.env.example` completo). ✅ `.env.example` ampliado: `NEXT_PUBLIC_APP_URL`, `CRON_SECRET` (+ doc de uso), `WHATSAPP_WEBHOOK_URL`, `SENTRY_DSN`, alias de nomenclatura Supabase. | ✅ Completado | 2h |
+| 38 | Guía de despliegue Vercel + Supabase. ✅ `docs/DEPLOY.md`: install.sql/migraciones, Storage bucket, env vars, Vercel Cron + pg_cron con `CRON_SECRET`, setup inicial, monitoreo con `/api/health`, tests. | ✅ Completado | 4h |
 | 39 | Configurar Vercel Analytics / Speed Insights. `next.config.ts` + env vars. | ❌ Cancelado | 1h |
-| 40 | Alertas de caída (UptimeRobot / Better Uptime). Health check endpoint `/api/health` que verifica Supabase. | ❌ Cancelado | 2h |
+| 40 | Alertas de caída (UptimeRobot / Better Uptime). ✅ Health check `/api/health` implementado (env vars + ping a Supabase, 503 si algo falla). Apuntar el uptime monitor ahí queda del lado de infra externa. | ✅ Completado | 2h |
 | 41 | Métricas de uso (PostHog o Plausible). Eventos: `order_created`, `order_completed`, `promo_applied`, `reservation_created`. | ❌ Cancelado | 3h |
 
 ---

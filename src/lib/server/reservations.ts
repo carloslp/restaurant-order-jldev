@@ -38,8 +38,55 @@ export async function getZoneCapacities() {
     .select('zone, capacity')
     .eq('location_id', staff.location_id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('getZoneCapacities:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo cargar el aforo por zona.'));
+  }
   return data || [];
+}
+
+// Upsert del aforo de una zona (PK: location_id + zone). Capacidad 0 elimina la fila.
+export async function upsertZoneCapacity(zone: Zone, capacity: number) {
+  const staff = await getStaffContext();
+  const cap = parseOrThrow(
+    z.object({
+      zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Zona inválida.' }),
+      capacity: zNumberES('La capacidad debe ser un número').int('La capacidad debe ser entera').min(0, 'La capacidad no puede ser negativa').max(1000, 'Máximo 1000 comensales por zona'),
+    }),
+    { zone, capacity }
+  );
+  const supabase = createServerClient();
+
+  // capacity 0 → sin aforo configurado → eliminar fila (la reserva no depende de ella).
+  if (cap.capacity === 0) {
+    const { error } = await supabase
+      .from('local_zone_capacity')
+      .delete()
+      .eq('location_id', staff.location_id)
+      .eq('zone', cap.zone);
+
+    if (error) {
+      console.error('upsertZoneCapacity/delete:', error);
+      throw new AppError(parsePostgrestError(error, 'No se pudo actualizar el aforo.'));
+    }
+    revalidatePath('/staff/admin');
+    return { zone: cap.zone, capacity: 0 };
+  }
+
+  const data = await queryOrThrow(
+    supabase
+      .from('local_zone_capacity')
+      .upsert(
+        { location_id: staff.location_id, zone: cap.zone, capacity: cap.capacity },
+        { onConflict: 'location_id,zone' }
+      )
+      .select('zone, capacity')
+      .single(),
+    { action: 'upsertZoneCapacity', fallback: 'No se pudo actualizar el aforo.' }
+  );
+
+  revalidatePath('/staff/admin');
+  return data;
 }
 
 // --- Reservations ---

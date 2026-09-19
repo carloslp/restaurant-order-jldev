@@ -179,6 +179,9 @@ export interface Order {
   total: number;
   cart_snapshot: OrderCartSnapshot;
   delivery_zone: string | null;
+  // Repartidor asignado (requiere docs/migration-driver-id.sql; opcional para
+  // compatibilidad mientras la migración se aplica).
+  driver_id?: string | null;
   delivery_token: string | null;
   delivery_token_expires_at: string | null;
   delivery_token_rotated_at: string | null;
