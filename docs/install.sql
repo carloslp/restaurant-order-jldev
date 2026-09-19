@@ -634,6 +634,17 @@ COMMENT ON TABLE delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> CO
 COMMENT ON TABLE discounts IS 'Engine de promos: códigos o automáticas con reglas; sin apilar';
 
 -- ============================================================================
+-- Permisos para service_role (bypass RLS en operaciones server-side)
+-- ============================================================================
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- También grant en auth schema para gestión de usuarios si se necesita
+GRANT USAGE ON SCHEMA auth TO service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;
+
+-- ============================================================================
 -- 10. PG_CRON: recordatorios de reservaciones (opcional)
 -- ============================================================================
 -- Requiere definir la GUC app.cron_secret en Supabase (Settings → Database →
@@ -703,11 +714,11 @@ BEGIN
     RETURNING id INTO v_local;
 
     -- Staff
-    INSERT INTO staff (location_id, email, full_name, role)
+    INSERT INTO staff (location_id, email, full_name, is_active)
     VALUES
-        (v_local, 'admin@demo.com',   'Admin Demo',   'ADMIN'),
-        (v_local, 'cajero@demo.com',  'Cajero Demo',  'CAJERO'),
-        (v_local, 'cocina@demo.com',  'Cocina Demo',  'COCINERO');
+        (v_local, 'admin@demo.com',   'Admin Demo',   true),
+        (v_local, 'cajero@demo.com',  'Cajero Demo',  true),
+        (v_local, 'cocina@demo.com',  'Cocina Demo',  true);
 
     SELECT id INTO v_admin FROM staff WHERE email = 'admin@demo.com' AND location_id = v_local;
     SELECT id INTO v_cajero FROM staff WHERE email = 'cajero@demo.com' AND location_id = v_local;

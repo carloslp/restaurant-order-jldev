@@ -570,3 +570,14 @@ COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_i
 COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al público.';
 COMMENT ON TABLE delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
 COMMENT ON TABLE discounts IS 'Engine de promos: códigos o automáticas con reglas; sin apilar';
+
+-- ---------------------------------------------------------------------------
+-- Permisos para service_role (bypass RLS en operaciones server-side)
+-- ---------------------------------------------------------------------------
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- También grant en auth schema para gestión de usuarios si se necesita
+GRANT USAGE ON SCHEMA auth TO service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;

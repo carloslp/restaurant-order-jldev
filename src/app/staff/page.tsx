@@ -58,6 +58,19 @@ export async function getCurrentStaff() {
       redirect('/setup');
     }
 
+    // Configurar GUC para bypass RLS check
+    await adminSupabase.rpc('set_config', {
+      name: 'app.local_id',
+      value: firstLocal.id,
+      is_local: true,
+    });
+
+    // Debug: verificar qué key está usando el cliente
+    console.log('AdminSupabase client created, attempting insert...');
+    console.log('firstLocal.id:', firstLocal.id);
+    console.log('user.email:', user.email);
+    console.log('user.id:', user.id);
+
     const { data: newStaff, error: createError } = await adminSupabase
       .from('staff')
       .insert({
@@ -71,8 +84,9 @@ export async function getCurrentStaff() {
       .single();
 
     if (createError) {
-      console.error('Error creando staff automáticamente:', createError);
-      redirect('/login?error=staff_create_failed');
+      console.error('Error creando staff automáticamente:', JSON.stringify(createError, null, 2));
+      // Mostrar el error completo en la URL para debug
+      redirect(`/login?error=staff_create_failed&details=${encodeURIComponent(createError.message)}&code=${createError.code}&hint=${encodeURIComponent(createError.hint ?? '')}`);
     }
 
     staff = newStaff;
