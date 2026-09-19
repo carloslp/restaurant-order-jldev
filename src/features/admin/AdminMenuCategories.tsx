@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createCategory, updateCategory, deleteCategory, listCategories, uploadMenuImage, deleteMenuImage } from '@/lib/server/menu';
-import type { Category } from '@/lib/types';
+import type { Category, Local } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
@@ -24,7 +24,11 @@ const initialFormData: CategoryFormData = {
   sort_order: 0,
 };
 
-export function AdminMenuCategories() {
+interface AdminMenuCategoriesProps {
+  local: Local | null;
+}
+
+export function AdminMenuCategories({ local }: AdminMenuCategoriesProps) {
   const { toast } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +91,51 @@ export function AdminMenuCategories() {
     loadCategories();
   }, [loadCategories]);
 
+  // Header contextual con información del local
+  const renderLocalHeader = () => {
+    if (!local) {
+      return (
+        <div className="mb-6 p-4 rounded-xl bg-yellow-50 border border-yellow-200">
+          <div className="flex items-center gap-3">
+            <span className="text-yellow-600">⚠️</span>
+            <div>
+              <p className="font-medium text-yellow-800">Local no resuelto</p>
+              <p className="text-sm text-yellow-700">No se pudo determinar el local actual. Verifica tu sesión o contacta al administrador.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-600">📍</span>
+            <span className="font-medium text-blue-800">Editando: {local.name}</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span className="font-mono">/{local.slug}</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span>IVA {(local.iva_rate * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span>Envío ${local.delivery_fee.toFixed(2)}</span>
+          </div>
+          <a
+            href={`/${local.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+          >
+            Ver menú público →
+          </a>
+        </div>
+      </div>
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const ok = await submit(async () => {
@@ -100,6 +149,20 @@ export function AdminMenuCategories() {
     });
     // Conservar valores al fallar: solo limpiar al guardar con éxito.
     if (!ok) return;
+
+    // Verificar visibilidad en el menú público después de guardar
+    if (editingCategory && !formData.is_active && editingCategory.is_active) {
+      // La categoría se está desactivando, contar productos afectados
+      const affectedProducts = categories.filter(c => c.id !== editingCategory.id).length;
+      // Note: We can't easily get the count of products in this category without fetching them
+      // We'll show a general warning
+      toast({
+        title: '⚠️ Categoría desactivada',
+        description: 'Esta categoría está inactiva. Los productos dentro de ella no aparecerán en el menú público.',
+        variant: 'default',
+      });
+    }
+
     setShowForm(false);
     setEditingCategory(null);
     setFormData(initialFormData);
@@ -145,6 +208,7 @@ export function AdminMenuCategories() {
 
   return (
     <div className="space-y-4">
+      {renderLocalHeader()}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Categorías del Menú</h2>
         <button onClick={handleNew} className="btn-primary">
@@ -270,8 +334,15 @@ export function AdminMenuCategories() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {categories.map((cat) => (
-              <tr key={cat.id} className="hover:bg-gray-50">
-                <td className="p-3 font-medium">{cat.name}</td>
+              <tr key={cat.id} className={`hover:bg-gray-50 ${!cat.is_active ? 'bg-yellow-50' : ''}`}>
+                <td className="p-3 font-medium">
+                  {cat.name}
+                  {!cat.is_active && (
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                      ⚠️ No visible en público
+                    </span>
+                  )}
+                </td>
                 <td className="p-3 text-sm text-gray-600 max-w-xs truncate">{cat.description ?? '-'}</td>
                 <td className="p-3 text-sm">
                   <input

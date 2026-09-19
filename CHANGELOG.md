@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.1] — 2026-09-19
+
+### Fixed — Admin Menu UX (visibilidad y contexto de local)
+- **Paso 1–2**: `AdminView` ahora pasa `local` a `AdminMenuCategories` y `AdminMenuProducts`. Ambos componentes muestran un **banner contextual** con nombre, slug (`/{slug}`), IVA y costo de envío, más enlace **"Ver menú público →"** que abre la URL del local en otra pestaña. Si `local` es `null`, muestra advertencia de "Local no resuelto".
+- **Paso 3**: Tabla de productos (`AdminMenuProducts`) añade columna **"Visibilidad"** (Visible en público ✓ / No visible + razón: "Categoría inactiva" y/o "Producto agotado") y filtro visual `bg-yellow-50` en filas no visibles. Nueva acción **"Ver en menú →"** solo cuando el producto sí es visible. Tabla de categorías (`AdminMenuCategories`) destaca filas inactivas con fondo amarillo y badge "⚠️ No visible en público".
+- **Paso 4**: Feedback inline al guardar:
+  - En productos: si la categoría seleccionada está inactiva **o** el producto queda `is_available = false`, toast warning: "⚠️ Este producto no aparecerá en el menú público porque su categoría está inactiva / está marcado como Agotado".
+  - En categorías: al desactivar una categoría, toast advierte: "⚠️ Categoría desactivada — los productos dentro no aparecerán en el menú público".
+- **Paso 5 (diagnóstico)**: Consulta SQL sugerida en el plan para auditar estado real (`products.is_available`, `categories.is_active`, `location_id`).
+
+### Validation
+- `npx tsc --noEmit` → 0 errores · `npm run test` → 53/53 ✓ · `npm run build` → OK.
+
 ## [0.5.0] — 2026-09-19
 
 ### Added — Calidad y docs (Fase 4)

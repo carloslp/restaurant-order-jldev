@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listProducts, createProduct, updateProduct, deleteProduct, uploadMenuImage, deleteMenuImage } from '@/lib/server/menu';
 import { listCategories } from '@/lib/server/menu';
-import type { Product, Category } from '@/lib/types';
+import type { Product, Category, Local } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
@@ -31,7 +31,11 @@ const initialFormData: ProductFormData = {
   diet_labels: [],
 };
 
-export function AdminMenuProducts() {
+interface AdminMenuProductsProps {
+  local: Local | null;
+}
+
+export function AdminMenuProducts({ local }: AdminMenuProductsProps) {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -68,6 +72,51 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Header contextual con información del local
+  const renderLocalHeader = () => {
+    if (!local) {
+      return (
+        <div className="mb-6 p-4 rounded-xl bg-yellow-50 border border-yellow-200">
+          <div className="flex items-center gap-3">
+            <span className="text-yellow-600">⚠️</span>
+            <div>
+              <p className="font-medium text-yellow-800">Local no resuelto</p>
+              <p className="text-sm text-yellow-700">No se pudo determinar el local actual. Verifica tu sesión o contacta al administrador.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-600">📍</span>
+            <span className="font-medium text-blue-800">Editando: {local.name}</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span className="font-mono">/{local.slug}</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span>IVA {(local.iva_rate * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex items-center gap-1 text-blue-700">
+            <span>Envío ${local.delivery_fee.toFixed(2)}</span>
+          </div>
+          <a
+            href={`/${local.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+          >
+            Ver menú público →
+          </a>
+        </div>
+      </div>
+    );
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -118,6 +167,25 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
       }
     });
     if (!ok) return;
+
+    // Verificar visibilidad en el menú público después de guardar
+    const selectedCategory = categories.find(c => c.id === formData.category_id);
+    if (selectedCategory) {
+      if (!selectedCategory.is_active) {
+        toast({
+          title: '⚠️ Producto no visible en menú público',
+          description: `La categoría "${selectedCategory.name}" está inactiva. El producto no aparecerá para los clientes.`,
+          variant: 'default',
+        });
+      } else if (!formData.is_available) {
+        toast({
+          title: '⚠️ Producto no visible en menú público',
+          description: 'El producto está marcado como "Agotado". No aparecerá para los clientes hasta que lo actives.',
+          variant: 'default',
+        });
+      }
+    }
+
     setShowForm(false);
     setEditingProduct(null);
     setFormData(initialFormData);
@@ -179,6 +247,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   return (
     <div className="space-y-4">
+      {renderLocalHeader()}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Productos del Menú</h2>
         <button onClick={handleNew} className="btn-primary">
@@ -380,47 +449,82 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
               <th className="p-3 text-sm font-semibold text-gray-500">Categoría</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Precio</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Estado</th>
+              <th className="p-3 text-sm font-semibold text-gray-500">Visibilidad</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {products.map((prod) => (
-              <tr key={prod.id} className="hover:bg-gray-50">
-                <td className="p-3">
-                  {prod.image_url ? (
-                    <img src={prod.image_url} alt={prod.name} className="h-10 w-10 rounded object-cover" />
-                  ) : (
-                    <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No Img</div>
-                  )}
-                </td>
-                <td className="p-3">
-                  <div className="font-medium">{prod.name}</div>
-                  <div className="text-xs text-gray-500 truncate max-w-[200px]">{prod.description}</div>
-                </td>
-                <td className="p-3 text-sm text-gray-600">
-                  {categories.find(c => c.id === prod.category_id)?.name || 'Sin categoría'}
-                </td>
-                <td className="p-3 text-sm font-medium">${prod.base_price.toFixed(2)}</td>
-                <td className="p-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${prod.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {prod.is_available ? 'Disponible' : 'Agotado'}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <div className="flex gap-3">
-                    <button onClick={() => handleEdit(prod)} className="text-sm text-primary hover:underline">
-                      Editar
-                    </button>
-                    <button onClick={() => handleDelete(prod.id)} className="text-sm text-red-600 hover:underline">
-                      Eliminar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {products.map((prod) => {
+              const category = categories.find(c => c.id === prod.category_id);
+              const isVisibleInPublic = category?.is_active && prod.is_available;
+              return (
+                <tr key={prod.id} className={`hover:bg-gray-50 ${!isVisibleInPublic ? 'bg-yellow-50' : ''}`}>
+                  <td className="p-3">
+                    {prod.image_url ? (
+                      <img src={prod.image_url} alt={prod.name} className="h-10 w-10 rounded object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No Img</div>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <div className="font-medium">{prod.name}</div>
+                    <div className="text-xs text-gray-500 truncate max-w-[200px]">{prod.description}</div>
+                  </td>
+                  <td className="p-3 text-sm text-gray-600">
+                    {category?.name || 'Sin categoría'}
+                    {!category?.is_active && (
+                      <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800">
+                        Inactiva
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 text-sm font-medium">${prod.base_price.toFixed(2)}</td>
+                  <td className="p-3">
+                    <span className={`text-xs px-2 py-1 rounded-full ${prod.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {prod.is_available ? 'Disponible' : 'Agotado'}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    {isVisibleInPublic ? (
+                      <span className="text-xs text-green-600 font-medium">Visible en público ✓</span>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs text-red-600 font-medium">No visible en público</span>
+                        {!category?.is_active && (
+                          <span className="text-[10px] text-yellow-700">Categoría inactiva</span>
+                        )}
+                        {!prod.is_available && (
+                          <span className="text-[10px] text-red-700">Producto agotado</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => handleEdit(prod)} className="text-sm text-primary hover:underline">
+                        Editar
+                      </button>
+                      {local && isVisibleInPublic && (
+                        <a
+                          href={`/${local.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          Ver en menú →
+                        </a>
+                      )}
+                      <button onClick={() => handleDelete(prod.id)} className="text-sm text-red-600 hover:underline">
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {products.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-gray-400">
+                <td colSpan={7} className="p-8 text-center text-gray-400">
                   No hay productos. Crea el primero para empezar.
                 </td>
               </tr>
