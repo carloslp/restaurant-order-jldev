@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { createCategory, updateCategory, deleteCategory, listCategories, uploadMenuImage, deleteMenuImage } from '@/lib/server/menu';
 import type { Category } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
+import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
+import { useServerForm } from '@/lib/forms';
 
 interface CategoryFormData {
   name: string;
@@ -26,11 +28,11 @@ export function AdminMenuCategories() {
   const { toast } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState<CategoryFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -87,8 +89,7 @@ export function AdminMenuCategories() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    try {
+    const ok = await submit(async () => {
       if (editingCategory) {
         await updateCategory(editingCategory.id, formData);
         toast({ title: 'Éxito', description: 'Categoría actualizada' });
@@ -96,15 +97,13 @@ export function AdminMenuCategories() {
         await createCategory(formData);
         toast({ title: 'Éxito', description: 'Categoría creada' });
       }
-      setShowForm(false);
-      setEditingCategory(null);
-      setFormData(initialFormData);
-      loadCategories();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
+    });
+    // Conservar valores al fallar: solo limpiar al guardar con éxito.
+    if (!ok) return;
+    setShowForm(false);
+    setEditingCategory(null);
+    setFormData(initialFormData);
+    loadCategories();
   };
 
   const handleEdit = (category: Category) => {
@@ -121,13 +120,11 @@ export function AdminMenuCategories() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar esta categoría? Los productos asociados se verán afectados.')) return;
-    try {
+    const ok = await submit(async () => {
       await deleteCategory(id);
       toast({ title: 'Eliminado', description: 'Categoría eliminada' });
-      loadCategories();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    }
+    });
+    if (ok) loadCategories();
   };
 
   const handleNew = () => {
@@ -163,15 +160,18 @@ export function AdminMenuCategories() {
               <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <FormAlert message={formError} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, name: e.target.value }); clearFieldError('name'); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
+                  {...fieldAria('cat-name-error', !!fieldErrors.name)}
                 />
+                <FieldError id="cat-name-error" message={fieldErrors.name} />
               </div>
 
               <div>
@@ -224,9 +224,11 @@ export function AdminMenuCategories() {
                     type="number"
                     min="0"
                     value={formData.sort_order}
-                    onChange={(e) => setFormData({ ...formData, sort_order: Number(e.target.value) })}
+                    onChange={(e) => { setFormData({ ...formData, sort_order: Number(e.target.value) }); clearFieldError('sort_order'); }}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
+                    {...fieldAria('cat-order-error', !!fieldErrors.sort_order)}
                   />
+                  <FieldError id="cat-order-error" message={fieldErrors.sort_order} />
                 </div>
 
                 <div className="flex items-end">

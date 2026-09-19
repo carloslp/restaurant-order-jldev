@@ -32,14 +32,19 @@ interface ProductAvailabilityRow {
 export function useProductAvailability(opts: UseProductAvailabilityOptions) {
   const { locationId, productIds, enabled = true } = opts;
   const [availability, setAvailability] = useState<ProductAvailabilityState>({});
-  const [isLoading, setIsLoading] = useState(true);
+  // loaded=true solo cuando ya recibimos la respuesta inicial de la DB.
+  // Importante: la policy pública products_public_read solo deja leer
+  // is_available=true, así que un producto agotado puede no venir en la
+  // respuesta; tratar "sin dato pero ya cargado" como NO disponible
+  // evita mostrar como disponible algo agotado.
+  const [loaded, setLoaded] = useState(false);
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null);
 
   // Cargar estado inicial
   const loadInitialAvailability = useCallback(async () => {
     if (!enabled || !locationId || !productIds.length) {
-      setIsLoading(false);
+      setLoaded(true);
       return;
     }
 
@@ -59,12 +64,17 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         for (const product of data as ProductAvailabilityRow[]) {
           initialState[product.id] = product.is_available;
         }
+        // Productos pedidos pero ausentes en la respuesta (RLS los oculta
+        // por is_available=false) se marcan explícitamente no disponibles.
+        for (const id of productIds) {
+          if (!(id in initialState)) initialState[id] = false;
+        }
         setAvailability(initialState);
       }
     } catch (error) {
       console.error('Error loading initial product availability:', error);
     } finally {
-      setIsLoading(false);
+      setLoaded(true);
     }
   }, [enabled, locationId, productIds]);
 
@@ -73,7 +83,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
 
     async function init() {
       if (!enabled || !locationId) {
-        if (mounted) setIsLoading(false);
+        if (mounted) setLoaded(true);
         return;
       }
 
@@ -128,19 +138,22 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
   }, [enabled, locationId, productIds.join(','), loadInitialAvailability]);
 
   // Función para verificar disponibilidad actual (útil antes de confirmar pedido)
+  // Sin dato y aún sin cargar → true (no bloquear el menú en el primer render).
+  // Sin dato pero ya cargado → false (RLS oculta los agotados al anónimo).
   const checkAvailability = useCallback(
     (productId: string): boolean => {
-      return availability[productId] ?? true; // Por defecto true si no tenemos info
+      if (productId in availability) return availability[productId];
+      return !loaded;
     },
-    [availability]
+    [availability, loaded]
   );
 
   // Verificar si todos los productos de un array están disponibles
   const areAllAvailable = useCallback(
     (ids: string[]): boolean => {
-      return ids.every((id) => availability[id] ?? true);
+      return ids.every((id) => (id in availability ? availability[id] : !loaded));
     },
-    [availability]
+    [availability, loaded]
   );
 
   // Obtener lista de productos no disponibles
@@ -153,7 +166,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
 
   return {
     availability,
-    isLoading,
+    isLoading: !loaded,
     checkAvailability,
     areAllAvailable,
     getUnavailableProducts,

@@ -5,16 +5,17 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 import type { ReservationStatus, Zone } from '@/lib/types';
 
 // --- Schemas ---
 const ReservationSchema = z.object({
   holder_name: z.string().min(1, 'El nombre es requerido'),
   holder_phone: z.string().min(5, 'El teléfono es requerido'),
-  reservation_date: z.string(), // ISO date string (YYYY-MM-DD)
-  reservation_time: z.string(), // HH:mm format
-  party_size: z.number().int().positive('El tamaño del grupo debe ser mayor a 0'),
-  preferred_zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA']),
+  reservation_date: z.string().min(1, 'La fecha es requerida'), // ISO date string (YYYY-MM-DD)
+  reservation_time: z.string().min(1, 'La hora es requerida'), // HH:mm format
+  party_size: z.coerce.number().int().positive('El tamaño del grupo debe ser mayor a 0'),
+  preferred_zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Elige una zona válida.' }),
   status: z.enum(['PENDIENTE', 'CONFIRMADA', 'CANCELADA', 'NO_SHOW']).default('PENDIENTE'),
   deposit_status: z.enum(['SIN_DEPOSITO', 'DEPOSITO_PENDIENTE', 'DEPOSITADO']).default('SIN_DEPOSITO'),
   notes: z.string().nullish(),
@@ -66,20 +67,21 @@ export async function listReservations(startDate: string, endDate: string) {
 
 export async function createReservation(payload: z.infer<typeof ReservationSchema>) {
   const staff = await getStaffContext();
-  const validated = ReservationSchema.parse(payload);
+  const validated = parseOrThrow(ReservationSchema, payload);
   const supabase = createServerClient();
 
-  const { data, error } = await supabase
-    .from('reservations')
-    .insert({
-      ...validated,
-      location_id: staff.location_id,
-      created_by: staff.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('reservations')
+      .insert({
+        ...validated,
+        location_id: staff.location_id,
+        created_by: staff.id,
+      })
+      .select()
+      .single(),
+    { action: 'createReservation', fallback: 'No se pudo crear la reserva. Inténtalo de nuevo.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -97,19 +99,22 @@ export async function updateReservation(id: string, payload: Partial<z.infer<typ
     .eq('location_id', staff.location_id)
     .single();
 
-  if (!res) throw new Error('Reserva no encontrada o no autorizada');
+  if (!res) throw new AppError('Reserva no encontrada. Es posible que ya haya sido eliminada.');
 
-  const { data, error } = await supabase
-    .from('reservations')
-    .update({
-      ...payload,
-      updated_by: staff.id,
-    })
-    .eq('id', id)
-    .select()
-    .single();
+  const partial = parseOrThrow(ReservationSchema.partial(), payload);
 
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('reservations')
+      .update({
+        ...partial,
+        updated_by: staff.id,
+      })
+      .eq('id', id)
+      .select()
+      .single(),
+    { action: 'updateReservation', fallback: 'No se pudo actualizar la reserva.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -125,7 +130,10 @@ export async function deleteReservation(id: string) {
     .eq('id', id)
     .eq('location_id', staff.location_id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteReservation:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la reserva.'));
+  }
 
   revalidatePath('/staff/admin');
   return { ok: true };

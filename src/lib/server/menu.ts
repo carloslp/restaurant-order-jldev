@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 import type { Category, Product } from '@/lib/types';
 
 // --- Schemas ---
@@ -16,12 +17,14 @@ const imageUrlSchema = z.preprocess(
   z.string().url('URL de imagen inválida').nullable().optional()
 );
 
+// Números con coerce: los <input type="number"> mandan string vía Server
+// Actions serializadas; sin coerce Zod rechaza y el form devuelve 500.
 const CategorySchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().nullish(),
   image_url: imageUrlSchema,
   is_active: z.boolean().default(true),
-  sort_order: z.number().int().min(0).default(0),
+  sort_order: z.coerce.number().int().min(0, 'El orden no puede ser negativo').default(0),
 });
 
 const ProductSchema = z.object({
@@ -29,7 +32,7 @@ const ProductSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().nullish(),
   image_url: imageUrlSchema,
-  base_price: z.number().positive('El precio debe ser mayor a 0'),
+  base_price: z.coerce.number().positive('El precio debe ser mayor a 0'),
   is_available: z.boolean().default(true),
   allergens: z.array(z.string()).optional(),
   diet_labels: z.array(z.string()).optional(),
@@ -64,38 +67,43 @@ export async function listCategories(): Promise<Category[]> {
 
 export async function createCategory(payload: z.infer<typeof CategorySchema>) {
   const staff = await getStaffContext();
-  const validated = CategorySchema.parse(payload);
+  const validated = parseOrThrow(CategorySchema, payload);
   const supabase = createServerClient();
 
-  const { data, error } = await supabase
-    .from('categories')
-    .insert({
-      ...validated,
-      location_id: staff.location_id,
-    })
-    .select()
-    .single();
+  const data = await queryOrThrow(
+    supabase
+      .from('categories')
+      .insert({
+        ...validated,
+        location_id: staff.location_id,
+      })
+      .select()
+      .single(),
+    { action: 'createCategory', fallback: 'No se pudo crear la categoría. Inténtalo de nuevo.' }
+  );
 
-  if (error) throw error;
-  
   revalidatePath('/staff/admin');
   return data as Category;
 }
 
 export async function updateCategory(id: string, payload: z.infer<typeof CategorySchema>) {
   const staff = await getStaffContext();
-  const validated = CategorySchema.parse(payload);
+  const validated = parseOrThrow(CategorySchema, payload);
   const supabase = createServerClient();
 
-  const { data, error } = await supabase
-    .from('categories')
-    .update(validated)
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('categories')
+      .update(validated)
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    {
+      action: 'updateCategory',
+      fallback: 'No se pudo actualizar la categoría. Verifica que siga existiendo.',
+    }
+  );
 
   revalidatePath('/staff/admin');
   return data as Category;
@@ -119,7 +127,10 @@ export async function deleteCategory(id: string) {
     .eq('id', id)
     .eq('location_id', staff.location_id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteCategory:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la categoría.'));
+  }
 
   if (category?.image_url) {
     try {
@@ -206,21 +217,33 @@ type ServerSupabase = ReturnType<typeof createServerClient>;
 
 async function resolveAllergenIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
   if (names.length === 0) return [];
-  const { data, error } = await supabase.from('allergens').select('id, name').in('name', names);
-  if (error) throw error;
-  const found = new Map((data ?? []).map((a: any) => [a.name, a.id]));
+  const data = await queryOrThrow(supabase.from('allergens').select('id, name').in('name', names), {
+    action: 'resolveAllergenIds',
+    fallback: 'No se pudieron validar los alérgenos.',
+  });
+  const found = new Map(((data ?? []) as any[]).map((a: any) => [a.name, a.id]));
   const missing = names.filter((n) => !found.has(n));
-  if (missing.length > 0) throw new Error(`Alérgenos desconocidos: ${missing.join(', ')}`);
+  if (missing.length > 0) {
+    throw new AppError(`Alérgenos desconocidos: ${missing.join(', ')}`, {
+      fieldErrors: { allergens: `Valores no válidos: ${missing.join(', ')}` },
+    });
+  }
   return names.map((n) => found.get(n));
 }
 
 async function resolveDietLabelIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
   if (names.length === 0) return [];
-  const { data, error } = await supabase.from('diet_labels').select('id, name').in('name', names);
-  if (error) throw error;
-  const found = new Map((data ?? []).map((d: any) => [d.name, d.id]));
+  const data = await queryOrThrow(supabase.from('diet_labels').select('id, name').in('name', names), {
+    action: 'resolveDietLabelIds',
+    fallback: 'No se pudieron validar las etiquetas dietarias.',
+  });
+  const found = new Map(((data ?? []) as any[]).map((d: any) => [d.name, d.id]));
   const missing = names.filter((n) => !found.has(n));
-  if (missing.length > 0) throw new Error(`Etiquetas dietarias desconocidas: ${missing.join(', ')}`);
+  if (missing.length > 0) {
+    throw new AppError(`Etiquetas dietarias desconocidas: ${missing.join(', ')}`, {
+      fieldErrors: { diet_labels: `Valores no válidos: ${missing.join(', ')}` },
+    });
+  }
   return names.map((n) => found.get(n));
 }
 
@@ -231,33 +254,42 @@ async function syncProductLabels(
   allergens: string[] | undefined,
   dietLabels: string[] | undefined
 ) {
+  const guard = async (promise: PromiseLike<{ error: unknown }>, action: string) => {
+    const { error } = await promise;
+    if (error) {
+      console.error(`${action}:`, error);
+      throw new AppError('No se pudieron guardar alérgenos/etiquetas del producto.');
+    }
+  };
   if (allergens !== undefined) {
-    const { error: delErr } = await supabase.from('product_allergens').delete().eq('product_id', productId);
-    if (delErr) throw delErr;
+    await guard(supabase.from('product_allergens').delete().eq('product_id', productId), 'syncProductLabels/delete-allergens');
     const ids = await resolveAllergenIds(supabase, allergens);
     if (ids.length > 0) {
-      const { error: insErr } = await supabase
-        .from('product_allergens')
-        .insert(ids.map((allergen_id) => ({ product_id: productId, allergen_id })));
-      if (insErr) throw insErr;
+      await guard(
+        supabase
+          .from('product_allergens')
+          .insert(ids.map((allergen_id) => ({ product_id: productId, allergen_id }))),
+        'syncProductLabels/insert-allergens'
+      );
     }
   }
   if (dietLabels !== undefined) {
-    const { error: delErr } = await supabase.from('product_diet_labels').delete().eq('product_id', productId);
-    if (delErr) throw delErr;
+    await guard(supabase.from('product_diet_labels').delete().eq('product_id', productId), 'syncProductLabels/delete-labels');
     const ids = await resolveDietLabelIds(supabase, dietLabels);
     if (ids.length > 0) {
-      const { error: insErr } = await supabase
-        .from('product_diet_labels')
-        .insert(ids.map((diet_label_id) => ({ product_id: productId, diet_label_id })));
-      if (insErr) throw insErr;
+      await guard(
+        supabase
+          .from('product_diet_labels')
+          .insert(ids.map((diet_label_id) => ({ product_id: productId, diet_label_id }))),
+        'syncProductLabels/insert-labels'
+      );
     }
   }
 }
 
 export async function createProduct(payload: z.infer<typeof ProductSchema>) {
   const staff = await getStaffContext();
-  const validated = ProductSchema.parse(payload);
+  const validated = parseOrThrow(ProductSchema, payload);
   const supabase = createServerClient();
 
   // La categoría debe pertenecer a este local (error claro en vez de FK/RLS).
@@ -267,21 +299,26 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
     .eq('id', validated.category_id)
     .eq('location_id', staff.location_id)
     .maybeSingle();
-  if (!category) throw new Error('Categoría inválida o no pertenece a este local');
+  if (!category) {
+    throw new AppError('La categoría seleccionada no es válida para este local.', {
+      fieldErrors: { category_id: 'Elige una categoría válida de este local.' },
+    });
+  }
 
   // `allergens`/`diet_labels` no son columnas de `products`: van a tablas puente.
   const { allergens, diet_labels, ...productFields } = validated;
 
-  const { data, error } = await supabase
-    .from('products')
-    .insert({
-      ...productFields,
-      location_id: staff.location_id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('products')
+      .insert({
+        ...productFields,
+        location_id: staff.location_id,
+      })
+      .select()
+      .single(),
+    { action: 'createProduct', fallback: 'No se pudo crear el producto. Inténtalo de nuevo.' }
+  );
 
   await syncProductLabels(supabase, data.id, allergens, diet_labels);
 
@@ -291,7 +328,7 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
 
 export async function updateProduct(id: string, payload: z.infer<typeof ProductSchema>) {
   const staff = await getStaffContext();
-  const validated = ProductSchema.parse(payload);
+  const validated = parseOrThrow(ProductSchema, payload);
   const supabase = createServerClient();
 
   // La categoría debe pertenecer a este local.
@@ -301,20 +338,25 @@ export async function updateProduct(id: string, payload: z.infer<typeof ProductS
     .eq('id', validated.category_id)
     .eq('location_id', staff.location_id)
     .maybeSingle();
-  if (!category) throw new Error('Categoría inválida o no pertenece a este local');
+  if (!category) {
+    throw new AppError('La categoría seleccionada no es válida para este local.', {
+      fieldErrors: { category_id: 'Elige una categoría válida de este local.' },
+    });
+  }
 
   // `allergens`/`diet_labels` no son columnas de `products`: van a tablas puente.
   const { allergens, diet_labels, ...productFields } = validated;
 
-  const { data, error } = await supabase
-    .from('products')
-    .update(productFields)
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('products')
+      .update(productFields)
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    { action: 'updateProduct', fallback: 'No se pudo actualizar el producto. Verifica que siga existiendo.' }
+  );
 
   await syncProductLabels(supabase, id, allergens, diet_labels);
 
@@ -340,7 +382,10 @@ export async function deleteProduct(id: string) {
     .eq('id', id)
     .eq('location_id', staff.location_id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteProduct:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el producto.'));
+  }
 
   if (product?.image_url) {
     try {
@@ -360,14 +405,14 @@ const ModifierGroupSchema = z.object({
   product_id: z.string().uuid('Producto inválido'),
   name: z.string().min(1, 'El nombre es requerido'),
   is_required: z.boolean().default(true),
-  min_selections: z.number().int().min(0).default(0),
-  max_selections: z.number().int().min(0).default(0),
+  min_selections: z.coerce.number().int().min(0, 'El mínimo no puede ser negativo').default(0),
+  max_selections: z.coerce.number().int().min(0, 'El máximo no puede ser negativo').default(0),
 });
 
 const ModifierOptionSchema = z.object({
   modifier_group_id: z.string().uuid('Grupo de modificadores inválido'),
   name: z.string().min(1, 'El nombre es requerido'),
-  price_impact: z.number().default(0),
+  price_impact: z.coerce.number().default(0),
   is_active: z.boolean().default(true),
 });
 
@@ -389,21 +434,22 @@ export async function listModifierGroups(productId: string) {
     .eq('location_id', staff.location_id)
     .single();
 
-  if (!product) throw new Error('Producto no encontrado');
+  if (!product) throw new AppError('Producto no encontrado.');
 
-  const { data, error } = await supabase
-    .from('modifier_groups')
-    .select('*, options:modifier_options(*)')
-    .eq('product_id', productId)
-    .order('created_at', { ascending: true });
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('modifier_groups')
+      .select('*, options:modifier_options(*)')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: true }),
+    { action: 'listModifierGroups', fallback: 'No se pudieron cargar los modificadores.' }
+  );
   return data;
 }
 
 export async function createModifierGroup(payload: z.infer<typeof ModifierGroupSchema>) {
   const staff = await getStaffContext();
-  const validated = ModifierGroupSchema.parse(payload);
+  const validated = parseOrThrow(ModifierGroupSchema, payload);
   const supabase = createServerClient();
 
   // Verify product belongs to this location
@@ -414,15 +460,16 @@ export async function createModifierGroup(payload: z.infer<typeof ModifierGroupS
     .eq('location_id', staff.location_id)
     .single();
 
-  if (!product) throw new Error('Producto no encontrado');
+  if (!product) throw new AppError('Producto no encontrado.');
 
-  const { data, error } = await supabase
-    .from('modifier_groups')
-    .insert({ ...validated, location_id: staff.location_id })
-    .select('*, options:modifier_options(*)')
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('modifier_groups')
+      .insert({ ...validated, location_id: staff.location_id })
+      .select('*, options:modifier_options(*)')
+      .single(),
+    { action: 'createModifierGroup', fallback: 'No se pudo crear el grupo de modificadores.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -430,7 +477,7 @@ export async function createModifierGroup(payload: z.infer<typeof ModifierGroupS
 
 export async function updateModifierGroup(id: string, payload: z.infer<typeof ModifierGroupSchema>) {
   const staff = await getStaffContext();
-  const validated = ModifierGroupSchema.parse(payload);
+  const validated = parseOrThrow(ModifierGroupSchema, payload);
   const supabase = createServerClient();
 
   // Verify ownership through product
@@ -441,17 +488,18 @@ export async function updateModifierGroup(id: string, payload: z.infer<typeof Mo
     .single();
 
   if (!group || (group as any).products.location_id !== staff.location_id) {
-    throw new Error('No autorizado');
+    throw new AppError('No tienes acceso a este grupo de modificadores.');
   }
 
-  const { data, error } = await supabase
-    .from('modifier_groups')
-    .update(validated)
-    .eq('id', id)
-    .select('*, options:modifier_options(*)')
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('modifier_groups')
+      .update(validated)
+      .eq('id', id)
+      .select('*, options:modifier_options(*)')
+      .single(),
+    { action: 'updateModifierGroup', fallback: 'No se pudo actualizar el grupo de modificadores.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -469,7 +517,7 @@ export async function deleteModifierGroup(id: string) {
     .single();
 
   if (!group || (group as any).products.location_id !== staff.location_id) {
-    throw new Error('No autorizado');
+    throw new AppError('No tienes acceso a este grupo de modificadores.');
   }
 
   const { error } = await supabase
@@ -477,7 +525,10 @@ export async function deleteModifierGroup(id: string) {
     .delete()
     .eq('id', id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteModifierGroup:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el grupo de modificadores.'));
+  }
 
   revalidatePath('/staff/admin');
   return { ok: true };
@@ -487,7 +538,7 @@ export async function deleteModifierGroup(id: string) {
 
 export async function createModifierOption(payload: z.infer<typeof ModifierOptionSchema>) {
   const staff = await getStaffContext();
-  const validated = ModifierOptionSchema.parse(payload);
+  const validated = parseOrThrow(ModifierOptionSchema, payload);
   const supabase = createServerClient();
 
   // Verify ownership through modifier_group -> product
@@ -498,16 +549,17 @@ export async function createModifierOption(payload: z.infer<typeof ModifierOptio
     .single();
 
   if (!group || (group as any).products.location_id !== staff.location_id) {
-    throw new Error('No autorizado');
+    throw new AppError('No tienes acceso a este grupo de modificadores.');
   }
 
-  const { data, error } = await supabase
-    .from('modifier_options')
-    .insert({ ...validated, location_id: staff.location_id })
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('modifier_options')
+      .insert({ ...validated, location_id: staff.location_id })
+      .select()
+      .single(),
+    { action: 'createModifierOption', fallback: 'No se pudo crear la opción.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -515,7 +567,7 @@ export async function createModifierOption(payload: z.infer<typeof ModifierOptio
 
 export async function updateModifierOption(id: string, payload: z.infer<typeof ModifierOptionSchema>) {
   const staff = await getStaffContext();
-  const validated = ModifierOptionSchema.parse(payload);
+  const validated = parseOrThrow(ModifierOptionSchema, payload);
   const supabase = createServerClient();
 
   // Verify ownership
@@ -526,17 +578,18 @@ export async function updateModifierOption(id: string, payload: z.infer<typeof M
     .single();
 
   if (!option || (option as any).modifier_groups.products.location_id !== staff.location_id) {
-    throw new Error('No autorizado');
+    throw new AppError('No tienes acceso a esta opción.');
   }
 
-  const { data, error } = await supabase
-    .from('modifier_options')
-    .update(validated)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('modifier_options')
+      .update(validated)
+      .eq('id', id)
+      .select()
+      .single(),
+    { action: 'updateModifierOption', fallback: 'No se pudo actualizar la opción.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -554,7 +607,7 @@ export async function deleteModifierOption(id: string) {
     .single();
 
   if (!option || (option as any).modifier_groups.products.location_id !== staff.location_id) {
-    throw new Error('No autorizado');
+    throw new AppError('No tienes acceso a esta opción.');
   }
 
   const { error } = await supabase
@@ -562,7 +615,10 @@ export async function deleteModifierOption(id: string) {
     .delete()
     .eq('id', id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteModifierOption:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la opción.'));
+  }
 
   revalidatePath('/staff/admin');
   return { ok: true };
@@ -577,12 +633,12 @@ export async function uploadMenuImage(file: File, folder: 'categories' | 'produc
   // Validate file type
   const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
   if (!allowedTypes.includes(file.type)) {
-    throw new Error('Tipo de archivo no permitido. Use JPEG, PNG o WebP.');
+    throw new AppError('Tipo de archivo no permitido. Usa JPEG, PNG o WebP.');
   }
 
   // Validate file size (max 5MB)
   if (file.size > 5 * 1024 * 1024) {
-    throw new Error('El archivo supera el tamaño máximo de 5MB.');
+    throw new AppError('La imagen supera el tamaño máximo de 5MB.');
   }
 
   const fileExt = file.type.split('/')[1];
@@ -596,7 +652,10 @@ export async function uploadMenuImage(file: File, folder: 'categories' | 'produc
       upsert: false,
     });
 
-  if (error) throw error;
+  if (error) {
+    console.error('uploadMenuImage:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo subir la imagen. Inténtalo de nuevo.'));
+  }
 
   const { data } = supabase.storage.from('menu-images').getPublicUrl(filePath);
   return data.publicUrl;
@@ -606,21 +665,29 @@ export async function deleteMenuImage(publicUrl: string): Promise<{ ok: boolean 
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
-  // Extract path from public URL
-  const url = new URL(publicUrl);
-  const pathMatch = url.pathname.match(new RegExp('/menu-images/(.+)$'));
-  if (!pathMatch) throw new Error('URL de imagen inválida');
-
-  const filePath = pathMatch[1];
+  let filePath: string;
+  try {
+    // Extract path from public URL
+    const url = new URL(publicUrl);
+    const pathMatch = url.pathname.match(new RegExp('/menu-images/(.+)$'));
+    if (!pathMatch) throw new AppError('La URL de la imagen no es válida.');
+    filePath = pathMatch[1];
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError('La URL de la imagen no es válida.');
+  }
 
   // Verify the file belongs to this location
   if (!filePath.startsWith(`${staff.location_id}/`)) {
-    throw new Error('No autorizado para eliminar esta imagen');
+    throw new AppError('No tienes acceso a esta imagen.');
   }
 
   const { error } = await supabase.storage.from('menu-images').remove([filePath]);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteMenuImage:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la imagen anterior.'));
+  }
 
   return { ok: true };
 }

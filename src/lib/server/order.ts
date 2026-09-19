@@ -42,8 +42,8 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
   const { data: candidates, error: tokenError } = await supabase
     .from('delivery_tokens')
     .select('*, orders!inner(id, status, delivery_token_expires_at)')
-    .eq('used_at', null)
-    .eq('revoked_at', null)
+    .is('used_at', null)
+    .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString());
 
   if (tokenError || !candidates?.length) {
@@ -108,8 +108,8 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
   const { data: candidates, error: tokenError } = await supabase
     .from('delivery_tokens')
     .select('*, orders!inner(*)')
-    .eq('used_at', null)
-    .eq('revoked_at', null)
+    .is('used_at', null)
+    .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString());
 
   if (tokenError || !candidates?.length) {

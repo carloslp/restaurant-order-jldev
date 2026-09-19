@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 
 // --- Schemas ---
 
@@ -81,7 +82,7 @@ export async function listStaff(): Promise<Array<{
 
 export async function createStaff(payload: z.infer<typeof StaffSchema>) {
   const staff = await getStaffContext();
-  const validated = StaffSchema.parse(payload);
+  const validated = parseOrThrow(StaffSchema, payload);
   const supabase = createServerClient();
 
   // Verificar que el email no existe ya en este local
@@ -93,22 +94,25 @@ export async function createStaff(payload: z.infer<typeof StaffSchema>) {
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe un miembro del staff con ese email en este local');
+    throw new AppError('Ya existe un miembro del staff con ese email en este local.', {
+      fieldErrors: { email: 'Ese email ya está registrado en este local.' },
+    });
   }
 
-  const { data, error } = await supabase
-    .from('staff')
-    .insert({
-      email: validated.email,
-      full_name: validated.full_name,
-      is_active: validated.is_active,
-      location_id: staff.location_id,
-      created_by: staff.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('staff')
+      .insert({
+        email: validated.email,
+        full_name: validated.full_name,
+        is_active: validated.is_active,
+        location_id: staff.location_id,
+        created_by: staff.id,
+      })
+      .select()
+      .single(),
+    { action: 'createStaff', fallback: 'No se pudo crear el miembro del staff.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -116,7 +120,7 @@ export async function createStaff(payload: z.infer<typeof StaffSchema>) {
 
 export async function updateStaff(id: string, payload: z.infer<typeof StaffSchema>) {
   const staff = await getStaffContext();
-  const validated = StaffSchema.parse(payload);
+  const validated = parseOrThrow(StaffSchema, payload);
   const supabase = createServerClient();
 
   // Verificar que el email no exista en otro registro del mismo local
@@ -129,23 +133,26 @@ export async function updateStaff(id: string, payload: z.infer<typeof StaffSchem
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe otro miembro del staff con ese email en este local');
+    throw new AppError('Ya existe otro miembro del staff con ese email en este local.', {
+      fieldErrors: { email: 'Ese email ya está registrado en este local.' },
+    });
   }
 
-  const { data, error } = await supabase
-    .from('staff')
-    .update({
-      email: validated.email,
-      full_name: validated.full_name,
-      is_active: validated.is_active,
-      updated_by: staff.id,
-    })
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('staff')
+      .update({
+        email: validated.email,
+        full_name: validated.full_name,
+        is_active: validated.is_active,
+        updated_by: staff.id,
+      })
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    { action: 'updateStaff', fallback: 'No se pudo actualizar el miembro del staff.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -157,7 +164,7 @@ export async function deleteStaff(id: string) {
 
   // No permitir auto-eliminación
   if (id === staff.id) {
-    throw new Error('No puedes eliminarte a ti mismo');
+    throw new AppError('No puedes eliminarte a ti mismo.');
   }
 
   const { error } = await supabase
@@ -166,7 +173,10 @@ export async function deleteStaff(id: string) {
     .eq('id', id)
     .eq('location_id', staff.location_id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteStaff:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el miembro del staff.'));
+  }
 
   revalidatePath('/staff/admin');
 }
@@ -177,18 +187,19 @@ export async function toggleStaffActive(id: string, isActive: boolean) {
 
   // No permitir auto-desactivación
   if (id === staff.id && !isActive) {
-    throw new Error('No puedes desactivarte a ti mismo');
+    throw new AppError('No puedes desactivarte a ti mismo.');
   }
 
-  const { data, error } = await supabase
-    .from('staff')
-    .update({ is_active: isActive, updated_by: staff.id })
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('staff')
+      .update({ is_active: isActive, updated_by: staff.id })
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    { action: 'toggleStaffActive', fallback: 'No se pudo cambiar el estado del miembro.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -198,7 +209,7 @@ export async function toggleStaffActive(id: string, isActive: boolean) {
 
 export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   const staff = await getStaffContext();
-  const validated = InviteStaffSchema.parse(payload);
+  const validated = parseOrThrow(InviteStaffSchema, payload);
   const supabase = createServerClient();
 
   // Verificar que el email no existe ya en este local
@@ -210,23 +221,26 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
     .maybeSingle();
 
   if (existingStaff) {
-    throw new Error('Ya existe un miembro del staff con ese email en este local');
+    throw new AppError('Ya existe un miembro del staff con ese email en este local.', {
+      fieldErrors: { email: 'Ese email ya está registrado en este local.' },
+    });
   }
 
   // 1. Crear registro en staff (sin auth_user_id aún)
-  const { data: newStaff, error: staffError } = await supabase
-    .from('staff')
-    .insert({
-      email: validated.email,
-      full_name: validated.full_name,
-      is_active: true,
-      location_id: staff.location_id,
-      created_by: staff.id,
-    })
-    .select()
-    .single();
-
-  if (staffError) throw staffError;
+  const newStaff = await queryOrThrow(
+    supabase
+      .from('staff')
+      .insert({
+        email: validated.email,
+        full_name: validated.full_name,
+        is_active: true,
+        location_id: staff.location_id,
+        created_by: staff.id,
+      })
+      .select()
+      .single(),
+    { action: 'inviteStaff/create', fallback: 'No se pudo crear el miembro del staff.' }
+  );
 
   const metadata = {
     location_id: staff.location_id,
@@ -245,9 +259,12 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
     if (authError) {
       await supabase.from('staff').delete().eq('id', newStaff.id);
       if (authError.code === 'email_exists' || /already (registered|exists)/i.test(authError.message)) {
-        throw new Error('Ese email ya está registrado en Supabase Auth.');
+        throw new AppError('Ese email ya está registrado. Usa otro o recupera la contraseña desde /recuperar.', {
+          fieldErrors: { email: 'Ese email ya está registrado.' },
+        });
       }
-      throw new Error(`Error creando el usuario: ${authError.message}`);
+      console.error('inviteStaff/createUser:', authError);
+      throw new AppError('No se pudo crear el acceso. Inténtalo de nuevo.');
     }
 
     // Vincular auth_user_id al registro staff
@@ -273,7 +290,8 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   if (authError) {
     // Si falla el envío, limpiamos el staff creado
     await supabase.from('staff').delete().eq('id', newStaff.id);
-    throw new Error(`Error enviando invitación: ${authError.message}`);
+    console.error('inviteStaff/invite:', authError);
+    throw new AppError('No se pudo enviar la invitación. Verifica el email e inténtalo de nuevo.');
   }
 
   // 3. Vincular auth_user_id al registro staff

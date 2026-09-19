@@ -5,6 +5,7 @@ import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { locationSlugSchema } from '@/lib/slugs';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 
 // --- Schemas ---
 
@@ -12,8 +13,8 @@ const LocalSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   slug: locationSlugSchema,
   timezone: z.string().default('America/Mexico_City'),
-  iva_rate: z.number().min(0).max(1).default(0.16),
-  delivery_fee: z.number().min(0).default(0),
+  iva_rate: z.coerce.number().min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
+  delivery_fee: z.coerce.number().min(0, 'La tarifa no puede ser negativa').default(0),
 });
 
 // --- Helpers ---
@@ -68,8 +69,8 @@ export async function listLocals(): Promise<Array<{
 }
 
 export async function createLocal(payload: z.infer<typeof LocalSchema>) {
-  const staff = await getStaffContext();
-  const validated = LocalSchema.parse(payload);
+  await getStaffContext();
+  const validated = parseOrThrow(LocalSchema, payload);
   const supabase = createServerClient();
 
   // Verificar que la ruta no exista ya
@@ -80,31 +81,33 @@ export async function createLocal(payload: z.infer<typeof LocalSchema>) {
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe un local con esa ruta');
+    throw new AppError('Ya existe un local con esa ruta.', {
+      fieldErrors: { slug: 'Esa ruta ya está en uso, elige otra.' },
+    });
   }
 
-  const { data, error } = await supabase
-    .from('locals')
-    .insert({
-      name: validated.name,
-      slug: validated.slug,
-      timezone: validated.timezone,
-      iva_rate: validated.iva_rate,
-      delivery_fee: validated.delivery_fee,
-      created_by: staff.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('locals')
+      .insert({
+        name: validated.name,
+        slug: validated.slug,
+        timezone: validated.timezone,
+        iva_rate: validated.iva_rate,
+        delivery_fee: validated.delivery_fee,
+      })
+      .select()
+      .single(),
+    { action: 'createLocal', fallback: 'No se pudo crear el local. Inténtalo de nuevo.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
 }
 
 export async function updateLocal(id: string, payload: z.infer<typeof LocalSchema>) {
-  const staff = await getStaffContext();
-  const validated = LocalSchema.parse(payload);
+  await getStaffContext();
+  const validated = parseOrThrow(LocalSchema, payload);
   const supabase = createServerClient();
 
   // Verificar que la ruta no exista en otro local
@@ -116,24 +119,26 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe otro local con esa ruta');
+    throw new AppError('Ya existe otro local con esa ruta.', {
+      fieldErrors: { slug: 'Esa ruta ya está en uso, elige otra.' },
+    });
   }
 
-  const { data, error } = await supabase
-    .from('locals')
-    .update({
-      name: validated.name,
-      slug: validated.slug,
-      timezone: validated.timezone,
-      iva_rate: validated.iva_rate,
-      delivery_fee: validated.delivery_fee,
-      updated_by: staff.id,
-    })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
+  const data = await queryOrThrow(
+    supabase
+      .from('locals')
+      .update({
+        name: validated.name,
+        slug: validated.slug,
+        timezone: validated.timezone,
+        iva_rate: validated.iva_rate,
+        delivery_fee: validated.delivery_fee,
+      })
+      .eq('id', id)
+      .select()
+      .single(),
+    { action: 'updateLocal', fallback: 'No se pudo actualizar el local. Verifica que siga existiendo.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -151,7 +156,7 @@ export async function deleteLocal(id: string) {
     .single();
 
   if (currentLocal?.id === id) {
-    throw new Error('No puedes eliminar el local al que actualmente perteneces');
+    throw new AppError('No puedes eliminar el local al que actualmente perteneces.');
   }
 
   const { error } = await supabase
@@ -159,7 +164,10 @@ export async function deleteLocal(id: string) {
     .delete()
     .eq('id', id);
 
-  if (error) throw error;
+  if (error) {
+    console.error('deleteLocal:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el local.'));
+  }
 
   revalidatePath('/staff/admin');
 }

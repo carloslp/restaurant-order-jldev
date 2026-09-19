@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.6] — 2026-09-19
+
+### Fixed — 500 en `createLocal`/`updateLocal` + menú vacío + tokens de reparto
+- **`locals` sin `created_by`/`updated_by`**: `createLocal`/`updateLocal` insertaban
+  columnas inexistentes → `PGRST204` → 500 en `POST /staff/admin`. Eliminadas del
+  payload (la tabla raíz no lleva auditoría: dependencia circular `locals↔staff`).
+- **Menú público ya no se vacía por un fallo parcial**: `getMenu()` usa
+  `Promise.allSettled` con log por tabla; un fallo en modificadores no esconde
+  categorías/productos. Script `scripts/check-seed.mjs [slug]` ampliado a
+  diagnóstico admin-vs-público (categorías inactivas, huérfanos, `is_available`,
+  errores RLS por tabla).
+- **Disponibilidad real**: `useProductAvailability` marcaba como disponible todo
+  producto sin dato (`?? true`); como la policy pública oculta los agotados al
+  anónimo, lo agotado parecía disponible. Ahora: sin dato + sin cargar → `true`;
+  sin dato + ya cargado → `false`.
+- **Tokens de reparto**: `.eq('used_at', null)` → `.is('used_at', null)` (y
+  `revoked_at`) en `markOrderAsDeliveredByToken`/`getOrderByPlainToken`; con
+  `eq null` PostgREST nunca matcheaba → “Token inválido” permanente. Eliminado
+  bloque duplicado en `markOrderAsDeliveredByToken`.
+
+### Validación
+- `npx tsc --noEmit` → 0 errores.
+
 ## [0.2.5] — 2026-09-19
 
 ### Fixed — 500 en `createProduct`/`updateProduct` (columnas inexistentes)

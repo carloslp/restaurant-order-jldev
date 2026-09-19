@@ -6,6 +6,7 @@ import { DiscountSchema } from '@/lib/validation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getCurrentStaff } from '@/app/staff/page';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 
 async function getStaffContext() {
   const { staff } = await getCurrentStaff();
@@ -39,18 +40,19 @@ export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
   const staff = await getStaffContext();
   const supabase = await createServerClient();
 
-  const validated = DiscountSchema.parse(payload);
+  const validated = parseOrThrow(DiscountSchema, payload);
 
-  const { data, error } = await supabase
-    .from('discounts')
-    .insert({
-      ...validated,
-      location_id: staff.location_id,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Error creating discount: ${error.message}`);
+  const data = await queryOrThrow(
+    supabase
+      .from('discounts')
+      .insert({
+        ...validated,
+        location_id: staff.location_id,
+      })
+      .select()
+      .single(),
+    { action: 'createDiscount', fallback: 'No se pudo crear la promoción. Inténtalo de nuevo.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -62,17 +64,18 @@ export async function updateDiscount(id: string, payload: z.infer<typeof Discoun
 
   await setLocationGUC(supabase, staff.location_id);
 
-  const validated = DiscountSchema.parse(payload);
+  const validated = parseOrThrow(DiscountSchema, payload);
 
-  const { data, error } = await supabase
-    .from('discounts')
-    .update(validated)
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Error updating discount: ${error.message}`);
+  const data = await queryOrThrow(
+    supabase
+      .from('discounts')
+      .update(validated)
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    { action: 'updateDiscount', fallback: 'No se pudo actualizar la promoción.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -90,7 +93,10 @@ export async function deleteDiscount(id: string) {
     .eq('id', id)
     .eq('location_id', staff.location_id);
 
-  if (error) throw new Error(`Error deleting discount: ${error.message}`);
+  if (error) {
+    console.error('deleteDiscount:', error);
+    throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la promoción.'));
+  }
 
   revalidatePath('/staff/admin');
   return { success: true };
@@ -102,15 +108,16 @@ export async function toggleDiscountStatus(id: string, is_active: boolean) {
 
   await setLocationGUC(supabase, staff.location_id);
 
-  const { data, error } = await supabase
-    .from('discounts')
-    .update({ is_active })
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Error toggling discount status: ${error.message}`);
+  const data = await queryOrThrow(
+    supabase
+      .from('discounts')
+      .update({ is_active })
+      .eq('id', id)
+      .eq('location_id', staff.location_id)
+      .select()
+      .single(),
+    { action: 'toggleDiscountStatus', fallback: 'No se pudo cambiar el estado de la promoción.' }
+  );
 
   revalidatePath('/staff/admin');
   return data;
@@ -122,6 +129,11 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
 
   await setLocationGUC(supabase, staff.location_id);
 
+  const amountParsed = Number(amount);
+  if (!Number.isFinite(amountParsed) || amountParsed <= 0) {
+    throw new AppError('Ingresa un monto de descuento válido mayor a 0.');
+  }
+
   // 1. Get order to find location_id and current total
   const { data: order, error: orderError } = await supabase
     .from('orders')
@@ -130,7 +142,7 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
     .eq('location_id', staff.location_id)
     .single();
 
-  if (orderError || !order) throw new Error('Orden no encontrada');
+  if (orderError || !order) throw new AppError('Orden no encontrada. Es posible que ya haya sido eliminada.');
 
   // 2. Find a "Manual Discount" template or just create a usage.
   // For simplicity, we'll look for an active discount marked as 'MANUAL'
@@ -146,18 +158,20 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
   let discountId = manualDiscount?.id;
 
   if (!discountId) {
-    const { data: newDisc, error: createError } = await supabase
-      .from('discounts')
-      .insert({
-        location_id: staff.location_id,
-        description: 'Descuento Manual',
-        discount_type: 'FIXED_AMOUNT',
-        value: 0, // Template value
-        is_active: true,
-      })
-      .select()
-      .single();
-    if (createError) throw new Error(`Error creando plantilla manual: ${createError.message}`);
+    const newDisc = await queryOrThrow(
+      supabase
+        .from('discounts')
+        .insert({
+          location_id: staff.location_id,
+          description: 'Descuento Manual',
+          discount_type: 'FIXED_AMOUNT',
+          value: 0, // Template value
+          is_active: true,
+        })
+        .select()
+        .single(),
+      { action: 'applyManualDiscount/template', fallback: 'No se pudo aplicar el descuento manual.' }
+    );
     discountId = newDisc.id;
   }
 
@@ -168,20 +182,26 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
       discount_id: discountId,
       order_id: orderId,
       customer_phone: order.customer_phone,
-      amount_applied: amount,
+      amount_applied: amountParsed,
     });
 
-  if (usageError) throw new Error(`Error registrando descuento manual: ${usageError.message}`);
+  if (usageError) {
+    console.error('applyManualDiscount/usage:', usageError);
+    throw new AppError('No se pudo registrar el descuento. Inténtalo de nuevo.');
+  }
 
   // 4. Update order total
-  const newTotal = Math.max(0, order.total - amount);
+  const newTotal = Math.max(0, Number(order.total) - amountParsed);
   const { error: updateError } = await supabase
     .from('orders')
     .update({ total: newTotal })
     .eq('id', orderId)
     .eq('location_id', staff.location_id);
 
-  if (updateError) throw new Error(`Error actualizando total de orden: ${updateError.message}`);
+  if (updateError) {
+    console.error('applyManualDiscount/total:', updateError);
+    throw new AppError('Descuento registrado, pero no se pudo actualizar el total. Revisa la orden.');
+  }
 
   revalidatePath('/staff/caja');
   return { success: true, newTotal };
