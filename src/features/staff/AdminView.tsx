@@ -119,8 +119,8 @@ export function AdminView({ staff, local }: AdminViewProps) {
                           <dd className="font-medium">{local.name}</dd>
                         </div>
                         <div className="flex justify-between">
-                          <dt className="text-gray-500">Subdominio</dt>
-                          <dd className="font-medium">{local.subdomain}</dd>
+                          <dt className="text-gray-500">Ruta</dt>
+                          <dd className="font-medium">/{local.slug}</dd>
                         </div>
                         <div className="flex justify-between">
                           <dt className="text-gray-500">Zona horaria</dt>

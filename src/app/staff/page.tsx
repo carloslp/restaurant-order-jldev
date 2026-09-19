@@ -92,10 +92,15 @@ export async function getCurrentStaff() {
     staff = newStaff;
   }
 
+  // Garantía de no-null para todos los consumidores (caja, kds, admin, staff).
+  if (!staff) {
+    redirect('/login?error=staff_resolve_failed');
+  }
+
   // 5. Cargar local
   const { data: local } = await supabase
     .from('locals')
-    .select('id, name, subdomain, timezone, iva_rate, delivery_fee')
+    .select('id, name, slug, timezone, iva_rate, delivery_fee, created_at, updated_at')
     .eq('id', staff.location_id)
     .maybeSingle();
 

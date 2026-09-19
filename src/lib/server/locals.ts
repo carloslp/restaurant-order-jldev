@@ -4,15 +4,13 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { locationSlugSchema } from '@/lib/slugs';
 
 // --- Schemas ---
 
 const LocalSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
-  subdomain: z.string()
-    .min(3, 'El subdominio debe tener al menos 3 caracteres')
-    .regex(/^[a-z0-9-]+$/, 'Solo letras minúsculas, números y guiones')
-    .max(63, 'Máximo 63 caracteres'),
+  slug: locationSlugSchema,
   timezone: z.string().default('America/Mexico_City'),
   iva_rate: z.number().min(0).max(1).default(0.16),
   delivery_fee: z.number().min(0).default(0),
@@ -39,7 +37,7 @@ function setLocationGUC(supabase: ReturnType<typeof createServerClient>, locatio
 export async function listLocals(): Promise<Array<{
   id: string;
   name: string;
-  subdomain: string;
+  slug: string;
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
@@ -60,7 +58,7 @@ export async function listLocals(): Promise<Array<{
   return (data ?? []) as Array<{
     id: string;
     name: string;
-    subdomain: string;
+    slug: string;
     timezone: string;
     iva_rate: number;
     delivery_fee: number;
@@ -74,22 +72,22 @@ export async function createLocal(payload: z.infer<typeof LocalSchema>) {
   const validated = LocalSchema.parse(payload);
   const supabase = createServerClient();
 
-  // Verificar que el subdominio no exista ya
+  // Verificar que la ruta no exista ya
   const { data: existing } = await supabase
     .from('locals')
     .select('id')
-    .eq('subdomain', validated.subdomain)
+    .eq('slug', validated.slug)
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe un local con ese subdominio');
+    throw new Error('Ya existe un local con esa ruta');
   }
 
   const { data, error } = await supabase
     .from('locals')
     .insert({
       name: validated.name,
-      subdomain: validated.subdomain,
+      slug: validated.slug,
       timezone: validated.timezone,
       iva_rate: validated.iva_rate,
       delivery_fee: validated.delivery_fee,
@@ -109,23 +107,23 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
   const validated = LocalSchema.parse(payload);
   const supabase = createServerClient();
 
-  // Verificar que el subdominio no exista en otro local
+  // Verificar que la ruta no exista en otro local
   const { data: existing } = await supabase
     .from('locals')
     .select('id')
-    .eq('subdomain', validated.subdomain)
+    .eq('slug', validated.slug)
     .neq('id', id)
     .maybeSingle();
 
   if (existing) {
-    throw new Error('Ya existe otro local con ese subdominio');
+    throw new Error('Ya existe otro local con esa ruta');
   }
 
   const { data, error } = await supabase
     .from('locals')
     .update({
       name: validated.name,
-      subdomain: validated.subdomain,
+      slug: validated.slug,
       timezone: validated.timezone,
       iva_rate: validated.iva_rate,
       delivery_fee: validated.delivery_fee,
@@ -152,7 +150,7 @@ export async function deleteLocal(id: string) {
     .eq('id', staff.location_id)
     .single();
 
-  if (currentLocal.id === id) {
+  if (currentLocal?.id === id) {
     throw new Error('No puedes eliminar el local al que actualmente perteneces');
   }
 
@@ -169,7 +167,7 @@ export async function deleteLocal(id: string) {
 export async function getLocalById(id: string): Promise<{
   id: string;
   name: string;
-  subdomain: string;
+  slug: string;
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
@@ -192,7 +190,7 @@ export async function getLocalById(id: string): Promise<{
   return {
     id: data.id,
     name: data.name,
-    subdomain: data.subdomain,
+    slug: data.slug,
     timezone: data.timezone,
     iva_rate: Number(data.iva_rate),
     delivery_fee: Number(data.delivery_fee ?? 0),

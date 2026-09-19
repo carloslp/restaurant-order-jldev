@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
-import { config } from 'dotenv';
+import { readFileSync } from 'node:fs';
 
-config({ path: '.env' });
+// Carga mínima de .env (dotenv no está instalado como dependencia).
+try {
+  for (const line of readFileSync('.env', 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+} catch {
+  // sin .env — las vars deben venir del entorno
+}
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SECRET_KEY!;
@@ -16,11 +24,11 @@ describe('Database seed & auth linking verification', () => {
   let adminStaffId: string;
 
   beforeAll(async () => {
-    // Find the demo local
+    // Find the demo local (por slug: la location se maneja por path /demo)
     const { data: locals } = await supabase
       .from('locals')
-      .select('id, name, subdomain')
-      .eq('subdomain', 'localhost')
+      .select('id, name, slug')
+      .eq('slug', 'demo')
       .maybeSingle();
 
     expect(locals).not.toBeNull();
@@ -28,16 +36,16 @@ describe('Database seed & auth linking verification', () => {
     console.log('Found local:', locals);
   });
 
-  it('should have the demo local with subdomain localhost', async () => {
+  it('should have the demo local with slug demo', async () => {
     const { data, error } = await supabase
       .from('locals')
       .select('*')
-      .eq('subdomain', 'localhost')
+      .eq('slug', 'demo')
       .single();
 
     expect(error).toBeNull();
     expect(data).not.toBeNull();
-    expect(data.subdomain).toBe('localhost');
+    expect(data.slug).toBe('demo');
     expect(data.name).toBe('Restaurante Demo JLDev');
   });
 
@@ -109,7 +117,7 @@ describe('Database seed & auth linking verification', () => {
   it('should have modifier groups and options for products', async () => {
     const { data: products } = await supabase
       .from('products')
-      .select('id')
+      .select('id, name')
       .eq('location_id', localId);
 
     const productIds = products!.map(p => p.id);
@@ -177,7 +185,7 @@ describe('Admin API simulation (listProducts)', () => {
     const { data: local } = await supabase
       .from('locals')
       .select('id')
-      .eq('subdomain', 'localhost')
+      .eq('slug', 'demo')
       .single();
     localId = local!.id;
 

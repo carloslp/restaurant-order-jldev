@@ -9,11 +9,12 @@ import {
   getLocalById,
 } from '@/lib/server/locals';
 import { useToast } from '@/components/ui/use-toast';
+import { validateLocationSlug } from '@/lib/slugs';
 
 interface Local {
   id: string;
   name: string;
-  subdomain: string;
+  slug: string;
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
@@ -23,7 +24,7 @@ interface Local {
 
 interface LocalFormData {
   name: string;
-  subdomain: string;
+  slug: string;
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
@@ -31,7 +32,7 @@ interface LocalFormData {
 
 const initialFormData: LocalFormData = {
   name: '',
-  subdomain: '',
+  slug: '',
   timezone: 'America/Mexico_City',
   iva_rate: 0.16,
   delivery_fee: 0,
@@ -45,7 +46,7 @@ export function AdminLocals() {
   const [editingLocal, setEditingLocal] = useState<Local | null>(null);
   const [formData, setFormData] = useState<LocalFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
-  const [subdomainError, setSubdomainError] = useState<string | null>(null);
+  const [slugError, setSlugError] = useState<string | null>(null);
 
   const loadLocals = useCallback(async () => {
     setLoading(true);
@@ -64,22 +65,15 @@ export function AdminLocals() {
     loadLocals();
   }, [loadLocals]);
 
-  const validateSubdomain = (subdomain: string): string | null => {
-    if (subdomain.length < 3) return 'El subdominio debe tener al menos 3 caracteres';
-    if (!/^[a-z0-9-]+$/.test(subdomain)) return 'Solo letras minúsculas, números y guiones';
-    if (subdomain.length > 63) return 'Máximo 63 caracteres';
-    return null;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const error = validateSubdomain(formData.subdomain);
+    const error = validateLocationSlug(formData.slug);
     if (error) {
-      setSubdomainError(error);
+      setSlugError(error);
       return;
     }
-    setSubdomainError(null);
+    setSlugError(null);
 
     setSaving(true);
     try {
@@ -106,19 +100,19 @@ export function AdminLocals() {
     setEditingLocal(local);
     setFormData({
       name: local.name,
-      subdomain: local.subdomain,
+      slug: local.slug,
       timezone: local.timezone,
       iva_rate: local.iva_rate,
       delivery_fee: local.delivery_fee,
     });
-    setSubdomainError(null);
+    setSlugError(null);
     setShowForm(true);
   };
 
   const handleNew = () => {
     setEditingLocal(null);
     setFormData(initialFormData);
-    setSubdomainError(null);
+    setSlugError(null);
     setShowForm(true);
   };
 
@@ -126,7 +120,7 @@ export function AdminLocals() {
     setShowForm(false);
     setEditingLocal(null);
     setFormData(initialFormData);
-    setSubdomainError(null);
+    setSlugError(null);
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -178,25 +172,26 @@ export function AdminLocals() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subdominio *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ruta (sucursal) *</label>
                 <input
                   type="text"
-                  value={formData.subdomain}
+                  value={formData.slug}
                   onChange={(e) => {
                     const value = e.target.value.toLowerCase();
-                    setFormData({ ...formData, subdomain: value });
-                    setSubdomainError(validateSubdomain(value));
+                    setFormData({ ...formData, slug: value });
+                    setSlugError(validateLocationSlug(value));
                   }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary"
                   required
                   disabled={!!editingLocal}
-                  placeholder="mi-restaurante"
+                  placeholder="centro"
                 />
+                <p className="mt-1 text-xs text-gray-500">URL pública: <code>tudominio.com/{formData.slug || 'centro'}</code></p>
                 {editingLocal && (
-                  <p className="mt-1 text-xs text-gray-500">El subdominio no se puede cambiar. Elimina y recrea si es necesario.</p>
+                  <p className="mt-1 text-xs text-gray-500">La ruta no se puede cambiar. Elimina y recrea si es necesario.</p>
                 )}
-                {subdomainError && (
-                  <p className="mt-1 text-xs text-red-600">{subdomainError}</p>
+                {slugError && (
+                  <p className="mt-1 text-xs text-red-600">{slugError}</p>
                 )}
               </div>
 
@@ -260,7 +255,7 @@ export function AdminLocals() {
           <thead className="bg-gray-50">
             <tr>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Nombre</th>
-              <th className="text-left p-3 text-sm font-semibold text-gray-500">Subdominio</th>
+              <th className="text-left p-3 text-sm font-semibold text-gray-500">Ruta</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Zona horaria</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">IVA</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Delivery</th>
@@ -272,7 +267,7 @@ export function AdminLocals() {
             {localsList.map((local) => (
               <tr key={local.id} className="hover:bg-gray-50">
                 <td className="p-3 font-medium">{local.name}</td>
-                <td className="p-3 text-sm text-gray-600 font-mono">{local.subdomain}</td>
+                <td className="p-3 text-sm text-gray-600 font-mono">/{local.slug}</td>
                 <td className="p-3 text-sm text-gray-600">{local.timezone}</td>
                 <td className="p-3 text-sm text-gray-600">{local.iva_rate * 100}%</td>
                 <td className="p-3 text-sm text-gray-600">${local.delivery_fee.toFixed(2)}</td>
@@ -315,7 +310,7 @@ export function AdminLocals() {
       <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
         <h3 className="mb-2 text-sm font-semibold text-gray-700">Información</h3>
         <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-          <li>El <strong>subdominio</strong> forma parte de la URL pública (ej: <code>mi-restaurante.tuapp.com</code>).</li>
+          <li>La <strong>ruta</strong> identifica a la sucursal en la URL pública (ej: <code>tudominio.com/centro</code>). El dominio es irrelevante: cada restaurante usa el suyo.</li>
           <li>El <strong>IVA</strong> se expresa como decimal (0.16 = 16%). Es el IVA incluido en los precios públicos.</li>
           <li>La <strong>tarifa de delivery</strong> es un monto fijo por pedido a domicilio para este local.</li>
           <li>Eliminar un local elimina <strong>en cascada</strong> todo: staff, menú, órdenes, reservas, descuentos.</li>

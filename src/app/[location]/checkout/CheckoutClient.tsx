@@ -1,4 +1,4 @@
-// src/app/checkout/page.tsx
+// src/app/[location]/checkout/CheckoutClient.tsx
 'use client';
 
 import { useCart } from '@/features/cart/CartContext';
@@ -9,16 +9,15 @@ import { useState, useMemo } from 'react';
 import { useProductAvailability } from '@/features/menu/useProductAvailability';
 import Link from 'next/link';
 
-export default function CheckoutPage() {
+interface CheckoutClientProps {
+  locationId: string;
+  slug: string; // slug de la location (para volver al menú)
+}
+
+export default function CheckoutClient({ locationId, slug }: CheckoutClientProps) {
   const { cart, total, count } = useCart();
 
-  // Obtener locationId del subdominio en el cliente
-  const locationId = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    const host = window.location.hostname;
-    return host.split('.')[0].toLowerCase();
-  }, []);
-
+  // El locationId llega del server (resuelto por path) — sin lógica de hostname.
   const productIds = useMemo(() => cart.items.map(item => item.product_id), [cart.items]);
   const { availability, isLoading: availabilityLoading, areAllAvailable, getUnavailableProducts } = useProductAvailability({
     locationId,
@@ -36,7 +35,7 @@ export default function CheckoutPage() {
   if (cart.items.length === 0) {
     return (
       <div className="min-h-flex flex-col items-center justify-center py-20">
-        <p className="text-gray-500 text-center">Tu carrito está vacío. <Link href="/" className="text-orange-600 hover:underline">Volver al menú</Link></p>
+        <p className="text-gray-500 text-center">Tu carrito está vacío. <Link href={`/${slug}`} className="text-orange-600 hover:underline">Volver al menú</Link></p>
       </div>
     );
   }
@@ -58,7 +57,7 @@ export default function CheckoutPage() {
                         return <li key={id}>{item?.product_name ?? id}</li>;
                       })}
                     </ul>
-                    <p className="mt-2">Por favor, actualice su carrito <Link href="/" className="text-red-600 underline">volviendo al menú</Link>.</p>
+                    <p className="mt-2">Por favor, actualice su carrito <Link href={`/${slug}`} className="text-red-600 underline">volviendo al menú</Link>.</p>
                   </div>
                 )}
 
@@ -163,6 +162,8 @@ export default function CheckoutPage() {
         </div>
         {!availabilityLoading && allAvailable && (
           <CheckoutForm
+            locationId={locationId}
+            slug={slug}
             orderType={orderType}
             paymentMethod={paymentMethod}
             eta={eta}

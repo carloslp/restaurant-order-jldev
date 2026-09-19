@@ -1,7 +1,7 @@
 -- Seed de datos demo para restaurant-order-jldev
 -- Requiere: schema.sql ya aplicado.
 -- Corre en SQL Editor de Supabase (como postgres, salta RLS).
--- Crea: 1 local demo (subdomain 'localhost' para dev), staff, catálogo, alérgenos, aforo.
+-- Crea: 1 local demo (slug 'demo' → ruta /demo), staff, catálogo, alérgenos, aforo.
 
 DO $$
 DECLARE
@@ -27,9 +27,9 @@ DECLARE
     v_grp_extras UUID;
     v_grp_salsas UUID;
 BEGIN
-    -- ── Local demo (dev: subdomain 'localhost') ──────────────────────────
-    INSERT INTO locals (name, subdomain, timezone, iva_rate, delivery_fee)
-    VALUES ('Restaurante Demo JLDev', 'localhost', 'America/Mexico_City', 0.16, 30.00)
+    -- ── Local demo (ruta pública: /demo) ─────────────────────────────────
+    INSERT INTO locals (name, slug, timezone, iva_rate, delivery_fee)
+    VALUES ('Restaurante Demo JLDev', 'demo', 'America/Mexico_City', 0.16, 30.00)
     RETURNING id INTO v_local;
 
     -- ── Staff ────────────────────────────────────────────────────────────
@@ -174,5 +174,5 @@ BEGIN
         (v_local, 'TERRAZA', 20),
         (v_local, 'BARRA', 8);
 
-    RAISE NOTICE 'Seed listo. Local demo: % (subdomain localhost)', v_local;
+    RAISE NOTICE 'Seed listo. Local demo: % (ruta /demo)', v_local;
 END $$;

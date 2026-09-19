@@ -34,11 +34,12 @@ await check('srv  ', secretClient, 'locals');
 await check('srv  ', secretClient, 'orders');
 
 // 3) ¿Hay algún local? (con secret, para que RLS no interfiera)
-const { data: locals, error: locErr } = await secretClient.from('locals').select('id, subdomain, name');
+// Locations por path: el slug es la ruta pública de la sucursal (/).
+const { data: locals, error: locErr } = await secretClient.from('locals').select('id, slug, name');
 if (locErr) {
   console.log('locals (srv): ERROR al leer:', locErr.message);
 } else {
-  console.log('locals (srv):', locals.length ? locals.map(l => l.subdomain).join(', ') : '(vacía — falta seed)');
+  console.log('locals (srv):', locals.length ? locals.map((l) => `/${l.slug}`).join(', ') : '(vacía — falta seed)');
 }
 
 console.log('=== Fin diagnóstico ===');

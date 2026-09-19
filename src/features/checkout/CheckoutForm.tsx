@@ -14,6 +14,8 @@ import { z } from 'zod';
 import Link from 'next/link';
 
 interface CheckoutFormProps {
+  locationId: string; // ID de la location (resuelto por path en el server)
+  slug: string; // slug de la location (para volver al menú)
   orderType: 'RECOGER' | 'DOMICILIO';
   paymentMethod: 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
   eta: string; // ISO string from server (local time)
@@ -33,6 +35,8 @@ const formSchema = z.object({
 const FORM_STORAGE_KEY = 'restaurant-order-jldev:checkout-form';
 
 export function CheckoutForm({
+  locationId,
+  slug,
   orderType,
   paymentMethod,
   eta,
@@ -103,10 +107,11 @@ export function CheckoutForm({
         return;
       }
 
-      // 3. Preparar input para server action (location_id será derivado del host en la acción)
+      // 3. Preparar input para server action (el server revalida location_id contra la DB)
       const idempotencyKey =
         form.idempotency_key ?? crypto.randomUUID();
       const input = {
+        location_id: locationId,
         customer_name: form.customer_name!.trim(),
         customer_phone: form.customer_phone!.trim(),
         order_type: orderType,
@@ -146,7 +151,7 @@ export function CheckoutForm({
         setSubmitting(false);
       }
     },
-    [cart, orderType, paymentMethod, eta, form]
+    [cart, orderType, paymentMethod, eta, form, locationId]
   );
 
   // Persistir formulario (excepto password si tuviéramos)
@@ -182,7 +187,7 @@ export function CheckoutForm({
               </Link>
             </>
           )}
-          <Link href="/" className="text-sm text-orange-600 hover:underline">
+          <Link href={`/${slug}`} className="text-sm text-orange-600 hover:underline">
             Volver al menú
           </Link>
         </div>

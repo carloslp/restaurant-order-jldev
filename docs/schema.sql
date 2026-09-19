@@ -46,11 +46,13 @@ CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
 
 -- ---------------------------------------------------------------------------
 -- Locals (multi-tenant root)
+-- Cada location (sucursal) se maneja por PATH: {dominio}/{slug}.
+-- El dominio es irrelevante para la app; el slug es la ruta pública de la sucursal.
 -- ---------------------------------------------------------------------------
 CREATE TABLE locals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    subdomain TEXT UNIQUE NOT NULL,
+    slug TEXT UNIQUE NOT NULL,  -- ruta pública de la sucursal: /{slug} (ej: 'centro')
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,      -- 0.16 = 16%, ajustable por local
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0), -- tarifa fija de delivery por local

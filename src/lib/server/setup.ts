@@ -2,15 +2,13 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { locationSlugSchema } from '@/lib/slugs';
 
 // --- Schemas ---
 
 const SetupSchema = z.object({
   localName: z.string().min(1, 'El nombre del local es requerido'),
-  subdomain: z.string()
-    .min(3, 'El subdominio debe tener al menos 3 caracteres')
-    .regex(/^[a-z0-9-]+$/, 'Solo letras minúsculas, números y guiones')
-    .max(63, 'Máximo 63 caracteres'),
+  slug: locationSlugSchema,
   adminEmail: z.string().email('Email inválido'),
   adminName: z.string().min(1, 'El nombre es requerido'),
   timezone: z.string().default('America/Mexico_City'),
@@ -41,7 +39,7 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
     .from('locals')
     .insert({
       name: validated.localName,
-      subdomain: validated.subdomain,
+      slug: validated.slug,
       timezone: validated.timezone,
       iva_rate: validated.iva_rate,
       delivery_fee: validated.delivery_fee,

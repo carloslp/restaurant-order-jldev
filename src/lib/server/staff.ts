@@ -46,6 +46,8 @@ export async function listStaff(): Promise<Array<{
   created_at: string;
   updated_at: string;
   auth_user_id: string | null;
+  created_by: string | null;
+  updated_by: string | null;
 }>> {
   const staff = await getStaffContext();
   const supabase = createServerClient();
@@ -54,7 +56,7 @@ export async function listStaff(): Promise<Array<{
 
   const { data, error } = await supabase
     .from('staff')
-    .select('id, location_id, email, full_name, is_active, created_at, updated_at, auth_user_id')
+    .select('id, location_id, email, full_name, is_active, created_at, updated_at, auth_user_id, created_by, updated_by')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -67,6 +69,8 @@ export async function listStaff(): Promise<Array<{
     created_at: string;
     updated_at: string;
     auth_user_id: string | null;
+    created_by: string | null;
+    updated_by: string | null;
   }>;
 }
 

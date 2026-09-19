@@ -57,11 +57,11 @@ CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
 -- 3. TABLAS
 -- ============================================================================
 
--- 3.1 Multi-tenant root
+-- 3.1 Multi-tenant root (locations por PATH: {dominio}/{slug})
 CREATE TABLE locals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    subdomain TEXT UNIQUE NOT NULL,
+    slug TEXT UNIQUE NOT NULL,  -- ruta pública de la sucursal: /{slug} (ej: 'centro')
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
@@ -681,7 +681,7 @@ SELECT cron.schedule(
 -- ============================================================================
 -- 11. SEED DEMO
 -- ============================================================================
--- Crea: 1 local demo (subdomain 'localhost' para dev), staff, catálogo,
+-- Crea: 1 local demo (slug 'demo' → ruta /demo), staff, catálogo,
 -- alérgenos, etiquetas dietarias, modificadores y aforo por zona.
 
 DO $$
@@ -709,7 +709,7 @@ DECLARE
     v_grp_salsas UUID;
 BEGIN
     -- Local demo
-    INSERT INTO locals (name, subdomain, timezone, iva_rate, delivery_fee)
+    INSERT INTO locals (name, slug, timezone, iva_rate, delivery_fee)
     VALUES ('Restaurante Demo JLDev', 'localhost', 'America/Mexico_City', 0.16, 30.00)
     RETURNING id INTO v_local;
 
@@ -855,5 +855,5 @@ BEGIN
         (v_local, 'TERRAZA', 20),
         (v_local, 'BARRA', 8);
 
-    RAISE NOTICE 'Seed listo. Local demo: % (subdomain localhost)', v_local;
+    RAISE NOTICE 'Seed listo. Local demo: % (ruta /demo)', v_local;
 END $$;

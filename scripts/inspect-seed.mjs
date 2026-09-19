@@ -24,6 +24,6 @@ await count('allergens');
 await count('diet_labels');
 await count('local_zone_capacity');
 
-const { data: locals, error } = await client.from('locals').select('id, subdomain, name, delivery_fee');
+const { data: locals, error } = await client.from('locals').select('id, slug, name, delivery_fee');
 if (error) console.log('locals err:', error.message);
 else console.log('locals:', locals.length ? JSON.stringify(locals) : '(vacía)');

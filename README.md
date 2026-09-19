@@ -1,5 +1,20 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Multi-sucursal por rutas (paths)
+
+Cada restaurante tiene su propio dominio/deployment (con su propia DB de Supabase).
+Dentro del dominio, cada **sucursal (location)** se identifica por **ruta**, no por subdominio:
+
+- `/` → lista de sucursales (o redirect directo si solo hay una)
+- `/{slug}` → menú de la sucursal (ej: `tudominio.com/centro`)
+- `/{slug}/checkout` → checkout de la sucursal
+- `/track/{token}` → seguimiento de pedido (agnóstico de la sucursal)
+- `/staff`, `/login`, `/setup` → panel del restaurante
+
+El dominio es irrelevante para la app: no hay env vars de dominio ni wildcard DNS.
+El `slug` de cada sucursal vive en la tabla `locals` (`UNIQUE`), reservando rutas del
+sistema (`api`, `staff`, `login`, `setup`, `track`, `checkout`) — ver `src/lib/slugs.ts`.
+
 ## Getting Started
 
 First, run the development server:

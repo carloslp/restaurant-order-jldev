@@ -8,10 +8,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { headers } from 'next/headers';
 import { randomUUID } from 'crypto';
 import { createServerClient } from '@/lib/supabase/server';
-import { getLocalByHost } from '@/lib/server/local';
+import { getLocalById } from '@/lib/server/local';
 import { getMenu } from '@/features/menu/queries';
 import { linePrice } from '@/lib/pricing';
 import { isValidAddress, isValidName, isValidPhone, isValidReferences } from '@/lib/validation';
@@ -20,6 +19,7 @@ import { calculateBestDiscount } from '@/lib/pricing/discounts';
 import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers, Discount } from '@/lib/types';
 
 export interface CreateOrderInput {
+  location_id: string; // ID de la location (path), revalidado server-side contra la DB
   customer_name: string;
   customer_phone: string;
   order_type: OrderType;
@@ -40,10 +40,9 @@ export interface CreateOrderResult {
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
-  // Derivar location_id del host (subdominio)
-  const headersList = await headers();
-  const host = headersList.get('host');
-  const local = await getLocalByHost(host);
+  // Revalidar la location contra la DB (el cliente la pasa, el server decide).
+  // La location se maneja por path: el cliente la obtiene de /{location}/checkout.
+  const local = await getLocalById(input.location_id);
   if (!local) {
     return { ok: false, error: 'Local no identificado' };
   }

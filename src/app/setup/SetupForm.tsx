@@ -1,12 +1,13 @@
 "use client";
 
 import { initializeSystem } from '@/lib/server/setup';
+import { validateLocationSlug } from '@/lib/slugs';
 import { useState } from 'react';
 
 export function SetupForm() {
   const [formData, setFormData] = useState({
     localName: '',
-    subdomain: '',
+    slug: '',
     adminEmail: '',
     adminName: '',
     timezone: 'America/Mexico_City',
@@ -37,14 +38,11 @@ export function SetupForm() {
       newErrors.localName = 'El nombre del local es requerido';
     }
 
-    if (!formData.subdomain.trim()) {
-      newErrors.subdomain = 'El subdominio es requerido';
-    } else if (!/^[a-z0-9-]+$/.test(formData.subdomain)) {
-      newErrors.subdomain = 'Solo letras minúsculas, números y guiones';
-    } else if (formData.subdomain.length < 3) {
-      newErrors.subdomain = 'Mínimo 3 caracteres';
-    } else if (formData.subdomain.length > 63) {
-      newErrors.subdomain = 'Máximo 63 caracteres';
+    if (!formData.slug.trim()) {
+      newErrors.slug = 'La ruta es requerida';
+    } else {
+      const slugError = validateLocationSlug(formData.slug);
+      if (slugError) newErrors.slug = slugError;
     }
 
     if (!formData.adminEmail.trim()) {
@@ -124,24 +122,26 @@ export function SetupForm() {
       </div>
 
       <div>
-        <label htmlFor="subdomain" className="block text-sm font-medium text-gray-700 mb-1">
-          Subdominio (URL) *
+        <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-1">
+          Ruta de la sucursal (URL) *
         </label>
         <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500">https://</span>
+          <span className="text-sm text-gray-500">tudominio.com/</span>
           <input
-            id="subdomain"
+            id="slug"
             type="text"
-            value={formData.subdomain}
-            onChange={(e) => handleChange('subdomain', e.target.value.toLowerCase())}
+            value={formData.slug}
+            onChange={(e) => handleChange('slug', e.target.value.toLowerCase())}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             required
-            placeholder="mi-restaurante"
+            placeholder="centro"
           />
-          <span className="text-sm text-gray-500">.tuapp.com</span>
         </div>
-        {errors.subdomain && (
-          <p className="mt-1 text-sm text-red-600">{errors.subdomain}</p>
+        <p className="mt-1 text-xs text-gray-500">
+          Cada sucursal se identifica por su ruta: <code>tudominio.com/centro</code>, <code>tudominio.com/polanco</code>, etc.
+        </p>
+        {errors.slug && (
+          <p className="mt-1 text-sm text-red-600">{errors.slug}</p>
         )}
       </div>
 

@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { useProductAvailability } from '@/features/menu/useProductAvailability';
 
 interface Props {
-  local: { name: string; subdomain: string; iva_rate: number; delivery_fee: number } | null;
+  local: { name: string; slug: string; iva_rate: number; delivery_fee: number } | null;
   locationId: string;
   categories: Category[];
   products: Product[];
@@ -243,7 +243,7 @@ export default function MenuClient({
       {/* Barra flotante del carrito */}
       {cart.items.length > 0 && (
         <div className="fixed bottom-4 inset-x-0 z-20 flex justify-center px-4">
-          <Link href="/checkout" className="rounded-full bg-orange-600 text-white px-6 py-3 shadow-lg font-semibold hover:bg-orange-700 transition">
+          <Link href={`/${local.slug}/checkout`} className="rounded-full bg-orange-600 text-white px-6 py-3 shadow-lg font-semibold hover:bg-orange-700 transition">
             Ver carrito · {cart.items.reduce((s, i) => s + i.quantity, 0)} ítems ·{' '}
             {formatMXN(cartTotal)}
           </Link>
