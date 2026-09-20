@@ -3,6 +3,7 @@
 'use server';
 
 import { createAnonServerClient } from '@/lib/supabase/server';
+import { describeSupabaseError } from '@/lib/errors';
 import type { Category, Product, ModifierGroup, ModifierOption } from '@/lib/types';
 
 export async function getMenu(locationId: string): Promise<{ categories: Category[]; products: Product[] }> {
@@ -35,17 +36,19 @@ export async function getMenu(locationId: string): Promise<{ categories: Categor
   const rawGroups = groupRes.status === 'fulfilled' && !groupRes.value.error ? (groupRes.value.data ?? []) : [];
   const rawOptions = optRes.status === 'fulfilled' && !optRes.value.error ? (optRes.value.data ?? []) : [];
 
+  // Loguear con descripción serializada: el overlay de Next muestra los
+  // errores crudos como `{}`, ocultando la causa (ej: 42501 permission denied).
   if (catRes.status === 'rejected' || (catRes.status === 'fulfilled' && catRes.value.error)) {
-    console.error('getMenu: fallo cargando categories:', catRes.status === 'rejected' ? catRes.reason : catRes.value.error);
+    console.error('getMenu: fallo cargando categories:', describeSupabaseError(catRes.status === 'rejected' ? catRes.reason : catRes.value.error));
   }
   if (prodRes.status === 'rejected' || (prodRes.status === 'fulfilled' && prodRes.value.error)) {
-    console.error('getMenu: fallo cargando products:', prodRes.status === 'rejected' ? prodRes.reason : prodRes.value.error);
+    console.error('getMenu: fallo cargando products:', describeSupabaseError(prodRes.status === 'rejected' ? prodRes.reason : prodRes.value.error));
   }
   if (groupRes.status === 'rejected' || (groupRes.status === 'fulfilled' && groupRes.value.error)) {
-    console.error('getMenu: fallo cargando modifier_groups (menú sigue visible sin modificadores):', groupRes.status === 'rejected' ? groupRes.reason : groupRes.value.error);
+    console.error('getMenu: fallo cargando modifier_groups (menú sigue visible sin modificadores):', describeSupabaseError(groupRes.status === 'rejected' ? groupRes.reason : groupRes.value.error));
   }
   if (optRes.status === 'rejected' || (optRes.status === 'fulfilled' && optRes.value.error)) {
-    console.error('getMenu: fallo cargando modifier_options (menú sigue visible sin modificadores):', optRes.status === 'rejected' ? optRes.reason : optRes.value.error);
+    console.error('getMenu: fallo cargando modifier_options (menú sigue visible sin modificadores):', describeSupabaseError(optRes.status === 'rejected' ? optRes.reason : optRes.value.error));
   }
 
   const groupsMap = new Map<string, ModifierGroup>();

@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.5.2] — 2026-09-20
+
+### Fixed — Menú público caído: faltaban GRANT del rol anon (401/42501)
+- **Causa raíz (verificada contra la API de Supabase)**: las 4 cargas del menú
+  público (`getMenu`: categories, products, modifier_groups, modifier_options)
+  — y también `allergens`/`diet_labels` y el ping de `/api/health` — respondían
+  `401 code 42501 "permission denied for table X"`. Las policies RLS públicas
+  estaban correctas, pero en proyectos con API keys nuevas (`sb_publishable_*`)
+  las tablas creadas por SQL Editor NO heredan los privilegios por defecto del
+  rol anon: sin `GRANT` base, las policies ni siquiera llegan a evaluarse.
+- **`docs/fix-grants-public-read.sql` (nuevo)**: script idempotente para pegar
+  en el SQL Editor de Supabase. Restaura el modelo estándar de Supabase:
+  `GRANT USAGE` del schema + `GRANT SELECT` para anon/authenticated en las
+  tablas con policy `*_public_read` (menú, promos, aforo, datos maestros);
+  `SELECT` en `locals` solo para el ping de health (RLS oculta filas: el
+  público no puede enumerar locales); `SELECT` en `orders` solo para
+  authenticated (Realtime KDS vía `orders_staff_live`). Incluye query de
+  verificación con `has_table_privilege`. GRANT = privilegio base; POLICY =
+  qué filas; dar SELECT no expone nada que RLS no filtre ya.
+- **`docs/install.sql` §6.1**: mismo bloque de GRANTs para instalaciones
+  frescas, con la explicación GRANT vs POLICY y referencia al script de fix.
+- **Errores opacos en consola**: los `console.error` del menú mostraban `{}`
+  en el overlay de Next (los objetos Error se serializan sin propiedades
+  enumerables). Nuevo helper `describeSupabaseError()` en `lib/errors.ts`
+  (code | message | details | hint | HTTP status) aplicado en
+  `features/menu/queries.ts` (4 cargas) y `features/menu/allergens.ts`, que
+  antes fallaba en silencio y devolvía listas vacías.
+
+### Admin (revisión solicitada)
+- **Derechos: correctos.** Todo el CRUD del admin (categorías, productos,
+  grupos y opciones de modificadores) usa service role (salta RLS) con checks
+  de ownership por `location_id`; el fallo solo afectaba al rol anon del menú
+  público, no al staff.
+- **Cobertura de campos vs. esquema: completa.** Categorías (name, description,
+  image_url, is_active, sort_order), productos (category_id, base_price,
+  is_available, imagen, alérgenos, etiquetas), grupos (is_required,
+  min/max_selections, product_id) y opciones (name, price_impact). Las tablas
+  de modificadores no tienen `sort_order` en el esquema (no falta nada). En
+  `modifier_options` existe columna `is_active` (el menú público la filtra),
+  pero el modal del admin aún no la expone: siempre envía `true` (mejora
+  opcional pendiente: toggle activa/inactiva por opción).
+
+### Validation
+- `npx tsc --noEmit` → 0 errores · `npm run test` → 53/53 ✓ ·
+  `npm run build` → OK. (`npm run lint` mantiene los 57 errores pre-existentes
+  en archivos no relacionados; los 3 archivos tocados no aportan issues.)
+- **Pendiente del lado DB (acción del dueño)**: ejecutar
+  `docs/fix-grants-public-read.sql` en el SQL Editor de Supabase y recargar
+  `/{slug}`. Sin ese paso el menú público sigue en 401.
+
 ## [0.5.1] — 2026-09-19
 
 ### Fixed — Admin Menu UX (visibilidad y contexto de local)

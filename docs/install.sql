@@ -567,6 +567,28 @@ WITH CHECK (
 CREATE POLICY product_diet_labels_public_read ON product_diet_labels
 FOR SELECT USING (true);
 
+-- ----------------------------------------------------------------------------
+-- 6.1 Privilegios base (GRANT). Las policies de arriba definen QUÉ FILAS ve
+-- cada rol; los GRANT son el privilegio BASE de conexión/lectura. Sin ellos
+-- las policies ni siquiera se evalúan: PostgREST responde 401 code 42501
+-- "permission denied for table X". Nota: en proyectos con API keys nuevas
+-- (sb_publishable_*) las tablas creadas por SQL Editor NO heredan defaults.
+-- Script equivalente para proyectos ya instalados: docs/fix-grants-public-read.sql
+-- ----------------------------------------------------------------------------
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+GRANT SELECT ON TABLE
+    categories, products, modifier_groups, modifier_options,
+    allergens, diet_labels, product_allergens, product_diet_labels,
+    discounts, local_zone_capacity
+TO anon, authenticated;
+
+-- locals: solo ping de /api/health (RLS oculta todas las filas al anon).
+GRANT SELECT ON TABLE locals TO anon, authenticated;
+
+-- orders: solo authenticated (JWT de staff) para Realtime (orders_staff_live).
+GRANT SELECT ON TABLE orders TO authenticated;
+
 -- ============================================================================
 -- 7. ÍNDICES
 -- ============================================================================

@@ -45,6 +45,33 @@ function asSupabaseError(err: unknown): SupabaseLikeError | null {
   };
 }
 
+// Serializa cualquier error de Supabase/PostgREST (o un rechazo de promesa)
+// a texto legible para console.error. Necesario porque el overlay de Next
+// muestra los objetos Error/errores no enumerables como `{}` (vacío), lo que
+// oculta la causa real. Muestra code/message/details/hint y status HTTP.
+export function describeSupabaseError(err: unknown): string {
+  if (err === null || err === undefined) return String(err);
+  if (typeof err === 'string') return err;
+  const e = asSupabaseError(err);
+  const name = err instanceof Error ? err.name : undefined;
+  const status = (err as { status?: unknown } | null)?.status;
+  const parts = [
+    name,
+    e?.code,
+    e?.message,
+    e?.details ?? undefined,
+    e?.hint ?? undefined,
+    typeof status === 'number' ? `HTTP ${status}` : undefined,
+  ].filter(Boolean);
+  if (parts.length) return parts.join(' | ');
+  try {
+    const json = JSON.stringify(err);
+    return json && json !== '{}' ? json : String(err);
+  } catch {
+    return String(err);
+  }
+}
+
 // Mapa PostgREST/Postgres → español. PGRST204 (columna inexistente) se reporta
 // como error de configuración: es bug nuestro, no culpa del usuario.
 export function parsePostgrestError(err: unknown, fallback = 'Ocurrió un error al guardar. Inténtalo de nuevo.'): string {
