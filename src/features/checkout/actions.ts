@@ -65,7 +65,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   if (!input.cart.items.length) return { ok: false, error: 'Carrito vacío' };
   if (!input.idempotency_key) return { ok: false, error: 'Falta idempotency key' };
 
-  // 2. Generar tokens de reparto
+  // 2. Generar tokens:
+  // - deliveryTokenUuid → SEGUIMIENTO DEL CLIENTE: UUID que vive en
+  //   orders.delivery_token y alimenta el link /track/{uuid} (solo lectura).
+  // - plainToken → REPARTIDOR: token de un solo uso que se guarda SOLO hasheado
+  //   en delivery_tokens. NO se devuelve al cliente: su link se genera desde
+  //   Caja (regenerateDeliveryToken → /track/repartidor/{token}) cuando se
+  //   necesita compartirlo, después del pedido.
   const deliveryTokenUuid = randomUUID();
   const plainToken = generateToken();
   const tokenHash = hashToken(plainToken);
@@ -161,7 +167,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   );
   
   const discountedSubtotal = discountResult.final_subtotal;
-  const total_saved = discountResult.total_saved;
 
   // 7. Calcular totales con el IVA del local
   const deliveryFee = input.order_type === 'DOMICILIO' ? local.delivery_fee : 0;
@@ -229,5 +234,12 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   }
 
   revalidatePath('/');
-  return { ok: true, order: order as Order, track_token: plainToken };
+
+  // 11. El cliente recibe SU link de seguimiento: el UUID de
+  // orders.delivery_token, que /track/[token] resuelve en modo cliente
+  // (stepper "Seguimiento en Vivo", solo lectura). El token del repartidor
+  // queda hasheado en delivery_tokens; su link se genera desde Caja cuando se
+  // necesite (regenerateDeliveryToken), no aquí.
+  const trackToken = (order as Order).delivery_token ?? deliveryTokenUuid;
+  return { ok: true, order: order as Order, track_token: trackToken };
 }

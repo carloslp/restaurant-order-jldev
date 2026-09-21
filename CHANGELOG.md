@@ -1,4 +1,105 @@
 # Changelog
+## [0.6.0] — 2026-09-20
+
+### Fixed — Pedido invisible en Caja/KDS + el link de seguimiento del checkout era el del repartidor
+
+#### 1. El pedido creado no aparecía en Caja (ni pasaría a Cocina)
+- **Síntoma**: pedido creado desde el checkout (status `CREADO`) no aparecía en
+  `/staff/caja`; por tanto tampoco llegaría a `/staff/kds` tras confirmarse.
+- **Causa**: `useRealtimeOrders` cargaba el estado inicial con un SELECT desde
+  el **browser** a `staff_orders_view`, que depende de que el GUC
+  `app.local_id` (nunca seteado en el browser) o el claim JWT
+  `user_metadata.location_id` pasen la policy `orders_staff_live`; y los
+  eventos Realtime requieren además `orders` en la publication
+  `supabase_realtime`. Cualquier fallo (vista sin GRANT, JWT sin claim,
+  publication sin configurar) dejaba la pantalla vacía **sin error** — el hook
+  se tragaba el error (`if (isMounted && !error)`) y no había ningún reintento.
+- **`src/lib/server/order.ts`** (`listOrdersForLocation`, ahora usada):
+  - Bug latente corregido: usa service role (que **salta RLS**), así que el GUC
+    no filtra nada; agregado el filtro explícito
+    `.eq('location_id', staff.location_id)` (sin él listaría pedidos de TODOS
+    los locales).
+  - Los errores ahora se loguean (`describeSupabaseError`) en vez de devolver
+    `[]` en silencio.
+- **`src/features/staff/useRealtimeOrders.ts`** (usado por Caja y KDS):
+  - Carga inicial y refetch vía server action `listOrdersForLocation`
+    (servidor, filtro explícito por local): ya no depende del GUC, del claim
+    JWT ni de la publication → el pedido nuevo **siempre** aparece.
+  - Red de seguridad: refetch al conectar el canal (`SUBSCRIBED`), al
+    recuperar el foco de la pestaña y polling cada 30s.
+  - Conciliación del refetch con el estado local (por `updated_at` y
+    `created_at` fresco) para que un fetch en vuelo no reviva estados viejos
+    ni tape un pedido recién insertado por Realtime.
+  - Callback de `subscribe` tipado con `REALTIME_SUBSCRIBE_STATES` (el
+    literal suelto daba TS7006 con supabase-js 2.116).
+- **`docs/fix-realtime-caja.sql`** (nuevo): checklist idempotente para el SQL
+  Editor de Supabase — agrega `orders` a la publication `supabase_realtime`,
+  GRANT SELECT a `authenticated` (orders + `staff_orders_view`), recrea la
+  policy `orders_staff_live` y trae queries de verificación. Solo habilita la
+  capa "en vivo" (Realtime); la carga inicial ya funciona sin ejecutarlo.
+
+#### 2. El link de seguimiento generado en el checkout era el del REPARTIDOR
+- **Síntoma**: tras enviar el pedido, el botón "Ver seguimiento en vivo" llevaba
+  al cliente a `/track/{token-de-repartidor}` → pantalla "Entrega de Pedido"
+  con botón "Marcar como Entregado": el cliente podía **completar el pedido**
+  saltándose todo el flujo (y el token plano de un solo uso quedaba expuesto).
+- **Causa**: `createOrder` devolvía `track_token: plainToken` (el token del
+  repartidor, guardado hash-only en `delivery_tokens`) en lugar del UUID de
+  seguimiento del cliente (`orders.delivery_token`), que es lo que
+  `/track/[token]` resuelve en modo cliente (stepper "Seguimiento en Vivo",
+  solo lectura).
+- **`src/features/checkout/actions.ts`**: ahora devuelve
+  `track_token = order.delivery_token` (UUID del cliente). El link del
+  repartidor **no** se genera en el checkout: se crea y comparte después desde
+  Caja (`regenerateDeliveryToken` → `/track/repartidor/{token}`, un solo uso,
+  2h), que es el flujo correcto — el cliente pide; el link de reparto se
+  comparte cuando se despacha.
+- **`src/features/checkout/CheckoutForm.tsx`**: el botón ya apuntaba a
+  `/track/{track_token}`; ahora ese href es el link del CLIENTE (comentario
+  actualizado). Limpieza: import `Cart`/`CartItem` sin uso removidos.
+- **`src/lib/server/order.ts`**: eliminados 4 `any` preexistentes (join
+  delivery_tokens × orders ahora tipado con `DeliveryTokenCandidate` /
+  `DeliveryTokenWithOrder`); lint de los archivos tocados en 0 problemas.
+- **Validación**: `npx tsc --noEmit` → 0 errores; `eslint` en tocados → 0
+  problemas; `npm run test` → 53/53; `npm run build` → OK (19 rutas).
+
+---
+
+## [0.5.9] — 2026-09-20
+
+### Fixed — "Local no resuelto" en el panel: `getCurrentStaff` leía `locals` con el cliente de sesión
+- **Síntoma**: con el setup correcto (verificado read-only: 1 local, 1 staff
+  activo con `location_id` y `auth_user_id` vinculados), el panel admin
+  mostraba el aviso amarillo "⚠️ Local no resuelto" en Menú, "Control total
+  del local ." (sin nombre) en Dashboard y "No hay datos del local." en la
+  tarjeta Local. El menú público `/{slug}` funcionaba normalmente.
+- **Causa raíz (reproducida contra BD viva)**: el paso 5 de `getCurrentStaff`
+  (`src/app/staff/page.tsx`) cargaba el local con el **cliente de sesión**
+  (anon key + JWT → aplica RLS), mientras que la búsqueda de staff usa service
+  role (salta RLS). La única policy de `locals` (`locals_staff_access`,
+  `docs/install.sql` §6) exige `id = current_setting('app.local_id', true)::uuid`,
+  GUC que en esa ruta nunca se setea → RLS filtra la fila → `data = null`
+  **sin error**, y el código además ignoraba `error` (`const { data: local }`).
+  Probe read-only: SELECT de `locals` por id con cliente anon → **0 filas**
+  (reproduce el bug); con service role → 1 fila. Nota estructural:
+  `set_config(is_local: true)` es transaccional y rpc/SELECT van en requests
+  de PostgREST distintas, así que "setear el GUC antes" no es fiable aquí.
+- **`src/app/staff/page.tsx`**: la carga del local ahora usa `adminSupabase`
+  (service role, el mismo cliente de la búsqueda de staff) y verifica `error`
+  → log `getCurrentStaff/local_query` con `describeSupabaseError` en vez de
+  tragárselo. Si el staff no tiene `location_id`, se loguea y se devuelve
+  `local: null` (la UI degrada al aviso amarillo sin romper la sesión).
+  Rationale idéntica a `getLocalBySlug` (`src/lib/server/local.ts`, que ya
+  documentaba leer `locals` con service role porque la policy oculta la tabla
+  al rol anon): el local es dato público del menú y el service role corre solo
+  en el servidor. Consistente con toda la capa de datos (`menu.ts`,
+  `locals.ts`, `reservations.ts`, `reports.ts`).
+- **Validación**: re-probe read-only replicando la consulta corregida
+  (service role SELECT `locals` por `staff.location_id` → fila devuelta);
+  `npx tsc --noEmit` → 0 errores; `eslint` en tocados → 0 problemas;
+  `npm run test` → 53/53; `npm run build` → OK.
+
+---
 
 ## [0.5.8] — 2026-09-20
 

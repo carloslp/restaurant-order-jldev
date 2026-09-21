@@ -9,7 +9,32 @@ import { verifyToken } from '@/lib/tokens';
 import { generateToken, hashToken } from '@/lib/tokens';
 import type { Order, OrderStatus } from '@/lib/types';
 import { getCurrentStaff } from '@/app/staff/page';
-import { parsePostgrestError } from '@/lib/errors';
+import { parsePostgrestError, describeSupabaseError } from '@/lib/errors';
+
+// ---------------------------------------------------------------------------
+// Tokens de reparto: filas del join delivery_tokens × orders que devuelven
+// las queries de arriba. Las queries corren con service role y sin generics
+// de Database, así que tipamos explícitamente lo que devuelven.
+// ---------------------------------------------------------------------------
+
+type DeliveryTokenCandidateBase = {
+  id: string;
+  token_hash: string;
+  expires_at: string;
+  used_at: string | null;
+  revoked_at: string | null;
+  order_id: string;
+};
+
+// join '*, orders!inner(id, status, delivery_token_expires_at)'
+type DeliveryTokenCandidate = DeliveryTokenCandidateBase & {
+  orders: Pick<Order, 'id' | 'status' | 'delivery_token_expires_at'>;
+};
+
+// join '*, orders!inner(*)'
+type DeliveryTokenWithOrder = DeliveryTokenCandidateBase & {
+  orders: Order;
+};
 
 /**
  * Fetch an order by its delivery_token (UUID string).
@@ -53,12 +78,14 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
   }
 
   // 2. Find the specific token by verifying the plain token against each candidate's hash
-  const tokenRecord = candidates.find((c: any) => verifyToken(plainToken, c.token_hash));
+  const tokenRecord = (candidates as DeliveryTokenCandidate[]).find((c) =>
+    verifyToken(plainToken, c.token_hash)
+  );
   if (!tokenRecord) {
     return { ok: false, error: 'Token inválido' };
   }
 
-  const order = (tokenRecord as any).orders;
+  const order = tokenRecord.orders;
 
   // 3. Check if the order is already in a terminal state (optional, but we can prevent updating if already completed/cancelled)
   if (order.status === 'COMPLETADO' || order.status === 'CANCELADO') {
@@ -119,13 +146,15 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
   }
 
   // 2. Find the specific token by verifying the plain token against each candidate's hash
-  const tokenRecord = candidates.find((c: any) => verifyToken(plainToken, c.token_hash));
+  const tokenRecord = (candidates as DeliveryTokenWithOrder[]).find((c) =>
+    verifyToken(plainToken, c.token_hash)
+  );
   if (!tokenRecord) {
     return null;
   }
 
   // 3. Return the associated order
-  return (tokenRecord as any).orders as Order;
+  return tokenRecord.orders;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +290,7 @@ export async function regenerateDeliveryToken(
 
 
 // ---------------------------------------------------------------------------
-// Staff: listar pedidos del local (RLS filtra por app.local_id vía GUC).
+// Staff: listar pedidos del local (fuente de la carga inicial de Caja/KDS).
 // ---------------------------------------------------------------------------
 
 export async function listOrdersForLocation(opts?: {
@@ -271,8 +300,10 @@ export async function listOrdersForLocation(opts?: {
   const { staff } = await getCurrentStaff();
   const supabase = createServerClient();
 
-  // RLS: current_setting('app.local_id') debe estar seteado.
-  // En Server Actions, lo seteamos explícitamente antes de la query.
+  // El cliente service role SE SALTA RLS: el GUC app.local_id no filtra nada
+  // aquí. El aislamiento por local debe ser un filtro explícito de la query
+  // (el rpc set_config se mantiene por si algún trigger lee el GUC, pero la
+  // seguridad real vive en el .eq('location_id', ...)).
   await supabase.rpc('set_config', {
     name: 'app.local_id',
     value: staff.location_id,
@@ -282,6 +313,7 @@ export async function listOrdersForLocation(opts?: {
   let query = supabase
     .from('orders')
     .select('*')
+    .eq('location_id', staff.location_id) // filtro explícito: service role salta RLS
     .order('created_at', { ascending: false })
     .limit(opts?.limit ?? 100);
 
@@ -292,7 +324,9 @@ export async function listOrdersForLocation(opts?: {
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error listando orders:', error);
+    // No tragar el error en silencio: sin log, Caja/KDS quedan vacías sin
+    // explicación (síntoma: "el pedido no aparece").
+    console.error('listOrdersForLocation:', describeSupabaseError(error));
     return [];
   }
 

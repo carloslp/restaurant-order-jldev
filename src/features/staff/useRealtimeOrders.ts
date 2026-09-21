@@ -1,21 +1,33 @@
 // src/features/staff/useRealtimeOrders.ts
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { listOrdersForLocation } from '@/lib/server/order';
+import { REALTIME_SUBSCRIBE_STATES, type RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Order } from '@/lib/types';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 /**
  * Hook de Realtime para órdenes del local (para KDS y Caja).
- * - Carga inicial: SELECT a la vista segura staff_orders_view (RLS con JWT/GUC).
- * - Suscripción: postgres_changes a la tabla `orders` filtrando por location_id.
- *   Requiere Realtime habilitado en la tabla orders y la policy orders_staff_live
- *   (docs/policy-realtime-staff.sql).
+ *
+ * - Carga inicial y refetch: server action `listOrdersForLocation` (service
+ *   role en el servidor con filtro explícito por location_id). A diferencia
+ *   del SELECT browser a `staff_orders_view`, no depende del GUC
+ *   `app.local_id` (nunca seteado en el browser) ni del claim
+ *   user_metadata.location_id del JWT: el pedido nuevo aparece siempre.
+ * - Suscripción: postgres_changes a la tabla `orders` filtrando por
+ *   location_id, como mejora "en vivo". Requiere Realtime habilitado en
+ *   `orders` y la policy orders_staff_live (docs/fix-realtime-caja.sql).
+ * - Red de seguridad: refetch al conectar el canal, al recuperar el foco de
+ *   la pestaña y por polling cada REFRESH_INTERVAL_MS. Así el pedido aparece
+ *   aunque Realtime esté sin configurar o se pierda un evento.
  *
  * Uso:
  *   const orders = useRealtimeOrders({ locationId, statuses, limit });
  */
+
+const REFRESH_INTERVAL_MS = 30_000;
+
 export function useRealtimeOrders(opts: {
   locationId: string;
   statuses?: Order['status'][];
@@ -23,8 +35,57 @@ export function useRealtimeOrders(opts: {
   enabled?: boolean;
 }): Order[] {
   const { locationId, statuses, limit = 100, enabled = true } = opts;
+  // Los callers pasan literales; key estable para las dependencias del efecto.
+  const statusesKey = statuses?.join(',') ?? '';
   const [orders, setOrders] = useState<Order[]>([]);
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
+
+  // Carga/refetch desde el servidor. Concilia con el estado actual para que
+  // un refetch en vuelo no reviva estados viejos ni tape un pedido recién
+  // insertado que llegó por Realtime mientras el fetch estaba en curso.
+  const refresh = useCallback(async () => {
+    if (!locationId) return;
+    const filterStatuses = statusesKey
+      ? (statusesKey.split(',') as Order['status'][])
+      : undefined;
+    try {
+      const fetched = await listOrdersForLocation({
+        statuses: filterStatuses,
+        limit,
+      });
+      setOrders((prev) => {
+        const byId = new Map<string, Order>();
+        for (const o of fetched) byId.set(o.id, o);
+
+        const freshCutoff = Date.now() - REFRESH_INTERVAL_MS;
+        for (const o of prev) {
+          const serverRow = byId.get(o.id);
+          if (!serverRow) {
+            // Ausente del snapshot del servidor: conservarla solo si es una
+            // fila recién insertada (llegó por Realtime durante el fetch) y
+            // sigue dentro del filtro de estados; el próximo refetch la trae.
+            const isFresh = new Date(o.created_at).getTime() >= freshCutoff;
+            const isActive = !filterStatuses || filterStatuses.includes(o.status);
+            if (isFresh && isActive) byId.set(o.id, o);
+            continue;
+          }
+          // El snapshot trae la fila: prevalece la versión más reciente
+          // (updated_at) para no deshacer un UPDATE de Realtime en vuelo.
+          if ((serverRow.updated_at ?? '') < (o.updated_at ?? '')) {
+            byId.set(o.id, o);
+          }
+        }
+
+        return [...byId.values()]
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, limit);
+      });
+    } catch (err) {
+      // Antes los errores de carga se tragaban en silencio y Caja/KDS quedaban
+      // vacías sin explicación (síntoma: "el pedido no aparece").
+      console.error('useRealtimeOrders/refresh:', err);
+    }
+  }, [locationId, statusesKey, limit]);
 
   useEffect(() => {
     if (!enabled || !locationId) return;
@@ -33,37 +94,24 @@ export function useRealtimeOrders(opts: {
       supabase.current = createClient();
     }
 
-    // Cargar estado inicial desde la vista segura (no expone datos sensibles)
-    let isMounted = true;
-    async function loadInitial() {
-      let query = supabase
-        .current!.from('staff_orders_view')
-        .select('*')
-        .eq('location_id', locationId)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (statuses?.length) {
-        query = query.in('status', statuses);
-      }
-      const { data, error } = await query;
-      if (isMounted && !error) {
-        // Normalizar: la vista tiene delivery_address_short; el hook devuelve Order.
-        const normalized = (data ?? []).map((v: Record<string, unknown>) => ({
-          ...v,
-          delivery_address: v.delivery_address_short ?? null,
-          delivery_references: null,
-          delivery_token: null,
-          delivery_token_expires_at: null,
-          delivery_token_rotated_at: null,
-          customer_phone: '', // no expuesto en la vista
-        } as Order));
-        setOrders(normalized);
-      }
-    }
-    loadInitial();
+    let cancelled = false;
+    const refreshOnce = () => {
+      if (!cancelled) void refresh();
+    };
 
-    // Suscribirse a cambios de la tabla orders (los eventos llegan si la policy
-    // orders_staff_live permite SELECT; el payload trae las columnas reales).
+    // 1) Carga inicial desde el servidor.
+    refreshOnce();
+
+    // 2) Polling periódico (red de seguridad si Realtime no entrega eventos).
+    const intervalId = window.setInterval(refreshOnce, REFRESH_INTERVAL_MS);
+
+    // 3) Al recuperar el foco de la pestaña (mientras duerme se pierden eventos).
+    window.addEventListener('focus', refreshOnce);
+
+    // 4) Realtime: eventos INSERT/UPDATE/DELETE de orders del local.
+    const realtimeStatuses = statusesKey
+      ? (statusesKey.split(',') as Order['status'][])
+      : undefined;
     const channel = supabase
       .current!.channel(`orders-realtime-${locationId}`)
       .on(
@@ -77,8 +125,8 @@ export function useRealtimeOrders(opts: {
         (payload: RealtimePostgresChangesPayload<{ [key: string]: never }>) => {
           setOrders((prev) => {
             const incoming = payload.new as Partial<Order> | undefined;
-            // El payload del Realtime incluye TODO el row de orders (columnas reales),
-            // no la vista. Lo normalizamos para la UI.
+            // El payload del Realtime incluye TODO el row de orders (columnas
+            // reales). Lo normalizamos para la UI.
             const normalizedIncoming = incoming
               ? ({
                   ...incoming,
@@ -96,7 +144,10 @@ export function useRealtimeOrders(opts: {
             if (payload.eventType === 'UPDATE' && normalizedIncoming) {
               const exists = prev.some((o) => o.id === normalizedIncoming.id);
               if (!exists) {
-                if (statuses?.length && !statuses.includes(normalizedIncoming.status)) {
+                if (
+                  realtimeStatuses?.length &&
+                  !realtimeStatuses.includes(normalizedIncoming.status)
+                ) {
                   return prev;
                 }
                 return [normalizedIncoming, ...prev].slice(0, limit);
@@ -116,13 +167,26 @@ export function useRealtimeOrders(opts: {
           });
         }
       )
-      .subscribe();
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
+        // Al (re)conectar el canal sincronizamos con el servidor: cubre los
+        // eventos perdidos mientras el canal estuvo desconectado o sin
+        // configurar (publication/policy en Supabase).
+        if (
+          status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED ||
+          status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
+          status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR
+        ) {
+          refreshOnce();
+        }
+      });
 
     return () => {
-      isMounted = false;
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshOnce);
       supabase.current!.removeChannel(channel);
     };
-  }, [locationId, statuses?.join(','), limit, enabled]);
+  }, [locationId, statusesKey, limit, enabled, refresh]);
 
   return orders;
 }

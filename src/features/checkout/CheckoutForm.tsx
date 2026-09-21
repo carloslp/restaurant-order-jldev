@@ -6,7 +6,6 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import type { Cart, CartItem } from '@/lib/types';
 import { useCart } from '@/features/cart/CartContext';
 import { createOrder } from '@/features/checkout/actions';
 import { z } from 'zod';
@@ -226,7 +225,9 @@ export function CheckoutForm({
           </div>
         </div>
 
-        {/* Acciones de seguimiento */}
+        {/* Link de seguimiento del CLIENTE: /track/{uuid} (solo lectura,
+            stepper "Seguimiento en Vivo"). El link del repartidor se genera
+            aparte desde Caja y se comparte después. */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           {result.trackToken && (
             <Link

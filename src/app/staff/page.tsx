@@ -71,12 +71,30 @@ export async function getCurrentStaff() {
     redirect('/staff/auth/logout?reason=no_staff');
   }
 
-  // 5. Cargar local
-  const { data: local } = await supabase
+  // 5. Cargar local (service role, mismo cliente que la búsqueda de staff).
+  // La única policy RLS de `locals` (`locals_staff_access`) exige el GUC
+  // `app.local_id`, que en esta ruta de lectura nunca se setea → el cliente de
+  // sesión devolvía 0 filas sin error y el panel mostraba "Local no resuelto".
+  // Además set_config(is_local: true) no sobrevive entre requests de PostgREST,
+  // así que "setear el GUC primero" no es fiable aquí. Mismo rationale que
+  // getLocalBySlug (src/lib/server/local.ts): el local es dato público del menú
+  // y el service role corre solo en el servidor.
+  if (!staff.location_id) {
+    console.error(`getCurrentStaff/local_query: staff ${staff.id} sin location_id; el panel se muestra sin local.`);
+    return { user, staff, local: null };
+  }
+
+  const { data: local, error: localError } = await adminSupabase
     .from('locals')
     .select('id, name, slug, timezone, iva_rate, delivery_fee, created_at, updated_at')
     .eq('id', staff.location_id)
     .maybeSingle();
+
+  // Un fallo de consulta (red, 5xx, etc.) NO invalida la sesión: avisar y
+  // degradar a "sin local" (la UI muestra el aviso amarillo) para reintento.
+  if (localError) {
+    console.error(`getCurrentStaff/local_query: ${describeSupabaseError(localError)}`);
+  }
 
   return {
     user,
