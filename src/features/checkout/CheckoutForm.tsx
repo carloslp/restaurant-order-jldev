@@ -29,6 +29,7 @@ interface CheckoutFormProps {
   orderType: 'RECOGER' | 'DOMICILIO';
   paymentMethod: 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
   eta: string; // ISO string from server (local time)
+  onSuccess?: (orderId: string, trackToken?: string) => void;
 }
 
 const formSchema = z.object({
@@ -50,8 +51,9 @@ export function CheckoutForm({
   orderType,
   paymentMethod,
   eta,
+  onSuccess,
 }: CheckoutFormProps) {
-  const { cart } = useCart();
+  const { cart, clearCart } = useCart();
   const [form, setForm] = useState<Record<string, string | null | undefined>>(() => {
     try {
       const raw = localStorage.getItem(FORM_STORAGE_KEY);
@@ -155,8 +157,12 @@ export function CheckoutForm({
             orderId: actionResult.order.id,
             trackToken: actionResult.track_token ?? undefined,
           });
-          // limpiar formulario guardado tras éxito
+          // Limpiar carrito y formulario guardado tras éxito
+          clearCart();
           localStorage.removeItem(FORM_STORAGE_KEY);
+          if (onSuccess) {
+            onSuccess(actionResult.order.id, actionResult.track_token ?? undefined);
+          }
         } else {
           setErrors({ _submit: actionResult.error ?? 'Error al procesar el pedido' });
         }
@@ -167,7 +173,7 @@ export function CheckoutForm({
         setSubmitting(false);
       }
     },
-    [cart, orderType, paymentMethod, eta, form, locationId]
+    [cart, clearCart, orderType, paymentMethod, eta, form, locationId, onSuccess]
   );
 
   // Persistir formulario en localStorage

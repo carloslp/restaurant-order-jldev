@@ -1,7 +1,7 @@
 // src/app/track/[token]/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatMXN } from '@/lib/pricing';
 import { getOrderByDeliveryToken, markOrderAsDeliveredByToken } from '@/lib/server/order';
@@ -32,6 +32,9 @@ type OrderStatus =
 interface TrackedOrder {
   id: string;
   status: OrderStatus;
+  order_type: 'RECOGER' | 'DOMICILIO';
+  customer_name: string;
+  delivery_address: string | null;
   eta: string; // ISO
   total: number;
   created_at: string;
@@ -51,6 +54,36 @@ export default function TrackPage() {
   // Extract token from pathname: /track/<token>
   const token = pathname.split('/').pop() ?? '';
 
+  const fetchClientOrder = useCallback(async (deliveryToken: string, isInitial = false) => {
+    try {
+      if (isInitial) setLoading(true);
+      const orderData = await getOrderByDeliveryToken(deliveryToken);
+      if (!orderData) {
+        if (isInitial) setError('Orden no encontrada o token inválido');
+        return null;
+      }
+      const mapped: TrackedOrder = {
+        id: orderData.id,
+        status: orderData.status as OrderStatus,
+        order_type: orderData.order_type,
+        customer_name: orderData.customer_name,
+        delivery_address: orderData.delivery_address,
+        eta: orderData.eta,
+        total: orderData.total,
+        created_at: orderData.created_at,
+        delivered_at: orderData.delivered_at ?? null,
+      };
+      setOrder(mapped);
+      return mapped;
+    } catch (err) {
+      console.error(err);
+      if (isInitial) setError('Error al obtener la orden');
+      return null;
+    } finally {
+      if (isInitial) setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!token) {
       setError('Token no proporcionado');
@@ -59,43 +92,51 @@ export default function TrackPage() {
       return;
     }
 
-    // Try to fetch as client order (delivery_token is UUID)
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
-    if (isUUID) {
-      setMode('client');
-      fetchClientOrder(token);
-    } else {
-      // Assume it's a repartidor token (plain token)
+    if (!isUUID) {
       setMode('repartidor');
       setLoading(false);
+      return;
     }
-  }, [pathname, token]);
 
-  async function fetchClientOrder(deliveryToken: string) {
-    try {
-      setLoading(true);
-      const orderData = await getOrderByDeliveryToken(deliveryToken);
-      if (!orderData) {
-        setError('Orden no encontrada o token inválido');
-        setLoading(false);
+    setMode('client');
+    let isCancelled = false;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+
+    async function load() {
+      const current = await fetchClientOrder(token, true);
+      if (isCancelled || !current) return;
+
+      // Si ya está terminado o cancelado, no programar polling
+      if (['COMPLETADO', 'CANCELADO'].includes(current.status)) {
         return;
       }
-      const o = orderData;
-      setOrder({
-        id: o.id,
-        status: o.status as OrderStatus,
-        eta: o.eta,
-        total: o.total,
-        created_at: o.created_at,
-        delivered_at: o.delivered_at ?? null,
-      });
-      setLoading(false);
-    } catch (err) {
-      console.error(err);
-      setError('Error al obtener la orden');
-      setLoading(false);
+
+      // Polling inteligente cada 5 segundos mientras esté activo
+      timerId = setInterval(async () => {
+        if (isCancelled) return;
+        const updated = await fetchClientOrder(token, false);
+        if (updated && ['COMPLETADO', 'CANCELADO'].includes(updated.status)) {
+          if (timerId) clearInterval(timerId);
+        }
+      }, 5000);
     }
-  }
+
+    load();
+
+    const onFocus = () => {
+      if (!isCancelled) {
+        fetchClientOrder(token, false);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      isCancelled = true;
+      if (timerId) clearInterval(timerId);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [token, fetchClientOrder]);
 
   async function handleComplete() {
     if (mode !== 'repartidor' || delivering) return;
@@ -166,41 +207,86 @@ export default function TrackPage() {
           minute: '2-digit',
         });
 
-    // Pasos del stepper
-    const steps = [
-      {
-        id: 'recibido',
-        label: 'Pedido recibido',
-        desc: 'Comanda registrada en el sistema',
-        icon: CheckCircle2,
-        active: ['CREADO', 'CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
-        current: ['CREADO', 'CONFIRMADO_CAJA'].includes(order.status),
-      },
-      {
-        id: 'cocina',
-        label: 'En cocina',
-        desc: 'Preparando tus platillos',
-        icon: UtensilsCrossed,
-        active: ['EN_PREPARACION', 'LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
-        current: order.status === 'EN_PREPARACION',
-      },
-      {
-        id: 'listo',
-        label: 'Listo / En camino',
-        desc: 'Empacado para entrega o entrega en camino',
-        icon: Bike,
-        active: ['LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
-        current: ['LISTO', 'LISTO_PARA_ENTREGA'].includes(order.status),
-      },
-      {
-        id: 'completado',
-        label: 'Entregado',
-        desc: '¡Buen provecho!',
-        icon: PackageCheck,
-        active: order.status === 'COMPLETADO',
-        current: order.status === 'COMPLETADO',
-      },
-    ];
+    // Pasos del stepper según tipo de servicio
+    const isDelivery = order.order_type === 'DOMICILIO';
+
+    const steps = isDelivery
+      ? [
+          {
+            id: 'recibido',
+            label: 'Pedido recibido',
+            desc: 'Comanda registrada y confirmada en caja',
+            icon: CheckCircle2,
+            active: ['CREADO', 'CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
+            current: ['CREADO', 'CONFIRMADO_CAJA'].includes(order.status),
+          },
+          {
+            id: 'cocina',
+            label: 'En cocina',
+            desc: 'Cocinando tus platillos en cocina',
+            icon: UtensilsCrossed,
+            active: ['EN_PREPARACION', 'LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
+            current: order.status === 'EN_PREPARACION',
+          },
+          {
+            id: 'listo',
+            label: 'Listo (en espera de entrega)',
+            desc: 'Empacado y listo, esperando al repartidor',
+            icon: PackageCheck,
+            active: ['LISTO', 'LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
+            current: order.status === 'LISTO',
+          },
+          {
+            id: 'en_camino',
+            label: 'En camino',
+            desc: 'El repartidor lleva tu comanda hacia tu domicilio',
+            icon: Bike,
+            active: ['LISTO_PARA_ENTREGA', 'COMPLETADO'].includes(order.status),
+            current: order.status === 'LISTO_PARA_ENTREGA',
+          },
+          {
+            id: 'completado',
+            label: 'Entregado',
+            desc: 'Pedido entregado en tu dirección. ¡Buen provecho!',
+            icon: CheckCircle2,
+            active: order.status === 'COMPLETADO',
+            current: order.status === 'COMPLETADO',
+          },
+        ]
+      : [
+          {
+            id: 'recibido',
+            label: 'Pedido recibido',
+            desc: 'Comanda registrada y confirmada en caja',
+            icon: CheckCircle2,
+            active: ['CREADO', 'CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO', 'COMPLETADO'].includes(order.status),
+            current: ['CREADO', 'CONFIRMADO_CAJA'].includes(order.status),
+          },
+          {
+            id: 'cocina',
+            label: 'En cocina',
+            desc: 'Cocinando tus platillos en cocina',
+            icon: UtensilsCrossed,
+            active: ['EN_PREPARACION', 'LISTO', 'COMPLETADO'].includes(order.status),
+            current: order.status === 'EN_PREPARACION',
+          },
+          {
+            id: 'listo',
+            label: 'Listo (en espera de ser recogido)',
+            desc: 'Tu orden está lista en mostrador para que pases por ella',
+            icon: Store,
+            active: ['LISTO', 'COMPLETADO'].includes(order.status),
+            current: order.status === 'LISTO',
+          },
+          {
+            id: 'completado',
+            label: 'Entregado',
+            desc: 'Pedido retirado en el local. ¡Buen provecho!',
+            icon: PackageCheck,
+            active: order.status === 'COMPLETADO',
+            current: order.status === 'COMPLETADO',
+          },
+        ];
 
     const isCancelled = order.status === 'CANCELADO';
 
@@ -244,14 +330,27 @@ export default function TrackPage() {
                   </p>
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200/60">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                En curso
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                order.status === 'COMPLETADO'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                  : 'bg-orange-50 text-orange-700 border-orange-200/60'
+              }`}>
+                {order.status === 'COMPLETADO' ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Finalizado
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
+                    En curso
+                  </>
+                )}
               </span>
             </div>
           )}
 
-          {/* Stepper Visual de 4 etapas */}
+          {/* Stepper Visual de etapas */}
           {!isCancelled && (
             <div className="bg-white rounded-3xl border border-zinc-200/80 p-6 sm:p-7 shadow-xs">
               <h2 className="text-sm font-bold text-zinc-900 uppercase tracking-wider mb-6">
@@ -259,7 +358,7 @@ export default function TrackPage() {
               </h2>
 
               <div className="relative pl-6 space-y-8 before:absolute before:left-9 before:top-3 before:bottom-3 before:w-0.5 before:bg-zinc-200">
-                {steps.map((step, idx) => {
+                {steps.map((step) => {
                   const Icon = step.icon;
                   return (
                     <div key={step.id} className="relative flex items-start gap-4">
@@ -314,6 +413,18 @@ export default function TrackPage() {
             <h3 className="font-bold text-zinc-900 text-sm pb-2 border-b border-zinc-100">
               Detalles de la compra
             </h3>
+            <div className="flex justify-between text-zinc-600">
+              <span className="text-zinc-400">Modalidad</span>
+              <span className="font-semibold text-zinc-800">
+                {isDelivery ? '🛵 Entrega a Domicilio' : '🏪 Para Recoger en Local'}
+              </span>
+            </div>
+            {isDelivery && order.delivery_address && (
+              <div className="flex justify-between text-zinc-600 gap-4">
+                <span className="text-zinc-400 shrink-0">Dirección</span>
+                <span className="font-medium text-zinc-800 text-right">{order.delivery_address}</span>
+              </div>
+            )}
             <div className="flex justify-between text-zinc-600">
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-zinc-400" /> Fecha del pedido

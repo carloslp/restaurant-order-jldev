@@ -43,10 +43,17 @@ export function CashierView({ locationId }: CashierViewProps) {
   // Link de reparto generado: orderId → URL (se muestra con botón copiar).
   const [deliveryLinks, setDeliveryLinks] = useState<Record<string, string>>({});
   const [driverSelectFor, setDriverSelectFor] = useState<string | null>(null);
+  const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [discountingOrderId, setDiscountingOrderId] = useState<string | null>(null);
   const [manualAmount, setManualAmount] = useState('');
+
+  useEffect(() => {
+    if (!copiedOrderId) return;
+    const t = setTimeout(() => setCopiedOrderId(null), 3000);
+    return () => clearTimeout(t);
+  }, [copiedOrderId]);
 
   async function handleAction(orderId: string, nextStatus: Order['status']) {
     setError(null);
@@ -100,18 +107,29 @@ export function CashierView({ locationId }: CashierViewProps) {
 
   async function handleGetDeliveryLink(orderId: string) {
     setError(null);
+    // Si ya lo tenemos en caché local, solo copiar
+    if (deliveryLinks[orderId]) {
+      copyToClipboard(deliveryLinks[orderId]);
+      setCopiedOrderId(orderId);
+      return;
+    }
+
     const result = await regenerateDeliveryToken(orderId);
     if (!result.ok || !result.url) {
       setError(result.error ?? 'No se pudo generar el link.');
       return;
     }
     setDeliveryLinks((prev) => ({ ...prev, [orderId]: result.url as string }));
+    copyToClipboard(result.url as string);
+    setCopiedOrderId(orderId);
   }
 
   function copyToClipboard(text: string) {
-    navigator.clipboard?.writeText(text).catch(() => {
-      // Fallback silencioso; el usuario puede copiar manualmente del input.
-    });
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        // Fallback
+      });
+    }
   }
 
   const pendingOrders = orders.filter((o) => !['COMPLETADO', 'CANCELADO'].includes(o.status));
@@ -148,7 +166,7 @@ export function CashierView({ locationId }: CashierViewProps) {
                     #{order.id.slice(0, 8).toUpperCase()}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                       order.status === 'CREADO'
                         ? 'bg-blue-100 text-blue-700'
                         : order.status === 'CONFIRMADO_CAJA'
@@ -156,11 +174,19 @@ export function CashierView({ locationId }: CashierViewProps) {
                           : order.status === 'EN_PREPARACION'
                             ? 'bg-purple-100 text-purple-700'
                             : order.status === 'LISTO'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-700'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : order.status === 'LISTO_PARA_ENTREGA'
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-gray-100 text-gray-700'
                     }`}
                   >
-                    {order.status}
+                    {order.status === 'CREADO' && 'Nuevo'}
+                    {order.status === 'CONFIRMADO_CAJA' && 'En cola de cocina'}
+                    {order.status === 'EN_PREPARACION' && 'En preparación'}
+                    {order.status === 'LISTO' && (order.order_type === 'RECOGER' ? 'Listo para recoger' : 'Listo para entrega')}
+                    {order.status === 'LISTO_PARA_ENTREGA' && 'En camino'}
+                    {order.status === 'COMPLETADO' && 'Entregado'}
+                    {order.status === 'CANCELADO' && 'Cancelado'}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600">
@@ -176,13 +202,13 @@ export function CashierView({ locationId }: CashierViewProps) {
 
                 {/* Reparto (solo DOMICILIO): repartidor asignado + link de un solo uso */}
                 {order.order_type === 'DOMICILIO' && (
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     {driverSelectFor === order.id ? (
                       <select
                         defaultValue={order.driver_id ?? ''}
                         onChange={(e) => handleAssignDriver(order.id, e.target.value)}
                         onBlur={() => setDriverSelectFor(null)}
-                        className="rounded border border-gray-300 px-2 py-1 text-xs"
+                        className="rounded-lg border border-gray-300 px-2 py-1 text-xs"
                         autoFocus
                       >
                         <option value="">— Sin asignar —</option>
@@ -193,36 +219,29 @@ export function CashierView({ locationId }: CashierViewProps) {
                     ) : (
                       <button
                         onClick={() => setDriverSelectFor(order.id)}
-                        className="text-indigo-600 hover:underline"
+                        className="text-indigo-600 hover:underline font-medium"
                       >
                         🛵 {order.driver_id
                           ? drivers.find((d) => d.id === order.driver_id)?.full_name ?? 'Repartidor asignado'
                           : 'Asignar repartidor'}
                       </button>
                     )}
-                    {deliveryLinks[order.id] ? (
-                      <span className="inline-flex items-center gap-1">
-                        <input
-                          readOnly
-                          value={deliveryLinks[order.id]}
-                          onFocus={(e) => e.target.select()}
-                          className="w-56 rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px]"
-                        />
-                        <button
-                          onClick={() => copyToClipboard(deliveryLinks[order.id])}
-                          className="rounded bg-gray-900 px-2 py-1 text-white hover:bg-gray-700"
-                        >
-                          Copiar
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleGetDeliveryLink(order.id)}
-                        className="text-gray-500 hover:underline"
-                      >
-                        Link repartidor
-                      </button>
-                    )}
+
+                    <button
+                      onClick={() => handleGetDeliveryLink(order.id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        copiedOrderId === order.id
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-zinc-800 text-white hover:bg-zinc-700 active:scale-95'
+                      }`}
+                      title="Copiar link de entrega para el repartidor"
+                    >
+                      {copiedOrderId === order.id ? (
+                        <span>✓ ¡Link copiado!</span>
+                      ) : (
+                        <span>📋 Copiar link repartidor</span>
+                      )}
+                    </button>
                   </div>
                 )}
               </div>
@@ -267,44 +286,70 @@ export function CashierView({ locationId }: CashierViewProps) {
 
                 <div className="flex items-center gap-2">
                   {order.status === 'CREADO' && (
-                    <button
-                      onClick={() => handleAction(order.id, 'CONFIRMADO_CAJA')}
-                      className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition"
-                    >
-                      Confirmar
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleAction(order.id, 'CONFIRMADO_CAJA')}
+                        className="rounded-lg bg-orange-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-xs hover:bg-orange-700 transition active:scale-95"
+                      >
+                        Mandar a cocina
+                      </button>
+                      <button
+                        onClick={() => handleAction(order.id, 'CANCELADO')}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition active:scale-95"
+                      >
+                        Rechazar
+                      </button>
+                    </>
                   )}
                   {order.status === 'CONFIRMADO_CAJA' && (
-                    <button
-                      onClick={() => handleAction(order.id, 'EN_PREPARACION')}
-                      className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 transition"
-                    >
-                      A cocina
-                    </button>
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                      En cola cocina
+                    </span>
+                  )}
+                  {order.status === 'EN_PREPARACION' && (
+                    <span className="text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
+                      En preparación...
+                    </span>
                   )}
                   {order.status === 'LISTO' && (
-                    <button
-                      onClick={() => handleAction(order.id, 'LISTO_PARA_ENTREGA')}
-                      className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition"
-                    >
-                      {order.order_type === 'DOMICILIO' ? 'Enviar a entrega' : 'Marcar retirado'}
-                    </button>
+                    <>
+                      {order.order_type === 'RECOGER' ? (
+                        <button
+                          onClick={() => handleAction(order.id, 'COMPLETADO')}
+                          className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition active:scale-95"
+                        >
+                          Confirmar entrega
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            await handleAction(order.id, 'LISTO_PARA_ENTREGA');
+                            handleGetDeliveryLink(order.id);
+                          }}
+                          className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-xs hover:bg-indigo-700 transition active:scale-95"
+                        >
+                          Enviar con repartidor
+                        </button>
+                      )}
+                    </>
                   )}
                   {order.status === 'LISTO_PARA_ENTREGA' &&
                     order.order_type === 'DOMICILIO' && (
                     <button
                       onClick={() => handleAction(order.id, 'COMPLETADO')}
-                      className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 transition"
+                      className="rounded-lg bg-gray-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-gray-800 transition active:scale-95"
                     >
-                      Entregado
+                      Marcar entregado
                     </button>
                   )}
-                  <button
-                    onClick={() => handleAction(order.id, 'CANCELADO')}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition"
-                  >
-                    Cancelar
-                  </button>
+                  {order.status !== 'CREADO' && (
+                    <button
+                      onClick={() => handleAction(order.id, 'CANCELADO')}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition active:scale-95"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

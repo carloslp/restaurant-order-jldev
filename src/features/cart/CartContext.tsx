@@ -24,7 +24,7 @@ interface CartContextValue {
 const CartContext = createContext<CartContextValue | null>(null);
 
 /** Clave estable por producto + modificadores (para combinar líneas iguales). */
-function itemKey(item: CartItem): string {
+export function itemKey(item: CartItem): string {
   return JSON.stringify([
     item.product_id,
     item.modifiers.map((m) => [m.modifier_group_id, m.selections.map((s) => s.option_id)]),
@@ -107,7 +107,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const clearCart = useCallback(() => setCart({ items: [] }), []);
+  const clearCart = useCallback(() => {
+    try {
+      localStorage.removeItem(CART_STORAGE_KEY);
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ items: [] }));
+    } catch {
+      // ignore
+    }
+    setCart({ items: [] });
+  }, []);
 
   const { count, total } = useMemo(() => {
     let count = 0;

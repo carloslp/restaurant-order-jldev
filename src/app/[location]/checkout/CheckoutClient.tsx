@@ -1,7 +1,7 @@
 // src/app/[location]/checkout/CheckoutClient.tsx
 'use client';
 
-import { useCart } from '@/features/cart/CartContext';
+import { useCart, itemKey } from '@/features/cart/CartContext';
 import { formatMXN, linePrice } from '@/lib/pricing';
 import { CheckoutForm } from '@/features/checkout/CheckoutForm';
 import type { OrderType, PaymentMethod } from '@/lib/types';
@@ -18,7 +18,13 @@ import {
   CreditCard, 
   AlertCircle, 
   ShieldCheck, 
-  Clock 
+  Clock,
+  Plus,
+  Minus,
+  Trash2,
+  CheckCircle2,
+  Receipt,
+  ExternalLink
 } from 'lucide-react';
 
 interface CheckoutClientProps {
@@ -27,7 +33,13 @@ interface CheckoutClientProps {
 }
 
 export default function CheckoutClient({ locationId, slug }: CheckoutClientProps) {
-  const { cart, total, count } = useCart();
+  const { cart, total, count, updateQuantity, removeItem, clearCart } = useCart();
+  const [createdOrder, setCreatedOrder] = useState<{
+    orderId: string;
+    trackToken?: string;
+    orderType: OrderType;
+    paymentMethod: PaymentMethod;
+  } | null>(null);
 
   // El locationId llega del server (resuelto por path) — sin lógica de hostname.
   const productIds = useMemo(() => cart.items.map((item) => item.product_id), [cart.items]);
@@ -48,6 +60,75 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
   const [orderType, setOrderType] = useState<OrderType>('RECOGER');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('EFECTIVO_EXACTO');
   const [eta] = useState(() => new Date(Date.now() + 30 * 60 * 1000).toISOString());
+
+  // Si el pedido se acaba de crear, mostramos la pantalla de éxito con el link de seguimiento
+  if (createdOrder) {
+    const displayId = createdOrder.orderId.slice(0, 8).toUpperCase();
+    return (
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-300">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 ring-8 ring-emerald-50">
+          <CheckCircle2 className="w-9 h-9" />
+        </div>
+        <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">
+          ¡Pedido Recibido con Éxito!
+        </h2>
+        <p className="text-sm text-zinc-500 mt-1 max-w-sm mx-auto">
+          Ya enviamos tu comanda a cocina. Tu carrito se ha limpiado correctamente.
+        </p>
+
+        {/* Tarjeta de Recibo */}
+        <div className="mt-6 w-full max-w-sm mx-auto bg-white border border-zinc-200/80 rounded-2xl p-5 text-left shadow-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+              <Receipt className="w-3.5 h-3.5 text-orange-600" /> Número de Orden
+            </span>
+            <span className="font-mono font-extrabold text-base text-zinc-900">
+              #{displayId}
+            </span>
+          </div>
+
+          <div className="pt-3 space-y-2 text-xs text-zinc-600">
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Modalidad:</span>
+              <span className="font-semibold text-zinc-800">
+                {createdOrder.orderType === 'DOMICILIO' ? '🛵 Entrega a Domicilio' : '🏪 Para Recoger en Local'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Pago al recibir:</span>
+              <span className="font-semibold text-zinc-800">
+                {createdOrder.paymentMethod === 'TARJETA_CONTRA_ENTREGA'
+                  ? 'Terminal / Tarjeta'
+                  : createdOrder.paymentMethod === 'EFECTIVO_CON_CAMBIO'
+                    ? 'Efectivo con cambio'
+                    : 'Efectivo exacto'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Links de seguimiento y retorno */}
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-sm">
+          {createdOrder.trackToken && (
+            <Link
+              href={`/track/${createdOrder.trackToken}`}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-orange-600/25 hover:bg-orange-700 active:scale-95 transition-all"
+            >
+              <span>Ver seguimiento en vivo</span>
+              <ExternalLink className="w-4 h-4" />
+            </Link>
+          )}
+
+          <Link
+            href={`/${slug}`}
+            className="w-full inline-flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-zinc-200 px-5 py-3 text-sm font-semibold text-zinc-700 active:scale-95 transition-all"
+          >
+            Volver a la carta
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (cart.items.length === 0) {
     return (
@@ -239,6 +320,14 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
                   orderType={orderType}
                   paymentMethod={paymentMethod}
                   eta={eta}
+                  onSuccess={(orderId, trackToken) => {
+                    setCreatedOrder({
+                      orderId,
+                      trackToken,
+                      orderType,
+                      paymentMethod,
+                    });
+                  }}
                 />
               )}
 
@@ -258,16 +347,28 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
                   <ShoppingBag className="w-4 h-4 text-orange-600" />
                   <span>Resumen ({count} {count === 1 ? 'ítem' : 'ítems'})</span>
                 </h3>
-                <Link
-                  href={`/${slug}`}
-                  className="text-xs font-semibold text-orange-600 hover:text-orange-700"
-                >
-                  Editar
-                </Link>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => clearCart()}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-red-600 transition-colors"
+                    title="Vaciar todo el carrito"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Vaciar</span>
+                  </button>
+                  <Link
+                    href={`/${slug}`}
+                    className="text-xs font-semibold text-orange-600 hover:text-orange-700"
+                  >
+                    + Agregar
+                  </Link>
+                </div>
               </div>
 
               <div className="space-y-3.5 max-h-80 overflow-y-auto pr-1">
                 {cart.items.map((item) => {
+                  const key = itemKey(item);
                   const flatMods = item.modifiers.flatMap((m) =>
                     m.selections.map((s) => ({
                       price_impact: s.price_impact,
@@ -283,8 +384,8 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
 
                   return (
                     <div
-                      key={item.product_id}
-                      className={`text-xs sm:text-sm pb-3 border-b border-zinc-50 last:border-0 ${
+                      key={key}
+                      className={`text-xs sm:text-sm pb-3 border-b border-zinc-100 last:border-0 ${
                         !isAvailable ? 'opacity-40 line-through text-zinc-400' : ''
                       }`}
                     >
@@ -318,6 +419,47 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
                           )}
                         </div>
                       )}
+
+                      {/* Controles de edición de cantidad y eliminación */}
+                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-zinc-100/60">
+                        <div className="flex items-center bg-zinc-100/90 rounded-lg p-0.5 border border-zinc-200/70">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (item.quantity <= 1) {
+                                removeItem(key);
+                              } else {
+                                updateQuantity(key, item.quantity - 1);
+                              }
+                            }}
+                            className="w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors"
+                            aria-label="Disminuir cantidad"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="w-6 text-center font-bold text-xs text-zinc-800 select-none">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(key, item.quantity + 1)}
+                            className="w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors"
+                            aria-label="Aumentar cantidad"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeItem(key)}
+                          className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50"
+                          aria-label="Eliminar producto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Eliminar</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

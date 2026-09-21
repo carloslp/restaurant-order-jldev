@@ -6,6 +6,7 @@ import { formatMXN, linePrice } from '@/lib/pricing';
 import AddToCartButton from './AddToCartButton';
 import ModifierSelector from './ModifierSelector';
 import { useCart } from '@/features/cart/CartContext';
+import { CartDrawer } from '@/features/cart/CartDrawer';
 import Link from 'next/link';
 import { useProductAvailability } from '@/features/menu/useProductAvailability';
 import { 
@@ -45,7 +46,7 @@ export default function MenuClient({
   const [search, setSearch] = useState(initialSearchTerm || '');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
-  const { cart, addItem } = useCart();
+  const { cart, addItem, setOpen } = useCart();
 
   // Hook para disponibilidad en tiempo real
   const productIds = useMemo(() => products.map((p) => p.id), [products]);
@@ -199,6 +200,20 @@ export default function MenuClient({
                   Envío: {formatMXN(local.delivery_fee)}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                title="Ver carrito de compras"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>Carrito</span>
+                {cartItemsCount > 0 && (
+                  <span className="bg-white text-orange-600 font-extrabold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                    {cartItemsCount}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -453,30 +468,39 @@ export default function MenuClient({
       {/* Barra flotante inferior de Carrito estilo App */}
       {cart.items.length > 0 && (
         <aside className="fixed bottom-4 inset-x-0 z-30 flex justify-center px-4 pointer-events-none pb-safe">
-          <Link
-            href={`/${local.slug}/checkout`}
-            className="pointer-events-auto w-full max-w-md bg-zinc-950 text-white rounded-2xl p-3.5 shadow-2xl shadow-zinc-950/40 border border-white/10 flex items-center justify-between gap-3 hover:bg-zinc-900 active:scale-[0.98] transition-all"
+          <div
+            className="pointer-events-auto w-full max-w-md bg-zinc-950 text-white rounded-2xl p-3 sm:p-3.5 shadow-2xl shadow-zinc-950/40 border border-white/10 flex items-center justify-between gap-3 hover:bg-zinc-900 transition-all"
           >
-            <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="flex items-center gap-3 text-left hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"
+            >
               <div className="relative w-11 h-11 rounded-xl bg-orange-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-orange-600/30">
                 <ShoppingBag className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 bg-white text-zinc-900 text-[11px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
                   {cartItemsCount}
                 </span>
               </div>
-              <div className="text-left">
-                <p className="text-xs text-zinc-400 font-medium">Ver mi pedido</p>
-                <p className="text-base font-extrabold text-white">{formatMXN(cartTotal)}</p>
+              <div>
+                <p className="text-xs text-zinc-400 font-medium">Ver mi pedido (editar / vaciar)</p>
+                <p className="text-base font-extrabold text-white font-mono">{formatMXN(cartTotal)}</p>
               </div>
-            </div>
+            </button>
 
-            <div className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm tracking-wide transition-colors">
+            <Link
+              href={`/${local.slug}/checkout`}
+              className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm tracking-wide transition-colors active:scale-95 shrink-0"
+            >
               <span>Checkout</span>
               <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
+            </Link>
+          </div>
         </aside>
       )}
+
+      {/* Cart Drawer para ver/editar/vaciar pedido en el menú */}
+      <CartDrawer slug={local.slug} />
 
       {/* Selector Modal / Bottom-Sheet de Modificadores */}
       {modifierProduct && (
