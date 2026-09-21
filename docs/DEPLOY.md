@@ -7,8 +7,10 @@
 ## 1. Preparar Supabase
 
 1. Crea un proyecto nuevo en [supabase.com](https://supabase.com) (región cercana a tu restaurante).
-2. **SQL Editor** → pega y ejecuta `docs/install.sql` (instalación limpia en un solo archivo:
-   extensiones → tipos → tablas → triggers → RLS + policies → índices → vistas → pg_cron → seed demo).
+2. **SQL Editor** → pega y ejecuta `docs/install.sql` (único SQL de instalación:
+   extensiones → tipos → tablas → triggers → RLS + policies → índices → vistas → pg_cron).
+   - Deja la base **vacía**: al abrir la app, `/setup` arranca el onboarding
+     (crea el primer local + admin). No ejecutes seeds en producción.
    - ¿Proyecto ya existente con datos? Aplica las migraciones incrementales:
      `docs/migrate-subdomain-to-slug.sql`, `docs/migration-link-auth-staff.sql` (idempotentes).
 3. **Authentication → Providers**: deja habilitado **Email** (magic link + contraseña).

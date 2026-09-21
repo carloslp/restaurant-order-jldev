@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.3] — 2026-09-20
+
+### Changed — Un solo SQL de instalación (`install.sql` sin seed)
+- **`docs/install.sql` es ahora el ÚNICO SQL de instalación**: se eliminó
+  `docs/schema.sql`, que era una copia desactualizada (sin GRANTs de
+  anon/authenticated, sin auth-sync, sin `orders_staff_live`, sin vistas ni
+  cron); ejecutarlo reproducía el bug 401/42501 del menú público.
+- **`install.sql` ya NO incluye seed demo**: la base queda vacía a propósito.
+  El onboarding de `/setup` (`checkSystemInitialized`) depende de que `locals`
+  esté vacío para mostrar el wizard; el seed inline de la §11 lo bloqueaba
+  (insertaba un local → `/setup` redirigía a `/login` y el onboarding nunca
+  aparecía). Para datos demo en desarrollo, ejecutar aparte `docs/seed.sql`.
+- **Docs**: `DEPLOY.md` actualizado (flujo: install.sql → `/setup` onboarding →
+  login) y `rls-audit.md` ya no referencia `schema.sql`.
+- Los demás SQL de `docs/` no cambian: son parches para proyectos ya instalados
+  (todo su contenido ya está incluido dentro de `install.sql`).
+
+---
+
 ## [0.5.2] — 2026-09-20
 
 ### Fixed — Menú público caído: faltaban GRANT del rol anon (401/42501)

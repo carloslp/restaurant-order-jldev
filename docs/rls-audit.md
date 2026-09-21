@@ -1,6 +1,6 @@
 # Auditoría RLS — estado y hallazgos (2026-09-19)
 
-Fuente: revisión de `docs/schema.sql` + `install.sql` contra las policies reales y el uso en código.
+Fuente: revisión de `docs/install.sql` (único SQL de instalación; `schema.sql` fue eliminado por redundante y desactualizado) contra las policies reales y el uso en código.
 Alcance: fuga cross-tenant, PII, escalada de privilegios. **Nota**: el auth funciona sin roles (decisión del dueño) — cualquier staff autenticado de un local tiene acceso total a los datos **de su local**; el aislamiento entre locales es lo que RLS garantiza.
 
 ## ✅ Lo que está bien (verificado)

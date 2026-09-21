@@ -1,11 +1,14 @@
--- ============================================================================
--- restaurant-order-jldev — Instalación limpia en un solo archivo
+﻿-- ============================================================================
+-- restaurant-order-jldev â€” InstalaciÃ³n limpia en un solo archivo
 -- ============================================================================
 -- Ejecutar en el SQL Editor de Supabase (rol postgres) sobre un proyecto nuevo.
--- Orden: extensiones → tipos → tablas → triggers updated_at → auth sync →
---        RLS + policies → índices → vistas → pg_cron → seed demo.
+-- Orden: extensiones â†’ tipos â†’ tablas â†’ triggers updated_at â†’ auth sync â†’
+--        RLS + policies â†’ Ã­ndices â†’ vistas â†’ pg_cron.
 --
--- El archivo `diagnostico-seed.sql` queda aparte (herramienta de diagnóstico).
+-- âš ï¸ NO incluye seed: la base queda VACÃA. Al abrir la app por primera vez,
+--    `/setup` detecta que no hay locales y arranca el onboarding (crea el
+--    primer local + admin). Para datos demo en desarrollo, ejecuta despuÃ©s
+--    `docs/seed.sql` (separado, a propÃ³sito).
 -- ============================================================================
 
 -- ============================================================================
@@ -61,7 +64,7 @@ CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
 CREATE TABLE locals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    slug TEXT UNIQUE NOT NULL,  -- ruta pública de la sucursal: /{slug} (ej: 'centro')
+    slug TEXT UNIQUE NOT NULL,  -- ruta pÃºblica de la sucursal: /{slug} (ej: 'centro')
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
@@ -69,7 +72,7 @@ CREATE TABLE locals (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3.2 Catálogo (4 niveles)
+-- 3.2 CatÃ¡logo (4 niveles)
 CREATE TABLE categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
@@ -122,7 +125,7 @@ CREATE TABLE modifier_options (
     UNIQUE(location_id, modifier_group_id, name)
 );
 
--- 3.3 Staff (con vínculo directo a auth.users)
+-- 3.3 Staff (con vÃ­nculo directo a auth.users)
 CREATE TABLE staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
@@ -249,7 +252,7 @@ CREATE TABLE discount_usages (
     amount_applied NUMERIC(10,2) NOT NULL CHECK (amount_applied >= 0)
 );
 
--- 3.8 Alérgenos y etiquetas dietarias
+-- 3.8 AlÃ©rgenos y etiquetas dietarias
 CREATE TABLE allergens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
@@ -304,7 +307,7 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 5. AUTH SYNC: vincular auth.users ↔ staff por email
+-- 5. AUTH SYNC: vincular auth.users â†” staff por email
 -- ============================================================================
 
 -- 5.1 Vincular staff existente por email (uso manual tras migrar usuarios)
@@ -375,7 +378,7 @@ ALTER TABLE diet_labels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_allergens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_diet_labels ENABLE ROW LEVEL SECURITY;
 
--- Patrón GUC: el backend setea 'app.local_id' (y 'app.token_plain' si aplica)
+-- PatrÃ³n GUC: el backend setea 'app.local_id' (y 'app.token_plain' si aplica)
 -- antes de cada consulta. current_setting(..., true) devuelve NULL si no existe.
 
 CREATE POLICY locals_staff_access ON locals
@@ -424,7 +427,7 @@ FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
--- Realtime: permite SELECT al staff autenticado vía JWT (claim user_metadata.location_id)
+-- Realtime: permite SELECT al staff autenticado vÃ­a JWT (claim user_metadata.location_id)
 CREATE POLICY orders_staff_live ON orders
 FOR SELECT
 USING (
@@ -568,9 +571,9 @@ CREATE POLICY product_diet_labels_public_read ON product_diet_labels
 FOR SELECT USING (true);
 
 -- ----------------------------------------------------------------------------
--- 6.1 Privilegios base (GRANT). Las policies de arriba definen QUÉ FILAS ve
--- cada rol; los GRANT son el privilegio BASE de conexión/lectura. Sin ellos
--- las policies ni siquiera se evalúan: PostgREST responde 401 code 42501
+-- 6.1 Privilegios base (GRANT). Las policies de arriba definen QUÃ‰ FILAS ve
+-- cada rol; los GRANT son el privilegio BASE de conexiÃ³n/lectura. Sin ellos
+-- las policies ni siquiera se evalÃºan: PostgREST responde 401 code 42501
 -- "permission denied for table X". Nota: en proyectos con API keys nuevas
 -- (sb_publishable_*) las tablas creadas por SQL Editor NO heredan defaults.
 -- Script equivalente para proyectos ya instalados: docs/fix-grants-public-read.sql
@@ -590,7 +593,7 @@ GRANT SELECT ON TABLE locals TO anon, authenticated;
 GRANT SELECT ON TABLE orders TO authenticated;
 
 -- ============================================================================
--- 7. ÍNDICES
+-- 7. ÃNDICES
 -- ============================================================================
 CREATE INDEX idx_orders_location_status ON orders(location_id, status);
 CREATE INDEX idx_orders_eta ON orders(eta);
@@ -611,7 +614,7 @@ CREATE INDEX idx_discount_usages_discount ON discount_usages(discount_id);
 -- ============================================================================
 
 -- Vista segura para KDS/Caja: expone solo lo necesario, sin datos sensibles.
--- security_invoker = true → aplica RLS de la tabla subyacente.
+-- security_invoker = true â†’ aplica RLS de la tabla subyacente.
 DROP VIEW IF EXISTS staff_orders_view;
 
 CREATE VIEW staff_orders_view
@@ -647,13 +650,13 @@ FROM orders o;
 -- ============================================================================
 COMMENT ON TABLE locals IS 'Multi-tenant root: cada local/restaurante';
 COMMENT ON COLUMN locals.iva_rate IS 'Tasa de IVA del local (0.16 = 16%). Ajustable por local.';
-COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija de delivery del local (v1). Futuro: por zona vía OSRM.';
-COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculación directa y consultas sin depender de email';
-COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios públicos (IVA incluido)';
+COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija de delivery del local (v1). Futuro: por zona vÃ­a OSRM.';
+COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculaciÃ³n directa y consultas sin depender de email';
+COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios pÃºblicos (IVA incluido)';
 COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_id, product_name, base_price (IVA incl.), quantity, modifiers[{group, selections[]}]}';
-COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al público.';
-COMMENT ON TABLE delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
-COMMENT ON TABLE discounts IS 'Engine de promos: códigos o automáticas con reglas; sin apilar';
+COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al pÃºblico.';
+COMMENT ON TABLE delivery_tokens IS 'Token Ãºnico de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
+COMMENT ON TABLE discounts IS 'Engine de promos: cÃ³digos o automÃ¡ticas con reglas; sin apilar';
 
 -- ============================================================================
 -- Permisos para service_role (bypass RLS en operaciones server-side)
@@ -662,15 +665,15 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
--- También grant en auth schema para gestión de usuarios si se necesita
+-- TambiÃ©n grant en auth schema para gestiÃ³n de usuarios si se necesita
 GRANT USAGE ON SCHEMA auth TO service_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;
 
 -- ============================================================================
 -- 10. PG_CRON: recordatorios de reservaciones (opcional)
 -- ============================================================================
--- Requiere definir la GUC app.cron_secret en Supabase (Settings → Database →
--- Custom Configuration o vía supabase secrets).
+-- Requiere definir la GUC app.cron_secret en Supabase (Settings â†’ Database â†’
+-- Custom Configuration o vÃ­a supabase secrets).
 -- Los endpoints /api/cron/reminders/24h y /2h deben existir en la app Next.js
 -- y validar el header Authorization contra CRON_SECRET.
 
@@ -700,182 +703,3 @@ SELECT cron.schedule(
 -- SELECT cron.unschedule('reservation-reminders-24h');
 -- SELECT cron.unschedule('reservation-reminders-2h');
 
--- ============================================================================
--- 11. SEED DEMO
--- ============================================================================
--- Crea: 1 local demo (slug 'demo' → ruta /demo), staff, catálogo,
--- alérgenos, etiquetas dietarias, modificadores y aforo por zona.
-
-DO $$
-DECLARE
-    v_local UUID;
-    v_admin UUID;
-    v_cajero UUID;
-    v_cocinero UUID;
-    v_cat_hamburguesas UUID;
-    v_cat_acompanamientos UUID;
-    v_cat_bebidas UUID;
-    v_cat_postres UUID;
-    v_prod_clasica UUID;
-    v_prod_doble UUID;
-    v_prod_veggie UUID;
-    v_prod_papas UUID;
-    v_prod_aros UUID;
-    v_prod_refresco UUID;
-    v_prod_agua UUID;
-    v_prod_cerveza UUID;
-    v_prod_brownie UUID;
-    v_prod_cheesecake UUID;
-    v_grp_termino UUID;
-    v_grp_extras UUID;
-    v_grp_salsas UUID;
-BEGIN
-    -- Local demo
-    INSERT INTO locals (name, slug, timezone, iva_rate, delivery_fee)
-    VALUES ('Restaurante Demo JLDev', 'localhost', 'America/Mexico_City', 0.16, 30.00)
-    RETURNING id INTO v_local;
-
-    -- Staff
-    INSERT INTO staff (location_id, email, full_name, is_active)
-    VALUES
-        (v_local, 'admin@demo.com',   'Admin Demo',   true),
-        (v_local, 'cajero@demo.com',  'Cajero Demo',  true),
-        (v_local, 'cocina@demo.com',  'Cocina Demo',  true);
-
-    SELECT id INTO v_admin FROM staff WHERE email = 'admin@demo.com' AND location_id = v_local;
-    SELECT id INTO v_cajero FROM staff WHERE email = 'cajero@demo.com' AND location_id = v_local;
-    SELECT id INTO v_cocinero FROM staff WHERE email = 'cocina@demo.com' AND location_id = v_local;
-
-    -- Alérgenos (NOM-050)
-    INSERT INTO allergens (name, description) VALUES
-        ('GLUTEN', 'Trigo, cebada, centeno'),
-        ('LACTEOS', 'Leche y derivados'),
-        ('HUEVO', NULL),
-        ('PESCADO', NULL),
-        ('SOJA', NULL),
-        ('FRUTOS_SECOS', 'Almendras, nueces, etc.'),
-        ('CACAHUATE', NULL),
-        ('CRUSTACEOS', NULL),
-        ('MOLUSCOS', NULL),
-        ('APIO', NULL),
-        ('MOSTAZA', NULL),
-        ('SESAMO', NULL),
-        ('SULFITOS', NULL),
-        ('ALT_TRIGO', 'Altramuces')
-    ON CONFLICT (name) DO NOTHING;
-
-    -- Etiquetas dietarias
-    INSERT INTO diet_labels (name, description) VALUES
-        ('VEGETARIANO', 'Sin carne'),
-        ('VEGANO', 'Sin ingredientes de origen animal'),
-        ('SIN_GLUTEN', NULL),
-        ('SIN_LACTOSA', NULL),
-        ('PICANTE', NULL)
-    ON CONFLICT (name) DO NOTHING;
-
-    -- Categorías
-    INSERT INTO categories (location_id, name, description, sort_order) VALUES
-        (v_local, 'Hamburguesas', 'Nuestras clásicas', 1),
-        (v_local, 'Acompañamientos', 'Papas, aros y más', 2),
-        (v_local, 'Bebidas', 'Refrescos, agua, cerveza', 3),
-        (v_local, 'Postres', 'Para terminar bien', 4);
-
-    SELECT id INTO v_cat_hamburguesas FROM categories WHERE name = 'Hamburguesas' AND location_id = v_local;
-    SELECT id INTO v_cat_acompanamientos FROM categories WHERE name = 'Acompañamientos' AND location_id = v_local;
-    SELECT id INTO v_cat_bebidas FROM categories WHERE name = 'Bebidas' AND location_id = v_local;
-    SELECT id INTO v_cat_postres FROM categories WHERE name = 'Postres' AND location_id = v_local;
-
-    -- Productos (precios públicos con IVA incluido)
-    INSERT INTO products (location_id, category_id, name, description, base_price) VALUES
-        (v_local, v_cat_hamburguesas, 'Clásica', 'Carne 100% res, queso americano, lechuga, jitomate, cebolla y nuestra salsa', 95.00),
-        (v_local, v_cat_hamburguesas, 'Doble', 'Dos carnes, doble queso, tocino y salsa especial', 130.00),
-        (v_local, v_cat_hamburguesas, 'Veggie', 'Patty de garbanzo, aguacate, espinaca y mayonesa vegana', 110.00),
-        (v_local, v_cat_acompanamientos, 'Papas a la francesa', 'Crujientes, con sal de mar', 45.00),
-        (v_local, v_cat_acompanamientos, 'Aros de cebolla', 'Rebozados y dorados', 50.00),
-        (v_local, v_cat_bebidas, 'Refresco de cola', 'Lata 355ml', 35.00),
-        (v_local, v_cat_bebidas, 'Agua mineral', 'Botella 600ml', 25.00),
-        (v_local, v_cat_bebidas, 'Cerveza artesanal', 'Pinta 473ml', 60.00),
-        (v_local, v_cat_postres, 'Brownie con nuez', 'Con helado de vainilla', 40.00),
-        (v_local, v_cat_postres, 'Cheesecake', 'Con frutos rojos', 55.00);
-
-    SELECT id INTO v_prod_clasica FROM products WHERE name = 'Clásica' AND location_id = v_local;
-    SELECT id INTO v_prod_doble FROM products WHERE name = 'Doble' AND location_id = v_local;
-    SELECT id INTO v_prod_veggie FROM products WHERE name = 'Veggie' AND location_id = v_local;
-    SELECT id INTO v_prod_papas FROM products WHERE name = 'Papas a la francesa' AND location_id = v_local;
-    SELECT id INTO v_prod_aros FROM products WHERE name = 'Aros de cebolla' AND location_id = v_local;
-    SELECT id INTO v_prod_refresco FROM products WHERE name = 'Refresco de cola' AND location_id = v_local;
-    SELECT id INTO v_prod_agua FROM products WHERE name = 'Agua mineral' AND location_id = v_local;
-    SELECT id INTO v_prod_cerveza FROM products WHERE name = 'Cerveza artesanal' AND location_id = v_local;
-    SELECT id INTO v_prod_brownie FROM products WHERE name = 'Brownie con nuez' AND location_id = v_local;
-    SELECT id INTO v_prod_cheesecake FROM products WHERE name = 'Cheesecake' AND location_id = v_local;
-
-    -- Modificadores: término de la carne (obligatorio, 1)
-    INSERT INTO modifier_groups (location_id, product_id, name, is_required, min_selections, max_selections)
-    VALUES
-        (v_local, v_prod_clasica, 'Término de la carne', TRUE, 1, 1),
-        (v_local, v_prod_doble,  'Término de la carne', TRUE, 1, 1),
-        (v_local, v_prod_veggie, 'Término de la carne', TRUE, 1, 1);
-
-    -- Extras (opcional, hasta 3)
-    INSERT INTO modifier_groups (location_id, product_id, name, is_required, min_selections, max_selections)
-    VALUES
-        (v_local, v_prod_clasica, 'Extras', FALSE, 0, 3),
-        (v_local, v_prod_doble,  'Extras', FALSE, 0, 3),
-        (v_local, v_prod_veggie, 'Extras', FALSE, 0, 3);
-
-    -- Salsas (opcional, hasta 2)
-    INSERT INTO modifier_groups (location_id, product_id, name, is_required, min_selections, max_selections)
-    VALUES
-        (v_local, v_prod_clasica, 'Salsas', FALSE, 0, 2),
-        (v_local, v_prod_doble,  'Salsas', FALSE, 0, 2),
-        (v_local, v_prod_veggie, 'Salsas', FALSE, 0, 2);
-
-    -- Opciones de término
-    FOR v_grp_termino IN SELECT id FROM modifier_groups WHERE name = 'Término de la carne' AND location_id = v_local LOOP
-        INSERT INTO modifier_options (location_id, modifier_group_id, name, price_impact) VALUES
-            (v_local, v_grp_termino, 'Término medio', 0),
-            (v_local, v_grp_termino, '3/4', 0),
-            (v_local, v_grp_termino, 'Bien cocida', 0);
-    END LOOP;
-
-    -- Opciones de extras
-    FOR v_grp_extras IN SELECT id FROM modifier_groups WHERE name = 'Extras' AND location_id = v_local LOOP
-        INSERT INTO modifier_options (location_id, modifier_group_id, name, price_impact) VALUES
-            (v_local, v_grp_extras, 'Queso extra', 15),
-            (v_local, v_grp_extras, 'Tocino', 20),
-            (v_local, v_grp_extras, 'Huevo', 10),
-            (v_local, v_grp_extras, 'Guacamole', 25);
-    END LOOP;
-
-    -- Opciones de salsas
-    FOR v_grp_salsas IN SELECT id FROM modifier_groups WHERE name = 'Salsas' AND location_id = v_local LOOP
-        INSERT INTO modifier_options (location_id, modifier_group_id, name, price_impact) VALUES
-            (v_local, v_grp_salsas, 'BBQ', 5),
-            (v_local, v_grp_salsas, 'Chipotle', 5),
-            (v_local, v_grp_salsas, 'Mostaza miel', 5);
-    END LOOP;
-
-    -- Alérgenos por producto
-    INSERT INTO product_allergens (product_id, allergen_id)
-    SELECT v_prod_clasica, id FROM allergens WHERE name IN ('GLUTEN', 'LACTEOS') ON CONFLICT DO NOTHING;
-    INSERT INTO product_allergens (product_id, allergen_id)
-    SELECT v_prod_veggie, id FROM allergens WHERE name = 'GLUTEN' ON CONFLICT DO NOTHING;
-    INSERT INTO product_allergens (product_id, allergen_id)
-    SELECT v_prod_brownie, id FROM allergens WHERE name IN ('GLUTEN', 'LACTEOS', 'FRUTOS_SECOS') ON CONFLICT DO NOTHING;
-    INSERT INTO product_allergens (product_id, allergen_id)
-    SELECT v_prod_cheesecake, id FROM allergens WHERE name = 'LACTEOS' ON CONFLICT DO NOTHING;
-
-    -- Etiquetas dietarias por producto
-    INSERT INTO product_diet_labels (product_id, diet_label_id)
-    SELECT v_prod_veggie, id FROM diet_labels WHERE name IN ('VEGETARIANO', 'VEGANO') ON CONFLICT DO NOTHING;
-    INSERT INTO product_diet_labels (product_id, diet_label_id)
-    SELECT v_prod_cheesecake, id FROM diet_labels WHERE name = 'VEGETARIANO' ON CONFLICT DO NOTHING;
-
-    -- Aforo por zona
-    INSERT INTO local_zone_capacity (location_id, zone, capacity) VALUES
-        (v_local, 'INTERIOR', 30),
-        (v_local, 'TERRAZA', 20),
-        (v_local, 'BARRA', 8);
-
-    RAISE NOTICE 'Seed listo. Local demo: % (ruta /demo)', v_local;
-END $$;
