@@ -1,7 +1,6 @@
-// src/features/staff/AdminView.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
 import { AdminMenuProducts } from '@/features/admin/AdminMenuProducts';
 import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
@@ -9,7 +8,7 @@ import { AdminReservations } from '@/features/admin/AdminReservations';
 import { AdminStaff } from '@/features/admin/AdminStaff';
 import { AdminReports } from '@/features/admin/AdminReports';
 import { AdminLocals } from '@/features/admin/AdminLocals';
-import { CashierView } from '@/features/staff/CashierView';
+import { getPendingReservationsCount } from '@/lib/server/reservations';
 import type { Staff, Local } from '@/lib/types';
 
 interface AdminViewProps {
@@ -21,6 +20,19 @@ type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff' | 
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [pendingReservationsCount, setPendingReservationsCount] = useState<number>(0);
+
+  useEffect(() => {
+    let mounted = true;
+    getPendingReservationsCount()
+      .then((count) => {
+        if (mounted) setPendingReservationsCount(count);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab]);
 
   return (
     <div className="space-y-6">
@@ -54,13 +66,18 @@ export function AdminView({ staff, local }: AdminViewProps) {
                   </button>
                   <button
                     onClick={() => setActiveTab('reservations')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                       activeTab === 'reservations'
                         ? 'bg-white text-gray-900 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    Reservas
+                    <span>Reservas</span>
+                    {pendingReservationsCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-xs bg-amber-500 text-white font-extrabold animate-pulse">
+                        {pendingReservationsCount}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setActiveTab('discounts')}
@@ -174,7 +191,7 @@ export function AdminView({ staff, local }: AdminViewProps) {
             )}
 
             {activeTab === 'reservations' && (
-              <AdminReservations />
+              <AdminReservations localSlug={local?.slug} />
             )}
 
             {activeTab === 'discounts' && <AdminDiscounts />}

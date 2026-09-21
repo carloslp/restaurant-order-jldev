@@ -296,6 +296,7 @@ export async function regenerateDeliveryToken(
 export async function listOrdersForLocation(opts?: {
   statuses?: OrderStatus[];
   limit?: number;
+  includePendingTableOrders?: boolean;
 }): Promise<Order[]> {
   const { staff } = await getCurrentStaff();
   const supabase = createServerClient();
@@ -318,7 +319,11 @@ export async function listOrdersForLocation(opts?: {
     .limit(opts?.limit ?? 100);
 
   if (opts?.statuses?.length) {
-    query = query.in('status', opts.statuses);
+    if (opts.includePendingTableOrders) {
+      query = query.or(`status.in.(${opts.statuses.join(',')}),and(order_type.eq.EN_MESA,payment_status.eq.PENDIENTE)`);
+    } else {
+      query = query.in('status', opts.statuses);
+    }
   }
 
   const { data, error } = await query;

@@ -48,7 +48,7 @@ export interface LocalFormData {
 // Enums del esquema (docs/schema.sql)
 // ---------------------------------------------------------------------------
 
-export type OrderType = 'RECOGER' | 'DOMICILIO';
+export type OrderType = 'RECOGER' | 'DOMICILIO' | 'EN_MESA';
 
 export type PaymentMethod = 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
 
@@ -68,6 +68,10 @@ export type ReservationStatus = 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA' | 'NO_S
 export type DepositStatus = 'SIN_DEPOSITO' | 'DEPOSITO_PENDIENTE' | 'DEPOSITADO';
 
 export type Zone = 'INTERIOR' | 'TERRAZA' | 'BARRA';
+
+export type TableStatus = 'LIBRE' | 'RESERVADA' | 'OCUPADA' | 'EN_LIMPIEZA';
+
+export type TableQrStatus = 'INACTIVO' | 'ABIERTO';
 
 export type DiscountType = 'PERCENTAGE' | 'FIXED_AMOUNT';
 
@@ -187,6 +191,9 @@ export interface Order {
   total: number;
   cart_snapshot: OrderCartSnapshot;
   delivery_zone: string | null;
+  table_id?: string | null;
+  table_number?: string | null;
+  session_id?: string | null;
   // Repartidor asignado (requiere docs/migration-driver-id.sql; opcional para
   // compatibilidad mientras la migración se aplica).
   driver_id?: string | null;
@@ -226,4 +233,92 @@ export interface Discount {
   created_at?: string;
   updated_at?: string;
   created_by?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Reservas y Aforo
+// ---------------------------------------------------------------------------
+
+export interface Reservation {
+  id: string;
+  location_id: string;
+  holder_name: string;
+  holder_phone: string;
+  reservation_date: string; // YYYY-MM-DD
+  reservation_time: string; // HH:mm
+  party_size: number;
+  preferred_zone: Zone;
+  table_id?: string | null;
+  table_number?: string | null;
+  status: ReservationStatus;
+  deposit_status: DepositStatus;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by?: string | null;
+  updated_by?: string | null;
+}
+
+export interface ZoneCapacity {
+  location_id: string;
+  zone: Zone;
+  capacity: number;
+}
+
+export interface RestaurantTable {
+  id: string;
+  location_id: string;
+  zone: Zone;
+  table_number: string;
+  min_capacity: number;
+  max_capacity: number;
+  is_active: boolean;
+  status: TableStatus;
+  qr_status: TableQrStatus;
+  qr_token: string;
+  current_session_id?: string | null;
+  current_guests?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LocalShift {
+  id: string;
+  location_id: string;
+  day_of_week: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  shift_name: string; // Ej: 'Comida', 'Cena'
+  open_time: string; // "13:00"
+  close_time: string; // "17:00"
+  slot_interval_minutes: number;
+  turn_duration_minutes: number;
+  buffer_minutes: number;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface PublicReservationInput {
+  location_slug: string;
+  holder_name: string;
+  holder_phone: string;
+  reservation_date: string;
+  reservation_time: string;
+  party_size: number;
+  preferred_zone: Zone;
+  table_id?: string | null;
+  notes?: string | null;
+}
+
+export interface ZoneAvailabilityInfo {
+  zone: Zone;
+  capacity: number;
+  reserved: number;
+  available: number;
+  canBook: boolean;
+  availableTables?: RestaurantTable[];
+}
+
+export interface SlotAvailability {
+  time: string; // "14:00"
+  zones: Record<Zone, ZoneAvailabilityInfo>;
+  isAvailable: boolean;
 }

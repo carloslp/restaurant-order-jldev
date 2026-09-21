@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { getPublicTableStatus } from '@/lib/server/tables';
 import type { Category, Product, CartItemModifiers } from '@/lib/types';
 import { formatMXN, linePrice } from '@/lib/pricing';
 import AddToCartButton from './AddToCartButton';
@@ -20,7 +22,8 @@ import {
   AlertTriangle, 
   Leaf, 
   Info,
-  ShieldCheck
+  ShieldCheck,
+  Calendar
 } from 'lucide-react';
 
 interface Props {
@@ -47,6 +50,23 @@ export default function MenuClient({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const { cart, addItem, setOpen } = useCart();
+
+  const searchParams = useSearchParams();
+  const mesaParam = searchParams.get('mesa');
+  const tokenParam = searchParams.get('token');
+  const [tableData, setTableData] = useState<{ id: string; table_number: string; qr_status: string } | null>(null);
+
+  useEffect(() => {
+    if (mesaParam && local?.slug) {
+      getPublicTableStatus(local.slug, mesaParam, tokenParam || undefined)
+        .then((res) => {
+          if (res.ok && res.table) {
+            setTableData(res.table);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [mesaParam, tokenParam, local?.slug]);
 
   // Hook para disponibilidad en tiempo real
   const productIds = useMemo(() => products.map((p) => p.id), [products]);
@@ -209,6 +229,14 @@ export default function MenuClient({
                   Envío: {formatMXN(local.delivery_fee)}
                 </span>
               )}
+              <Link
+                href={`/${local.slug}/reservar`}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer border border-white/15"
+                title="Reservar una mesa en este restaurante"
+              >
+                <Calendar className="w-3.5 h-3.5 text-orange-400" />
+                <span>Reservar Mesa</span>
+              </Link>
               <button
                 type="button"
                 onClick={() => setOpen(true)}
@@ -246,6 +274,31 @@ export default function MenuClient({
           )}
         </div>
       </header>
+
+      {/* Banner de Mesa QR Activa */}
+      {mesaParam && (
+        <div className={`py-3 px-4 shadow-sm border-b transition-all ${
+          tableData?.qr_status === 'ABIERTO'
+            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-blue-700'
+            : 'bg-amber-500 text-white border-amber-600'
+        }`}>
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm">
+            <div className="flex items-center gap-2 font-bold">
+              <span className="p-1 rounded-lg bg-white/20">🍽️</span>
+              <span>
+                {tableData?.qr_status === 'ABIERTO'
+                  ? `Ordenando en ${tableData?.table_number || mesaParam} · Comanda abierta`
+                  : `Mesa ${tableData?.table_number || mesaParam} · En espera`}
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold bg-white/20 px-3 py-1 rounded-full w-fit">
+              {tableData?.qr_status === 'ABIERTO'
+                ? 'Tus pedidos van directo a cocina'
+                : 'Pide a tu mesero que abra la mesa para pedir'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Barra de Filtros y Búsqueda */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-xs">
@@ -516,19 +569,32 @@ export default function MenuClient({
               </div>
             </button>
 
-            <Link
-              href={`/${local.slug}/checkout`}
-              className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm tracking-wide transition-colors active:scale-95 shrink-0"
-            >
-              <span>Checkout</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+            {(() => {
+              const checkoutHref = mesaParam 
+                ? `/${local.slug}/checkout?mesa=${encodeURIComponent(mesaParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`
+                : `/${local.slug}/checkout`;
+
+              return (
+                <Link
+                  href={checkoutHref}
+                  className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm tracking-wide transition-colors active:scale-95 shrink-0"
+                >
+                  <span>Checkout</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              );
+            })()}
           </div>
         </aside>
       )}
 
       {/* Cart Drawer para ver/editar/vaciar pedido en el menú */}
-      <CartDrawer slug={local.slug} />
+      <CartDrawer 
+        slug={local.slug} 
+        checkoutHref={mesaParam 
+          ? `/${local.slug}/checkout?mesa=${encodeURIComponent(mesaParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`
+          : undefined} 
+      />
 
       {/* Selector Modal / Bottom-Sheet de Modificadores */}
       {modifierProduct && (

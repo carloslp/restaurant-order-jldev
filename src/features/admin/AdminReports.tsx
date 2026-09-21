@@ -32,6 +32,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 const TYPE_LABELS: Record<OrderType, string> = {
   RECOGER: 'Para llevar',
   DOMICILIO: 'Domicilio',
+  EN_MESA: 'En mesa',
 };
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {

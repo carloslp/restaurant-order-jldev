@@ -22,9 +22,12 @@ import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers, Discount
 
 export interface CreateOrderInput {
   location_id: string; // ID de la location (path), revalidado server-side contra la DB
-  customer_name: string;
-  customer_phone: string;
+  customer_name?: string;
+  customer_phone?: string;
   order_type: OrderType;
+  table_id?: string | null;
+  table_number?: string | null;
+  session_id?: string | null;
   payment_method: PaymentMethod;
   delivery_address?: string | null;
   delivery_references?: string | null;
@@ -57,9 +60,15 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const supabase = createServerClient();
 
   // 1. Validación de entrada
-  if (!isValidName(input.customer_name)) return { ok: false, error: 'Nombre inválido' };
-  if (!isValidPhone(input.customer_phone)) return { ok: false, error: 'Teléfono inválido' };
-  if (!['RECOGER', 'DOMICILIO'].includes(input.order_type)) return { ok: false, error: 'Tipo de pedido inválido' };
+  if (input.order_type === 'EN_MESA') {
+    if (input.customer_name && !isValidName(input.customer_name)) {
+      return { ok: false, error: 'Nombre inválido' };
+    }
+  } else {
+    if (!isValidName(input.customer_name ?? '')) return { ok: false, error: 'Nombre inválido' };
+    if (!isValidPhone(input.customer_phone ?? '')) return { ok: false, error: 'Teléfono inválido' };
+  }
+  if (!['RECOGER', 'DOMICILIO', 'EN_MESA'].includes(input.order_type)) return { ok: false, error: 'Tipo de pedido inválido' };
   if (!['EFECTIVO_EXACTO', 'EFECTIVO_CON_CAMBIO', 'TARJETA_CONTRA_ENTREGA'].includes(input.payment_method)) {
     return { ok: false, error: 'Método de pago inválido' };
   }
@@ -202,23 +211,56 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     deliveryZone = deliveryResult.zoneName;
   }
 
+  if (input.order_type === 'EN_MESA' && input.table_id) {
+    const { data: tbl } = await supabase
+      .from('restaurant_tables')
+      .select('id, qr_status, table_number')
+      .eq('id', input.table_id)
+      .eq('location_id', location_id)
+      .maybeSingle();
+
+    if (tbl && tbl.qr_status !== 'ABIERTO') {
+      return {
+        ok: false,
+        error: `La mesa ${tbl.table_number || ''} no tiene una sesión QR abierta en este momento. Por favor avisa al mesero para abrir tu mesa.`,
+      };
+    }
+  }
+
   const subtotal = discountedSubtotal;
   const iva_amount = Math.round(subtotal * (local.iva_rate / (1 + local.iva_rate)) * 100) / 100;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   // 8. Insertar orden (service role salta RLS)
+  // Si es comanda de mesa, pasa directo a EN_PREPARACION para que caiga de inmediato a cocina
+  const initialStatus = input.order_type === 'EN_MESA' ? 'EN_PREPARACION' : 'CREADO';
+
+  const resolvedCustomerName = input.order_type === 'EN_MESA'
+    ? (input.table_number
+        ? (input.customer_name?.trim() && !input.customer_name.startsWith(`Mesa ${input.table_number}`)
+            ? `Mesa ${input.table_number} · ${input.customer_name.trim()}`
+            : (input.customer_name?.trim() || `Mesa ${input.table_number}`))
+        : (input.customer_name?.trim() || 'Mesa Salón'))
+    : (input.customer_name ?? '').trim();
+
+  const resolvedCustomerPhone = input.order_type === 'EN_MESA'
+    ? (input.customer_phone?.trim() || '0000000000')
+    : (input.customer_phone ?? '').trim();
+
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
       location_id,
-      customer_name: input.customer_name.trim(),
-      customer_phone: input.customer_phone.trim(),
+      customer_name: resolvedCustomerName,
+      customer_phone: resolvedCustomerPhone,
       order_type: input.order_type,
+      table_id: input.table_id || null,
+      session_id: input.session_id || null,
       payment_method: input.payment_method,
       delivery_address: input.order_type === 'DOMICILIO' ? (input.delivery_address ?? '').trim() || null : null,
       delivery_references: input.order_type === 'DOMICILIO' ? (input.delivery_references ?? '').trim() || null : null,
       eta: input.eta,
-      status: 'CREADO',
+      status: initialStatus,
       payment_status: 'PENDIENTE',
       subtotal,
       iva_amount,
@@ -246,7 +288,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       .insert({
         discount_id: discountResult.applied_discount.discount_id,
         order_id: order.id,
-        customer_phone: input.customer_phone.trim(),
+        customer_phone: resolvedCustomerPhone,
         amount_applied: discountResult.total_saved,
       });
     if (usageError) console.error('Failed to record discount usage:', usageError);

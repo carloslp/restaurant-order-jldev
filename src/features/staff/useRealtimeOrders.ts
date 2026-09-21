@@ -33,8 +33,9 @@ export function useRealtimeOrders(opts: {
   statuses?: Order['status'][];
   limit?: number;
   enabled?: boolean;
+  includePendingTableOrders?: boolean;
 }): Order[] {
-  const { locationId, statuses, limit = 100, enabled = true } = opts;
+  const { locationId, statuses, limit = 100, enabled = true, includePendingTableOrders = false } = opts;
   // Los callers pasan literales; key estable para las dependencias del efecto.
   const statusesKey = statuses?.join(',') ?? '';
   const [orders, setOrders] = useState<Order[]>([]);
@@ -52,6 +53,7 @@ export function useRealtimeOrders(opts: {
       const fetched = await listOrdersForLocation({
         statuses: filterStatuses,
         limit,
+        includePendingTableOrders,
       });
       setOrders((prev) => {
         const byId = new Map<string, Order>();
@@ -65,7 +67,8 @@ export function useRealtimeOrders(opts: {
             // fila recién insertada (llegó por Realtime durante el fetch) y
             // sigue dentro del filtro de estados; el próximo refetch la trae.
             const isFresh = new Date(o.created_at).getTime() >= freshCutoff;
-            const isActive = !filterStatuses || filterStatuses.includes(o.status);
+            const isPendingTable = includePendingTableOrders && o.order_type === 'EN_MESA' && o.payment_status === 'PENDIENTE';
+            const isActive = !filterStatuses || filterStatuses.includes(o.status) || isPendingTable;
             if (isFresh && isActive) byId.set(o.id, o);
             continue;
           }
@@ -162,9 +165,11 @@ export function useRealtimeOrders(opts: {
               if (payload.eventType === 'UPDATE' && normalizedIncoming) {
                 const exists = prev.some((o) => o.id === normalizedIncoming.id);
                 if (!exists) {
+                  const isPendingTable = includePendingTableOrders && normalizedIncoming.order_type === 'EN_MESA' && normalizedIncoming.payment_status === 'PENDIENTE';
                   if (
                     realtimeStatuses?.length &&
-                    !realtimeStatuses.includes(normalizedIncoming.status)
+                    !realtimeStatuses.includes(normalizedIncoming.status) &&
+                    !isPendingTable
                   ) {
                     return prev;
                   }

@@ -32,14 +32,17 @@ import { formatMXN } from '@/lib/pricing';
 interface CheckoutFormProps {
   locationId: string; // ID de la location (resuelto por path en el server)
   slug: string; // slug de la location (para volver al menú)
-  orderType: 'RECOGER' | 'DOMICILIO';
+  orderType: 'RECOGER' | 'DOMICILIO' | 'EN_MESA';
+  tableId?: string | null;
+  tableNumber?: string | null;
+  sessionId?: string | null;
   paymentMethod: 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
   eta: string; // ISO string from server (local time)
   onSuccess?: (orderId: string, trackToken?: string) => void;
   onDeliveryEstimationChange?: (fee: number, zoneName: string | null, isDeliverable: boolean) => void;
 }
 
-const formSchema = z.object({
+const standardFormSchema = z.object({
   customer_name: z.string().min(2, 'Nombre demasiado corto'),
   customer_phone: z
     .string()
@@ -51,12 +54,21 @@ const formSchema = z.object({
   promo_code: z.string().optional().nullable(),
 });
 
+const mesaFormSchema = z.object({
+  customer_name: z.string().max(100, 'Nombre demasiado largo').optional().nullable(),
+  notes: z.string().max(500, 'Notas demasiado largas').optional().nullable(),
+  idempotency_key: z.string().optional(),
+});
+
 const FORM_STORAGE_KEY = 'restaurant-order-jldev:checkout-form';
 
 export function CheckoutForm({
   locationId,
   slug,
   orderType,
+  tableId,
+  tableNumber,
+  sessionId,
   paymentMethod,
   eta,
   onSuccess,
@@ -144,7 +156,8 @@ export function CheckoutForm({
       setResult(null);
 
       // 1. Validar cliente
-      const parseResult = formSchema.safeParse(form);
+      const schemaToUse = orderType === 'EN_MESA' ? mesaFormSchema : standardFormSchema;
+      const parseResult = schemaToUse.safeParse(form);
       if (!parseResult.success) {
         const fieldErrors = parseResult.error.flatten().fieldErrors;
         setErrors(
@@ -187,9 +200,14 @@ export function CheckoutForm({
       const idempotencyKey = form.idempotency_key ?? crypto.randomUUID();
       const input = {
         location_id: locationId,
-        customer_name: form.customer_name!.trim(),
-        customer_phone: form.customer_phone!.trim(),
+        customer_name: orderType === 'EN_MESA' && tableNumber
+          ? (form.customer_name?.trim() ? `Mesa ${tableNumber} · ${form.customer_name.trim()}` : `Mesa ${tableNumber}`)
+          : (form.customer_name ?? '').trim(),
+        customer_phone: (form.customer_phone ?? '').trim() || '0000000000',
         order_type: orderType,
+        table_id: tableId || null,
+        table_number: tableNumber || null,
+        session_id: sessionId || null,
         payment_method: paymentMethod,
         delivery_address:
           orderType === 'DOMICILIO'
@@ -203,7 +221,7 @@ export function CheckoutForm({
         eta,
         cart,
         idempotency_key: idempotencyKey,
-        promo_code: form.promo_code?.trim() || null,
+        promo_code: orderType === 'EN_MESA' ? null : (form.promo_code?.trim() || null),
       };
 
       // 4. Llamada a la server action
@@ -328,198 +346,264 @@ export function CheckoutForm({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* Nombre */}
-        <div>
-          <label htmlFor="customer_name" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-            Nombre completo *
-          </label>
-          <div className="relative">
-            <User className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              id="customer_name"
-              name="customer_name"
-              type="text"
-              value={form.customer_name ?? ''}
-              onChange={handleChange}
-              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
-                errors.customer_name
-                  ? 'border-red-500 ring-2 ring-red-500/20'
-                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
-              }`}
-              placeholder="Ej. Juan Pérez"
-              required
-            />
+      {orderType === 'EN_MESA' ? (
+        /* Flujo EN_MESA: Solo pedir nombre del cliente (opcional) y comentarios para cocina */
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-orange-50/70 border border-orange-200/80 text-xs text-orange-950 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black text-base shrink-0 shadow-xs">
+              🍽️
+            </div>
+            <div>
+              <p className="font-extrabold text-sm text-orange-900">
+                Comanda en {tableNumber || 'Mesa'}
+              </p>
+              <p className="text-orange-800/80 mt-0.5 leading-relaxed">
+                Tus platillos se enviarán directamente a la cocina para su preparación. La cuenta permanecerá abierta para pedir más rondas.
+              </p>
+            </div>
           </div>
-          {errors.customer_name && (
-            <p className="mt-1 text-xs text-red-600 font-medium">{errors.customer_name}</p>
-          )}
-        </div>
 
-        {/* Teléfono */}
-        <div>
-          <label htmlFor="customer_phone" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-            Teléfono de contacto *
-          </label>
-          <div className="relative">
-            <Phone className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              id="customer_phone"
-              name="customer_phone"
-              type="tel"
-              value={form.customer_phone ?? ''}
-              onChange={handleChange}
-              className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
-                errors.customer_phone
-                  ? 'border-red-500 ring-2 ring-red-500/20'
-                  : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
-              }`}
-              placeholder="Ej. 55 1234 5678"
-              required
-            />
-          </div>
-          {errors.customer_phone && (
-            <p className="mt-1 text-xs text-red-600 font-medium">{errors.customer_phone}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Campos para entrega a domicilio */}
-      {orderType === 'DOMICILIO' && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2">
-          <div className="sm:col-span-2">
-            <label htmlFor="delivery_address" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-              Dirección de entrega *
+          {/* Nombre opcional */}
+          <div>
+            <label htmlFor="customer_name" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <span>Nombre o alias (opcional)</span>
+              <span className="text-[11px] text-zinc-400 font-normal normal-case">Para identificar quién ordena en la mesa</span>
             </label>
             <div className="relative">
-              <MapPin className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <User className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                id="delivery_address"
-                name="delivery_address"
+                id="customer_name"
+                name="customer_name"
                 type="text"
-                value={form.delivery_address ?? ''}
+                value={form.customer_name ?? ''}
                 onChange={handleChange}
-                className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
-                  errors.delivery_address
-                    ? 'border-red-500 ring-2 ring-red-500/20'
-                    : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
-                }`}
-                placeholder="Calle, número exterior e interior, colonia"
-                required
+                className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                placeholder={tableNumber ? `Ej. Carlos (o déjalo en blanco para Mesa ${tableNumber})` : 'Ej. Carlos'}
               />
             </div>
-            {errors.delivery_address && (
-              <p className="mt-1 text-xs text-red-600 font-medium">
-                {errors.delivery_address}
-              </p>
+            {errors.customer_name && (
+              <p className="mt-1 text-xs text-red-600 font-medium">{errors.customer_name}</p>
             )}
+          </div>
 
-            {/* Estado de estimación de distancia */}
-            {estimating && (
-              <div className="mt-2 flex items-center gap-2 p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/60 text-xs text-orange-800 animate-pulse">
-                <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
-                <span>Calculando costo de entrega y distancia...</span>
+          {/* Comentarios para cocina */}
+          <div>
+            <label htmlFor="notes" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-orange-600" />
+              <span>Comentarios o notas para cocina (opcional)</span>
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              rows={3}
+              value={form.notes ?? ''}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm p-3 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none resize-none"
+              placeholder="Ej. Sin cebolla, término medio, traer salsas picantes extra, vasos con hielo..."
+              maxLength={500}
+            />
+            {errors.notes && (
+              <p className="mt-1 text-xs text-red-600 font-medium">{errors.notes}</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Flujo estándar para DOMICILIO y RECOGER */
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Nombre */}
+            <div>
+              <label htmlFor="customer_name" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+                Nombre completo *
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="customer_name"
+                  name="customer_name"
+                  type="text"
+                  value={form.customer_name ?? ''}
+                  onChange={handleChange}
+                  className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                    errors.customer_name
+                      ? 'border-red-500 ring-2 ring-red-500/20'
+                      : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+                  }`}
+                  placeholder="Ej. Juan Pérez"
+                  required
+                />
               </div>
-            )}
+              {errors.customer_name && (
+                <p className="mt-1 text-xs text-red-600 font-medium">{errors.customer_name}</p>
+              )}
+            </div>
 
-            {!estimating && estimation && (
-              <div
-                className={`mt-2 p-3 rounded-xl border text-xs transition-all ${
-                  estimation.isDeliverable
-                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-                    : 'bg-red-50 border-red-200 text-red-800'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  {estimation.isDeliverable ? (
-                    <Navigation className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  )}
-                  <div className="space-y-0.5">
-                    <div className="font-bold flex items-center gap-2">
-                      <span>{estimation.zoneName}</span>
-                      {estimation.isDeliverable && (
-                        <span className="font-extrabold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
-                          {formatMXN(estimation.fee)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] opacity-90">
+            {/* Teléfono */}
+            <div>
+              <label htmlFor="customer_phone" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+                Teléfono de contacto *
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="customer_phone"
+                  name="customer_phone"
+                  type="tel"
+                  value={form.customer_phone ?? ''}
+                  onChange={handleChange}
+                  className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                    errors.customer_phone
+                      ? 'border-red-500 ring-2 ring-red-500/20'
+                      : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+                  }`}
+                  placeholder="Ej. 55 1234 5678"
+                  required
+                />
+              </div>
+              {errors.customer_phone && (
+                <p className="mt-1 text-xs text-red-600 font-medium">{errors.customer_phone}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Campos para entrega a domicilio */}
+          {orderType === 'DOMICILIO' && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2">
+              <div className="sm:col-span-2">
+                <label htmlFor="delivery_address" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+                  Dirección de entrega *
+                </label>
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="delivery_address"
+                    name="delivery_address"
+                    type="text"
+                    value={form.delivery_address ?? ''}
+                    onChange={handleChange}
+                    className={`w-full rounded-xl border bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none ${
+                      errors.delivery_address
+                        ? 'border-red-500 ring-2 ring-red-500/20'
+                        : 'border-zinc-200/80 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
+                    }`}
+                    placeholder="Calle, número exterior e interior, colonia"
+                    required
+                  />
+                </div>
+                {errors.delivery_address && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">
+                    {errors.delivery_address}
+                  </p>
+                )}
+
+                {/* Estado de estimación de distancia */}
+                {estimating && (
+                  <div className="mt-2 flex items-center gap-2 p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/60 text-xs text-orange-800 animate-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+                    <span>Calculando costo de entrega y distancia...</span>
+                  </div>
+                )}
+
+                {!estimating && estimation && (
+                  <div
+                    className={`mt-2 p-3 rounded-xl border text-xs transition-all ${
+                      estimation.isDeliverable
+                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                        : 'bg-red-50 border-red-200 text-red-800'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
                       {estimation.isDeliverable ? (
-                        <span>
-                          Distancia estimada: <strong>{estimation.distanceKm} km</strong>
-                          {estimation.durationMinutes ? ` · Tiempo de viaje: ~${Math.round(estimation.durationMinutes)} min` : ''}
-                        </span>
+                        <Navigation className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       ) : (
-                        <span>{estimation.reason}</span>
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                       )}
+                      <div className="space-y-0.5">
+                        <div className="font-bold flex items-center gap-2">
+                          <span>{estimation.zoneName}</span>
+                          {estimation.isDeliverable && (
+                            <span className="font-extrabold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
+                              {formatMXN(estimation.fee)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] opacity-90">
+                          {estimation.isDeliverable ? (
+                            <span>
+                              Distancia estimada: <strong>{estimation.distanceKm} km</strong>
+                              {estimation.durationMinutes ? ` · Tiempo de viaje: ~${Math.round(estimation.durationMinutes)} min` : ''}
+                            </span>
+                          ) : (
+                            <span>{estimation.reason}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label htmlFor="delivery_references" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+                  Referencias de entrega (opcional)
+                </label>
+                <div className="relative">
+                  <FileText className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="delivery_references"
+                    name="delivery_references"
+                    type="text"
+                    value={form.delivery_references ?? ''}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none"
+                    placeholder="Entre calles, color de portón, timbre..."
+                  />
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="sm:col-span-2">
-            <label htmlFor="delivery_references" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-              Referencias de entrega (opcional)
+          {/* Código de cupón / promoción */}
+          <div className="pt-2">
+            <label htmlFor="promo_code" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+              Cupón de descuento (opcional)
             </label>
             <div className="relative">
-              <FileText className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Tag className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                id="delivery_references"
-                name="delivery_references"
+                id="promo_code"
+                name="promo_code"
                 type="text"
-                value={form.delivery_references ?? ''}
+                value={form.promo_code ?? ''}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none"
-                placeholder="Entre calles, color de portón, timbre..."
+                className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none font-mono uppercase placeholder:normal-case"
+                placeholder="Ej. BIENVENIDO10"
               />
             </div>
+          </div>
+
+          {/* Notas / Comentarios del pedido */}
+          <div className="pt-2">
+            <label htmlFor="notes" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-orange-600" />
+              <span>Notas o comentarios para entrega (opcional)</span>
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              rows={2}
+              value={form.notes ?? ''}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm p-3 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none resize-none"
+              placeholder="Ej. Alergia al ajo, por favor no incluir cubiertos plásticos, tocar el timbre dos veces..."
+              maxLength={500}
+            />
+            {errors.notes && (
+              <p className="mt-1 text-xs text-red-600 font-medium">{errors.notes}</p>
+            )}
           </div>
         </div>
       )}
-
-      {/* Código de cupón / promoción */}
-      <div className="pt-2">
-        <label htmlFor="promo_code" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-          Cupón de descuento (opcional)
-        </label>
-        <div className="relative">
-          <Tag className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            id="promo_code"
-            name="promo_code"
-            type="text"
-            value={form.promo_code ?? ''}
-            onChange={handleChange}
-            className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none font-mono uppercase placeholder:normal-case"
-            placeholder="Ej. BIENVENIDO10"
-          />
-        </div>
-      </div>
-
-      {/* Notas / Comentarios del pedido */}
-      <div className="pt-2">
-        <label htmlFor="notes" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-          <MessageSquare className="w-3.5 h-3.5 text-orange-600" />
-          <span>Notas o comentarios para cocina / entrega (opcional)</span>
-        </label>
-        <textarea
-          id="notes"
-          name="notes"
-          rows={2}
-          value={form.notes ?? ''}
-          onChange={handleChange}
-          className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm p-3 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none resize-none"
-          placeholder="Ej. Alergia al ajo, por favor no incluir cubiertos plásticos, tocar el timbre dos veces..."
-          maxLength={500}
-        />
-        {errors.notes && (
-          <p className="mt-1 text-xs text-red-600 font-medium">{errors.notes}</p>
-        )}
-      </div>
 
       {/* Botón de envío */}
       <div className="pt-4">
@@ -535,7 +619,7 @@ export function CheckoutForm({
             </>
           ) : (
             <>
-              <span>Confirmar y realizar pedido</span>
+              <span>{orderType === 'EN_MESA' ? 'Enviar comanda a cocina' : 'Confirmar y realizar pedido'}</span>
               <ArrowRight className="w-5 h-5" />
             </>
           )}

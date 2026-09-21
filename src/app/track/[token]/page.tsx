@@ -32,7 +32,7 @@ type OrderStatus =
 interface TrackedOrder {
   id: string;
   status: OrderStatus;
-  order_type: 'RECOGER' | 'DOMICILIO';
+  order_type: 'RECOGER' | 'DOMICILIO' | 'EN_MESA';
   customer_name: string;
   delivery_address: string | null;
   eta: string; // ISO

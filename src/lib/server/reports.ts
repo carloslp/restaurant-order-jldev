@@ -123,6 +123,7 @@ export async function getKPIs(dateFrom: string, dateTo: string): Promise<KPIData
   const ordersByType: Record<OrderType, number> = {
     RECOGER: 0,
     DOMICILIO: 0,
+    EN_MESA: 0,
   };
   orderList.forEach((o) => {
     ordersByType[o.order_type] = (ordersByType[o.order_type] || 0) + 1;

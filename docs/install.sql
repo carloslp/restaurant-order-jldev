@@ -31,7 +31,11 @@ CREATE TYPE order_status AS ENUM (
     'CANCELADO'
 );
 
-CREATE TYPE order_type AS ENUM ('RECOGER', 'DOMICILIO');
+CREATE TYPE order_type AS ENUM ('RECOGER', 'DOMICILIO', 'EN_MESA');
+
+CREATE TYPE table_status AS ENUM ('LIBRE', 'RESERVADA', 'OCUPADA', 'EN_LIMPIEZA');
+
+CREATE TYPE qr_status AS ENUM ('INACTIVO', 'ABIERTO');
 
 CREATE TYPE payment_method AS ENUM (
     'EFECTIVO_EXACTO',
@@ -129,7 +133,7 @@ CREATE TABLE modifier_options (
     UNIQUE(location_id, modifier_group_id, name)
 );
 
--- 3.3 Staff (con vÃ­nculo directo a auth.users)
+-- 3.3 Staff (con vínculo directo a auth.users)
 CREATE TABLE staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
@@ -141,7 +145,42 @@ CREATE TABLE staff (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3.4 Pedidos
+-- 3.4 Mesas Físicas del Restaurante
+CREATE TABLE restaurant_tables (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    zone TEXT NOT NULL CHECK (zone IN ('INTERIOR', 'TERRAZA', 'BARRA')),
+    table_number TEXT NOT NULL,
+    min_capacity INTEGER NOT NULL DEFAULT 1 CHECK (min_capacity > 0),
+    max_capacity INTEGER NOT NULL CHECK (max_capacity >= min_capacity),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    status table_status NOT NULL DEFAULT 'LIBRE',
+    qr_status qr_status NOT NULL DEFAULT 'INACTIVO',
+    qr_token TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    current_session_id UUID NULL,
+    current_guests INTEGER NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(location_id, table_number)
+);
+
+-- 3.5 Turnos y Horarios Múltiples por Local
+CREATE TABLE local_shifts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+    shift_name TEXT NOT NULL,
+    open_time TIME NOT NULL,
+    close_time TIME NOT NULL,
+    slot_interval_minutes INTEGER NOT NULL DEFAULT 30 CHECK (slot_interval_minutes > 0),
+    turn_duration_minutes INTEGER NOT NULL DEFAULT 90 CHECK (turn_duration_minutes > 0),
+    buffer_minutes INTEGER NOT NULL DEFAULT 15 CHECK (buffer_minutes >= 0),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_shift_times CHECK (open_time < close_time)
+);
+
+-- 3.6 Pedidos
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
@@ -161,6 +200,9 @@ CREATE TABLE orders (
     total NUMERIC(10,2) NOT NULL CHECK (total >= 0),
     cart_snapshot JSONB NOT NULL,
     delivery_zone TEXT NULL,
+    driver_id UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
+    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    session_id UUID NULL,
     delivery_token UUID NULL,
     delivery_token_expires_at TIMESTAMPTZ NULL,
     delivery_token_rotated_at TIMESTAMPTZ NULL,
@@ -171,7 +213,8 @@ CREATE TABLE orders (
     updated_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
     CONSTRAINT chk_delivery_address CHECK (
         (order_type = 'DOMICILIO' AND delivery_address IS NOT NULL) OR
-        (order_type = 'RECOGER' AND delivery_address IS NULL)
+        (order_type = 'RECOGER' AND delivery_address IS NULL) OR
+        (order_type = 'EN_MESA' AND delivery_address IS NULL)
     ),
     CONSTRAINT chk_eta_future CHECK (eta > now()),
     CONSTRAINT chk_total_consistency CHECK (
@@ -179,10 +222,11 @@ CREATE TABLE orders (
     )
 );
 
--- 3.5 Reservas
+-- 3.7 Reservas
 CREATE TABLE reservations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
     holder_name TEXT NOT NULL,
     holder_phone TEXT NOT NULL,
     reservation_date DATE NOT NULL,
@@ -323,7 +367,7 @@ DECLARE
 BEGIN
     FOREACH tbl IN ARRAY ARRAY[
         'locals','categories','products','modifier_groups','modifier_options',
-        'orders','reservations','staff','discounts'
+        'orders','reservations','staff','discounts','restaurant_tables'
     ]
     LOOP
         EXECUTE format('
@@ -429,6 +473,8 @@ ALTER TABLE allergens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE diet_labels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_allergens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_diet_labels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE restaurant_tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE local_shifts ENABLE ROW LEVEL SECURITY;
 
 -- PatrÃ³n GUC: el backend setea 'app.local_id' (y 'app.token_plain' si aplica)
 -- antes de cada consulta. current_setting(..., true) devuelve NULL si no existe.
@@ -502,6 +548,54 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 CREATE POLICY local_zone_capacity_public_read ON local_zone_capacity
 FOR SELECT
 USING (true);
+
+-- Mesas físicas
+CREATE POLICY restaurant_tables_public_read ON restaurant_tables
+FOR SELECT
+USING (true);
+
+CREATE POLICY restaurant_tables_staff_access ON restaurant_tables
+FOR ALL
+USING (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = restaurant_tables.location_id
+    )
+)
+WITH CHECK (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = restaurant_tables.location_id
+    )
+);
+
+-- Turnos y Horarios
+CREATE POLICY local_shifts_public_read ON local_shifts
+FOR SELECT
+USING (true);
+
+CREATE POLICY local_shifts_staff_access ON local_shifts
+FOR ALL
+USING (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = local_shifts.location_id
+    )
+)
+WITH CHECK (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = local_shifts.location_id
+    )
+);
 
 CREATE POLICY staff_staff_access ON staff
 FOR ALL
@@ -692,6 +786,9 @@ SELECT
     o.total,
     o.cart_snapshot,
     o.delivery_zone,
+    o.driver_id,
+    o.table_id,
+    o.session_id,
     o.delivered_at,
     o.created_at,
     o.updated_at
@@ -719,6 +816,11 @@ COMMENT ON TABLE discounts IS 'Engine de promos: cÃ³digos o automÃ¡ticas con
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+GRANT SELECT ON restaurant_tables TO anon, authenticated;
+GRANT ALL ON restaurant_tables TO authenticated;
+GRANT SELECT ON local_shifts TO anon, authenticated;
+GRANT ALL ON local_shifts TO authenticated;
 
 -- TambiÃ©n grant en auth schema para gestiÃ³n de usuarios si se necesita
 GRANT USAGE ON SCHEMA auth TO service_role;

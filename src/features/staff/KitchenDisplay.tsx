@@ -121,16 +121,36 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
                     )}
                   </div>
                   <div className="border-t pt-2">
-                    <p className="mb-2 text-sm text-gray-600">
-                      {order.order_type === 'DOMICILIO' ? '🚀 Delivery' : '🏃 Para llevar'} ·{' '}
-                      {order.customer_name}
-                    </p>
+                    {order.order_type === 'EN_MESA' ? (
+                      <div className="mb-2.5 flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 text-orange-950 font-extrabold text-xs sm:text-sm border border-orange-200">
+                          🍽️ {order.customer_name}
+                        </span>
+                        <span className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide">
+                          Comanda Salón
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mb-2 text-sm text-gray-600 font-medium">
+                        {order.order_type === 'DOMICILIO' ? '🚀 Delivery' : '🏃 Para llevar'} · {order.customer_name}
+                      </p>
+                    )}
+
                     {col.action && col.next && (
                       <button
                         onClick={() => handleTransition(order.id, col.next)}
                         className="w-full rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 transition"
                       >
                         {col.action}
+                      </button>
+                    )}
+
+                    {col.key === 'LISTO' && order.order_type === 'EN_MESA' && (
+                      <button
+                        onClick={() => handleTransition(order.id, 'COMPLETADO')}
+                        className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5"
+                      >
+                        <span>🍽️ Servido en Mesa</span>
                       </button>
                     )}
                   </div>

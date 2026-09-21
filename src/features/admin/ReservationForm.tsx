@@ -30,6 +30,18 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
       });
     } else if (initialData) {
       setFormData(initialData);
+    } else {
+      setFormData({
+        holder_name: '',
+        holder_phone: '',
+        reservation_date: new Date().toISOString().slice(0, 10),
+        reservation_time: '14:00',
+        party_size: 2,
+        preferred_zone: 'INTERIOR',
+        status: 'CONFIRMADA',
+        deposit_status: 'SIN_DEPOSITO',
+        notes: '',
+      });
     }
   }, [reservation, initialData]);
 

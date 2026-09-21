@@ -18,9 +18,10 @@ import { useEffect, useState } from 'react';
 
 interface CartDrawerProps {
   slug: string;
+  checkoutHref?: string;
 }
 
-export function CartDrawer({ slug }: CartDrawerProps) {
+export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
   const { 
     isOpen, 
     setOpen, 
@@ -304,11 +305,11 @@ export function CartDrawer({ slug }: CartDrawerProps) {
             </div>
 
             <Link
-              href={`/${slug}/checkout`}
+              href={checkoutHref || `/${slug}/checkout`}
               onClick={() => setOpen(false)}
               className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm py-3.5 px-4 rounded-xl shadow-lg shadow-orange-600/25 active:scale-[0.98] transition-all"
             >
-              <span>Ir al Checkout</span>
+              <span>{checkoutHref?.includes('mesa=') ? 'Enviar pedido a Cocina' : 'Ir al Checkout'}</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
