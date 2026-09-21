@@ -8,13 +8,14 @@ import {
   deleteLocal,
   getLocalById,
   geocodeAddressAction,
+  toggleLocalOpenStatus,
 } from '@/lib/server/locals';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 import { ZoneCapacityEditor } from '@/features/admin/ZoneCapacityEditor';
 import { validateLocationSlug } from '@/lib/slugs';
-import { MapPin, Search, Loader2 } from 'lucide-react';
+import { MapPin, Search, Loader2, Power } from 'lucide-react';
 
 interface Local {
   id: string;
@@ -26,6 +27,7 @@ interface Local {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  is_open?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +41,7 @@ interface LocalFormData {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  is_open: boolean;
 }
 
 const initialFormData: LocalFormData = {
@@ -50,6 +53,7 @@ const initialFormData: LocalFormData = {
   address: '',
   latitude: null,
   longitude: null,
+  is_open: true,
 };
 
 export function AdminLocals() {
@@ -148,6 +152,27 @@ export function AdminLocals() {
     loadLocals();
   };
 
+  const handleToggleOpen = async (local: Local) => {
+    const newState = !(local.is_open ?? true);
+    try {
+      setLocalsList((prev) =>
+        prev.map((l) => (l.id === local.id ? { ...l, is_open: newState } : l))
+      );
+      await toggleLocalOpenStatus(local.id, newState);
+      toast({
+        title: newState ? 'Local abierto' : 'Local cerrado',
+        description: `El local "${local.name}" ahora está ${newState ? 'abierto' : 'cerrado'} para pedidos.`,
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'No se pudo actualizar el estado del local.',
+        variant: 'destructive',
+      });
+      loadLocals();
+    }
+  };
+
   const handleEdit = (local: Local) => {
     setEditingLocal(local);
     setFormData({
@@ -159,6 +184,7 @@ export function AdminLocals() {
       address: local.address ?? '',
       latitude: local.latitude ?? null,
       longitude: local.longitude ?? null,
+      is_open: local.is_open ?? true,
     });
     setSlugError(null);
     setShowForm(true);
@@ -296,6 +322,24 @@ export function AdminLocals() {
                 <FieldError id="local-fee-error" message={fieldErrors.delivery_fee} />
               </div>
 
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3 bg-gray-50/70">
+                <div>
+                  <span className="block text-sm font-medium text-gray-800">Abierto para pedidos</span>
+                  <span className="block text-xs text-gray-500">
+                    Si se desactiva, los clientes verán aviso de cerrado y no podrán ordenar.
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_open}
+                    onChange={(e) => setFormData({ ...formData, is_open: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
               <div className="border-t pt-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="block text-sm font-semibold text-gray-800 flex items-center gap-1.5">
@@ -392,6 +436,7 @@ export function AdminLocals() {
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Zona horaria</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">IVA</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Delivery</th>
+              <th className="text-left p-3 text-sm font-semibold text-gray-500">Estado</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Creado</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Acciones</th>
             </tr>
@@ -422,6 +467,25 @@ export function AdminLocals() {
                 <td className="p-3 text-sm text-gray-600">{local.timezone}</td>
                 <td className="p-3 text-sm text-gray-600">{local.iva_rate * 100}%</td>
                 <td className="p-3 text-sm text-gray-600">${local.delivery_fee.toFixed(2)}</td>
+                <td className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOpen(local)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all border ${
+                      local.is_open !== false
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                    }`}
+                    title="Clic para cambiar estado"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        local.is_open !== false ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+                      }`}
+                    />
+                    {local.is_open !== false ? 'Abierto' : 'Cerrado'}
+                  </button>
+                </td>
                 <td className="p-3 text-sm text-gray-500">
                   {new Date(local.created_at).toLocaleDateString('es-ES', {
                     day: '2-digit',
@@ -449,7 +513,7 @@ export function AdminLocals() {
             ))}
             {localsList.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-gray-400">
+                <td colSpan={9} className="p-8 text-center text-gray-400">
                   No hay locales. Crea el primero para empezar.
                 </td>
               </tr>

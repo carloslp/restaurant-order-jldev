@@ -10,6 +10,7 @@ export interface Local {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  is_open?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ export interface LocalFormData {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  is_open?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +152,7 @@ export interface CartItem {
   base_price: number;
   quantity: number;
   modifiers: CartItemModifiers[];
+  comments?: string;
 }
 
 export interface Cart {
@@ -174,6 +177,7 @@ export interface Order {
   payment_method: PaymentMethod;
   delivery_address: string | null;
   delivery_references: string | null;
+  notes?: string | null;
   eta: string; // ISO
   status: OrderStatus;
   payment_status: PaymentStatus;

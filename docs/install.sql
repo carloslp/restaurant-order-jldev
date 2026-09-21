@@ -68,6 +68,7 @@ CREATE TABLE locals (
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
+    is_open BOOLEAN NOT NULL DEFAULT true,
     address TEXT NULL,
     latitude NUMERIC(10,7) NULL,
     longitude NUMERIC(10,7) NULL,
@@ -110,7 +111,7 @@ CREATE TABLE modifier_groups (
     name TEXT NOT NULL,
     is_required BOOLEAN NOT NULL DEFAULT false,
     min_selections INTEGER NOT NULL DEFAULT 0 CHECK (min_selections >= 0),
-    max_selections INTEGER NOT NULL DEFAULT 0 CHECK (max_selections >= min_selections),
+    max_selections INTEGER NOT NULL DEFAULT 0 CHECK (max_selections = 0 OR max_selections >= min_selections),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(location_id, product_id, name)
@@ -150,6 +151,7 @@ CREATE TABLE orders (
     payment_method payment_method NOT NULL,
     delivery_address TEXT,
     delivery_references TEXT,
+    notes TEXT NULL,
     eta TIMESTAMPTZ NOT NULL,
     status order_status NOT NULL DEFAULT 'CREADO',
     payment_status payment_status NOT NULL DEFAULT 'PENDIENTE',
@@ -279,6 +281,30 @@ CREATE TABLE product_diet_labels (
     diet_label_id UUID NOT NULL REFERENCES diet_labels(id) ON DELETE CASCADE,
     PRIMARY KEY (product_id, diet_label_id)
 );
+
+-- Sembrar alérgenos estándar (NOM-050) y etiquetas dietarias de base
+INSERT INTO allergens (name, description) VALUES
+    ('GLUTEN', 'Trigo, cebada, centeno'),
+    ('LACTEOS', 'Leche y derivados'),
+    ('HUEVO', NULL),
+    ('PESCADO', NULL),
+    ('SOJA', NULL),
+    ('FRUTOS_SECOS', 'Almendras, nueces, etc.'),
+    ('CACAHUATE', NULL),
+    ('CRUSTACEOS', NULL),
+    ('MOLUSCOS', NULL),
+    ('APIO', NULL),
+    ('MOSTAZA', NULL),
+    ('SESAMO', NULL),
+    ('SULFITOS', NULL),
+    ('ALT_TRIGO', 'Altramuces') ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO diet_labels (name, description) VALUES
+    ('VEGETARIANO', 'Sin carne'),
+    ('VEGANO', 'Sin ingredientes de origen animal'),
+    ('SIN_GLUTEN', NULL),
+    ('SIN_LACTOSA', NULL),
+    ('PICANTE', NULL) ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
 -- 4. TRIGGER updated_at

@@ -15,6 +15,7 @@ export interface LocalInfo {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  is_open?: boolean;
 }
 
 export interface LocalSummary {
@@ -34,6 +35,7 @@ function toLocalInfo(data: Record<string, unknown>): LocalInfo {
     address: (data.address as string | undefined) ?? null,
     latitude: data.latitude != null ? Number(data.latitude) : null,
     longitude: data.longitude != null ? Number(data.longitude) : null,
+    is_open: data.is_open !== false,
   };
 }
 

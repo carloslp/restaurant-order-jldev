@@ -28,6 +28,7 @@ export interface CreateOrderInput {
   payment_method: PaymentMethod;
   delivery_address?: string | null;
   delivery_references?: string | null;
+  notes?: string | null;
   eta: string; // ISO
   cart: Cart;
   idempotency_key?: string; // Made optional as column missing in orders table
@@ -47,6 +48,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const local = await getLocalById(input.location_id);
   if (!local) {
     return { ok: false, error: 'Local no identificado' };
+  }
+  if (local.is_open === false) {
+    return { ok: false, error: 'Esta sucursal se encuentra cerrada para pedidos en este momento.' };
   }
   const location_id = local.id;
 
@@ -157,6 +161,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       base_price: Number(product.base_price),
       quantity: qty,
       modifiers: mods,
+      comments: item.comments?.trim() || undefined,
     });
   }
 
@@ -219,7 +224,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       iva_amount,
       delivery_fee_amount: deliveryFee,
       total,
-      cart_snapshot: { version: '1', items: snapshotItems },
+      cart_snapshot: { version: '1', items: snapshotItems, notes: input.notes?.trim() || null },
       delivery_zone: deliveryZone,
       delivery_token: deliveryTokenUuid,
       delivery_token_expires_at: expiresAt,

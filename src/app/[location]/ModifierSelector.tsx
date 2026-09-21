@@ -7,7 +7,7 @@ import { X, Check } from 'lucide-react';
 
 interface Props {
   product: Product;
-  onConfirm: (modifiers: CartItemModifiers[]) => void;
+  onConfirm: (modifiers: CartItemModifiers[], comments: string) => void;
   onCancel: () => void;
 }
 
@@ -16,6 +16,7 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
 
   // State: modifier_group_id -> set of option_ids
   const [selections, setSelections] = useState<Record<string, Set<string>>>({});
+  const [comments, setComments] = useState('');
 
   const toggleOption = (groupId: string, optionId: string, group: ModifierGroup) => {
     setSelections((prev) => {
@@ -76,7 +77,7 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
           quantity: 1,
         })),
     }));
-    onConfirm(modifiers);
+    onConfirm(modifiers, comments);
   };
 
   return (
@@ -98,7 +99,16 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
             <h3 id="modifier-modal-title" className="text-xl font-bold text-zinc-900 tracking-tight">
               {product.name}
             </h3>
-            <p className="text-xs text-zinc-500 mt-1">Personaliza las opciones de tu pedido</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              {groups.length > 0
+                ? 'Personaliza las opciones y preparación de tu pedido'
+                : 'Agrega instrucciones especiales o notas de preparación'}
+            </p>
+            {product.description && (
+              <p className="text-xs text-zinc-400 mt-1 line-clamp-2 italic">
+                {product.description}
+              </p>
+            )}
           </div>
           <button
             onClick={onCancel}
@@ -110,10 +120,10 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
           </button>
         </div>
 
-        {/* Opciones */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 sm:p-6 space-y-6">
+        {/* Contenido scrolleable de grupos y comentarios */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1">
           {groups.map((group) => {
-            const selectedCount = (selections[group.id] || new Set()).size;
+            const currentSelected = selections[group.id] || new Set();
             const isSingle = group.max_selections === 1;
 
             return (
@@ -138,9 +148,9 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
                   </span>
                 </div>
 
-                <div className="grid gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   {group.options.map((opt) => {
-                    const isSelected = (selections[group.id] || new Set()).has(opt.id);
+                    const isSelected = currentSelected.has(opt.id);
 
                     return (
                       <button
@@ -186,6 +196,24 @@ export default function ModifierSelector({ product, onConfirm, onCancel }: Props
               </div>
             );
           })}
+
+          {/* Campo de observaciones / comentarios específicos del producto */}
+          <div className="pt-2">
+            <label htmlFor="product-comments" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <span>Instrucciones de preparación / comentarios</span>
+              <span className="text-[10px] text-zinc-400 font-normal normal-case">Opcional · máx. 250 caract.</span>
+            </label>
+            <textarea
+              id="product-comments"
+              rows={3}
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              autoFocus={groups.length === 0}
+              placeholder="Ej. Sin cebolla, término medio, salsa aparte, alérgico a..."
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50/60 focus:bg-white p-3 text-xs sm:text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all resize-none"
+              maxLength={250}
+            />
+          </div>
         </div>
 
         {/* Footer */}

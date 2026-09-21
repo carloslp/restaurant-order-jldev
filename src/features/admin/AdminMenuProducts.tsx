@@ -8,6 +8,15 @@ import type { Product, Category, Local } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
+import { AdminModifierGroups } from '@/features/admin/AdminModifierGroups';
+
+const STANDARD_ALLERGENS = [
+  'GLUTEN', 'LACTEOS', 'HUEVO', 'PESCADO', 'SOJA', 'FRUTOS_SECOS', 'CACAHUATE', 'MARISCOS'
+];
+
+const STANDARD_DIET_LABELS = [
+  'VEGETARIANO', 'VEGANO', 'SIN_GLUTEN', 'SIN_LACTOSA', 'PICANTE'
+];
 
 interface ProductFormData {
   name: string;
@@ -40,7 +49,9 @@ export function AdminMenuProducts({ local }: AdminMenuProductsProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [modifierModalProduct, setModifierModalProduct] = useState<Product | null>(null);
+  const [activeProductTab, setActiveProductTab] = useState<'data' | 'modifiers'>('data');
   const [formData, setFormData] = useState<ProductFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -194,6 +205,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
+    setActiveProductTab('data');
     setFormData({
       name: product.name,
       description: product.description ?? '',
@@ -218,6 +230,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const handleNew = () => {
     setEditingProduct(null);
+    setActiveProductTab('data');
     setFormData(initialFormData);
     setShowForm(true);
   };
@@ -225,6 +238,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const handleCancel = () => {
     setShowForm(false);
     setEditingProduct(null);
+    setActiveProductTab('data');
     setFormData(initialFormData);
   };
 
@@ -262,6 +276,60 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
               <h3 className="text-lg font-semibold">{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</h3>
               <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
+
+            {editingProduct && (
+              <div className="flex border-b border-zinc-200 px-4 bg-zinc-50">
+                <button
+                  type="button"
+                  onClick={() => setActiveProductTab('data')}
+                  className={`py-2.5 px-4 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+                    activeProductTab === 'data'
+                      ? 'border-orange-600 text-orange-600 bg-white'
+                      : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                  }`}
+                >
+                  📋 Datos del Producto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveProductTab('modifiers')}
+                  className={`py-2.5 px-4 text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeProductTab === 'modifiers'
+                      ? 'border-orange-600 text-orange-600 bg-white'
+                      : 'border-transparent text-zinc-500 hover:text-zinc-800'
+                  }`}
+                >
+                  <span>⚙️ Modificadores</span>
+                  {editingProduct.modifier_groups?.length ? (
+                    <span className="bg-orange-100 text-orange-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {editingProduct.modifier_groups.length}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            )}
+
+            {activeProductTab === 'modifiers' && editingProduct ? (
+              <div className="p-4 sm:p-6 space-y-4">
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-xs text-orange-900">
+                  Agrega y configura los grupos de opciones (término, salsas, extras, complementos) para <strong>{editingProduct.name}</strong>.
+                </div>
+                <AdminModifierGroups productId={editingProduct.id} />
+                <div className="flex justify-end pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      setEditingProduct(null);
+                      loadData();
+                    }}
+                    className="btn-primary text-xs"
+                  >
+                    Guardar y Cerrar
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <FormAlert message={formError} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -372,56 +440,137 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Alérgenos</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Alérgenos</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2.5">
+                      {STANDARD_ALLERGENS.map((allergen) => {
+                        const isSelected = (formData.allergens || []).some(
+                          (a) => a.toUpperCase() === allergen
+                        );
+                        return (
+                          <button
+                            key={allergen}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  allergens: (prev.allergens || []).filter(
+                                    (a) => a.toUpperCase() !== allergen
+                                  ),
+                                }));
+                              } else {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  allergens: [...(prev.allergens || []), allergen],
+                                }));
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer select-none ${
+                              isSelected
+                                ? 'bg-orange-600 text-white shadow-xs'
+                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                            }`}
+                          >
+                            {isSelected ? `✓ ${allergen}` : allergen}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <div className="flex gap-2 mb-2">
                       <input
                         type="text"
-                        placeholder="Ej: Gluten, Lácteos"
-                        className="flex-1 rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        placeholder="Otro alérgeno (Enter para agregar)..."
+                        className="flex-1 rounded-xl border border-gray-300 px-3 py-1.5 text-xs focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             const target = e.currentTarget;
-                            addTag('allergens', target.value);
-                            target.value = '';
+                            if (target.value.trim()) {
+                              addTag('allergens', target.value);
+                              target.value = '';
+                            }
                           }
                         }}
                       />
                     </div>
+                    {/* Alérgenos personalizados adicionales */}
                     <div className="flex flex-wrap gap-1">
-                      {formData.allergens.map((tag, i) => (
-                        <span key={i} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                          {tag}
-                          <button type="button" onClick={() => removeTag('allergens', i)} className="hover:text-blue-600">✕</button>
-                        </span>
-                      ))}
+                      {(formData.allergens || [])
+                        .filter((a) => !STANDARD_ALLERGENS.includes(a.toUpperCase()))
+                        .map((tag, i) => (
+                          <span key={i} className="bg-amber-100 text-amber-900 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium">
+                            {tag}
+                            <button type="button" onClick={() => removeTag('allergens', i)} className="text-amber-700 hover:text-amber-950 cursor-pointer">✕</button>
+                          </span>
+                        ))}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Etiquetas Dietéticas</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Etiquetas Dietéticas</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2.5">
+                      {STANDARD_DIET_LABELS.map((label) => {
+                        const isSelected = (formData.diet_labels || []).some(
+                          (d) => d.toUpperCase() === label
+                        );
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  diet_labels: (prev.diet_labels || []).filter(
+                                    (d) => d.toUpperCase() !== label
+                                  ),
+                                }));
+                              } else {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  diet_labels: [...(prev.diet_labels || []), label],
+                                }));
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer select-none ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                            }`}
+                          >
+                            {isSelected ? `✓ ${label}` : label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <div className="flex gap-2 mb-2">
                       <input
                         type="text"
-                        placeholder="Ej: Vegano, Keto"
-                        className="flex-1 rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        placeholder="Otra etiqueta dietética (Enter para agregar)..."
+                        className="flex-1 rounded-xl border border-gray-300 px-3 py-1.5 text-xs focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             const target = e.currentTarget;
-                            addTag('diet_labels', target.value);
-                            target.value = '';
+                            if (target.value.trim()) {
+                              addTag('diet_labels', target.value);
+                              target.value = '';
+                            }
                           }
                         }}
                       />
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {formData.diet_labels.map((tag, i) => (
-                        <span key={i} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                          {tag}
-                          <button type="button" onClick={() => removeTag('diet_labels', i)} className="hover:text-green-600">✕</button>
-                        </span>
-                      ))}
+                      {(formData.diet_labels || [])
+                        .filter((d) => !STANDARD_DIET_LABELS.includes(d.toUpperCase()))
+                        .map((tag, i) => (
+                          <span key={i} className="bg-emerald-100 text-emerald-900 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium">
+                            {tag}
+                            <button type="button" onClick={() => removeTag('diet_labels', i)} className="text-emerald-700 hover:text-emerald-950 cursor-pointer">✕</button>
+                          </span>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -436,6 +585,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}
@@ -448,6 +598,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
               <th className="p-3 text-sm font-semibold text-gray-500">Producto</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Categoría</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Precio</th>
+              <th className="p-3 text-sm font-semibold text-gray-500">Modificadores</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Estado</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Visibilidad</th>
               <th className="p-3 text-sm font-semibold text-gray-500">Acciones</th>
@@ -479,6 +630,42 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
                     )}
                   </td>
                   <td className="p-3 text-sm font-medium">${prod.base_price.toFixed(2)}</td>
+                  <td className="p-3 text-xs">
+                    {prod.modifier_groups && prod.modifier_groups.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap gap-1">
+                          {prod.modifier_groups.slice(0, 2).map((g) => (
+                            <span
+                              key={g.id}
+                              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-800 border border-orange-200"
+                            >
+                              {g.name} {g.options?.length ? `(${g.options.length})` : ''}
+                            </span>
+                          ))}
+                          {prod.modifier_groups.length > 2 && (
+                            <span className="text-[10px] text-zinc-500 font-medium self-center">
+                              +{prod.modifier_groups.length - 2} más
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setModifierModalProduct(prod)}
+                          className="text-orange-600 hover:text-orange-700 font-semibold hover:underline block text-[11px] cursor-pointer"
+                        >
+                          Configurar ({prod.modifier_groups.length})
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setModifierModalProduct(prod)}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-orange-600 bg-zinc-50 hover:bg-orange-50 border border-dashed border-zinc-300 hover:border-orange-300 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <span>+ Añadir</span>
+                      </button>
+                    )}
+                  </td>
                   <td className="p-3">
                     <span className={`text-xs px-2 py-1 rounded-full ${prod.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                       {prod.is_available ? 'Disponible' : 'Agotado'}
@@ -500,21 +687,37 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
                     )}
                   </td>
                   <td className="p-3">
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => handleEdit(prod)} className="text-sm text-primary hover:underline">
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(prod)}
+                        className="text-xs font-semibold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
                         Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModifierModalProduct(prod)}
+                        className="text-xs font-semibold text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1 rounded-lg border border-zinc-200 transition-colors cursor-pointer"
+                        title="Gestionar grupos de modificadores y opciones"
+                      >
+                        Modificadores {prod.modifier_groups?.length ? `(${prod.modifier_groups.length})` : ''}
                       </button>
                       {local && isVisibleInPublic && (
                         <a
                           href={`/${local.slug}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm text-blue-600 hover:underline"
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-0.5"
                         >
-                          Ver en menú →
+                          Ver menú →
                         </a>
                       )}
-                      <button onClick={() => handleDelete(prod.id)} className="text-sm text-red-600 hover:underline">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(prod.id)}
+                        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
                         Eliminar
                       </button>
                     </div>
@@ -524,7 +727,7 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
             })}
             {products.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400">
+                <td colSpan={8} className="p-8 text-center text-gray-400">
                   No hay productos. Crea el primero para empezar.
                 </td>
               </tr>
@@ -532,6 +735,36 @@ const [editingProduct, setEditingProduct] = useState<Product | null>(null);
           </tbody>
         </table>
       </div>
+
+      {/* Modal de Modificadores para el producto seleccionado */}
+      {modifierModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 border border-zinc-200">
+            <div className="flex items-center justify-between pb-4 border-b border-zinc-200 mb-5">
+              <div>
+                <h3 className="text-lg font-bold text-zinc-900">
+                  Modificadores: {modifierModalProduct.name}
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Configura grupos obligatorios (ej. término, salsa) y opciones con costo extra.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setModifierModalProduct(null);
+                  loadData();
+                }}
+                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
+                title="Cerrar modal de modificadores"
+              >
+                ✕
+              </button>
+            </div>
+            <AdminModifierGroups productId={modifierModalProduct.id} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

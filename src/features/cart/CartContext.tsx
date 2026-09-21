@@ -13,8 +13,9 @@ interface CartContextValue {
   cart: Cart;
   count: number;
   total: number;
-  addItem: (product: Product, quantity?: number, modifiers?: CartItemModifiers[]) => void;
+  addItem: (product: Product, quantity?: number, modifiers?: CartItemModifiers[], comments?: string) => void;
   updateQuantity: (key: string, quantity: number) => void;
+  updateComments: (key: string, comments: string) => void;
   removeItem: (key: string) => void;
   clearCart: () => void;
   isOpen: boolean;
@@ -23,11 +24,12 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-/** Clave estable por producto + modificadores (para combinar líneas iguales). */
+/** Clave estable por producto + modificadores + comentario (para tratar ítems con distintas observaciones como líneas separadas). */
 export function itemKey(item: CartItem): string {
   return JSON.stringify([
     item.product_id,
     item.modifiers.map((m) => [m.modifier_group_id, m.selections.map((s) => s.option_id)]),
+    item.comments?.trim() || '',
   ]);
 }
 
@@ -63,13 +65,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart, hydrated]);
 
   const addItem = useCallback<CartContextValue['addItem']>(
-    (product, quantity = 1, modifiers = []) => {
+    (product, quantity = 1, modifiers = [], comments = '') => {
       const newItem: CartItem = {
         product_id: product.id,
         product_name: product.name,
         base_price: product.base_price,
         quantity: Math.max(1, Math.floor(quantity)),
         modifiers: modifiers as CartItemModifiers[],
+        comments: comments?.trim() || undefined,
       };
       setCart((prev) => {
         const key = itemKey(newItem);
@@ -79,15 +82,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
           nextItems[idx] = {
             ...nextItems[idx],
             quantity: nextItems[idx].quantity + newItem.quantity,
-            // Note: we are not merging modifiers here; we assume the same modifiers.
-            // If we want to merge modifiers, we would need to compare them.
-            // For simplicity, we keep the existing modifiers of the existing item.
           };
           return { items: nextItems };
         }
         return { items: [...prev.items, newItem] };
       });
-      setOpen(true);
+      // No abrimos el drawer automáticamente para no incomodar en móvil/tablet.
+      // El usuario puede abrirlo cuando quiera desde la barra inferior flotante.
     },
     []
   );
@@ -98,6 +99,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
         .map((item) => (itemKey(item) === key ? { ...item, quantity } : item))
         .filter((item) => item.quantity > 0);
       return { items };
+    });
+  }, []);
+
+  const updateComments = useCallback<CartContextValue['updateComments']>((key, comments) => {
+    setCart((prev) => {
+      const trimmed = comments.trim() || undefined;
+      const targetItem = prev.items.find((i) => itemKey(i) === key);
+      if (!targetItem) return prev;
+
+      const updatedItem = { ...targetItem, comments: trimmed };
+      const newKey = itemKey(updatedItem);
+
+      const otherItems = prev.items.filter((i) => itemKey(i) !== key);
+      const existingSameIdx = otherItems.findIndex((i) => itemKey(i) === newKey);
+      if (existingSameIdx >= 0) {
+        otherItems[existingSameIdx] = {
+          ...otherItems[existingSameIdx],
+          quantity: otherItems[existingSameIdx].quantity + updatedItem.quantity,
+        };
+        return { items: otherItems };
+      }
+      return { items: [...otherItems, updatedItem] };
     });
   }, []);
 
@@ -139,8 +162,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart]);
 
   const value = useMemo(
-    () => ({ cart, count, total, addItem, updateQuantity, removeItem, clearCart, isOpen, setOpen }),
-    [cart, count, total, addItem, updateQuantity, removeItem, clearCart, isOpen]
+    () => ({ cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen, setOpen }),
+    [cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

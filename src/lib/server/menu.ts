@@ -218,34 +218,46 @@ type ServerSupabase = ReturnType<typeof createServerClient>;
 
 async function resolveAllergenIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
   if (names.length === 0) return [];
-  const data = await queryOrThrow(supabase.from('allergens').select('id, name').in('name', names), {
-    action: 'resolveAllergenIds',
-    fallback: 'No se pudieron validar los alérgenos.',
-  });
-  const found = new Map(((data ?? []) as any[]).map((a: any) => [a.name, a.id]));
-  const missing = names.filter((n) => !found.has(n));
+  const normalized = names.map((n) => n.trim().toUpperCase()).filter(Boolean);
+  if (normalized.length === 0) return [];
+
+  const { data } = await supabase.from('allergens').select('id, name').in('name', normalized);
+  const found = new Map(((data ?? []) as any[]).map((a: any) => [a.name.toUpperCase(), a.id]));
+
+  const missing = normalized.filter((n) => !found.has(n));
   if (missing.length > 0) {
-    throw new AppError(`Alérgenos desconocidos: ${missing.join(', ')}`, {
-      fieldErrors: { allergens: `Valores no válidos: ${missing.join(', ')}` },
-    });
+    const { data: inserted } = await supabase
+      .from('allergens')
+      .upsert(missing.map((name) => ({ name })), { onConflict: 'name' })
+      .select('id, name');
+    for (const row of (inserted ?? []) as any[]) {
+      found.set(row.name.toUpperCase(), row.id);
+    }
   }
-  return names.map((n) => found.get(n));
+
+  return normalized.map((n) => found.get(n)).filter(Boolean);
 }
 
 async function resolveDietLabelIds(supabase: ServerSupabase, names: string[]): Promise<string[]> {
   if (names.length === 0) return [];
-  const data = await queryOrThrow(supabase.from('diet_labels').select('id, name').in('name', names), {
-    action: 'resolveDietLabelIds',
-    fallback: 'No se pudieron validar las etiquetas dietarias.',
-  });
-  const found = new Map(((data ?? []) as any[]).map((d: any) => [d.name, d.id]));
-  const missing = names.filter((n) => !found.has(n));
+  const normalized = names.map((n) => n.trim().toUpperCase()).filter(Boolean);
+  if (normalized.length === 0) return [];
+
+  const { data } = await supabase.from('diet_labels').select('id, name').in('name', normalized);
+  const found = new Map(((data ?? []) as any[]).map((d: any) => [d.name.toUpperCase(), d.id]));
+
+  const missing = normalized.filter((n) => !found.has(n));
   if (missing.length > 0) {
-    throw new AppError(`Etiquetas dietarias desconocidas: ${missing.join(', ')}`, {
-      fieldErrors: { diet_labels: `Valores no válidos: ${missing.join(', ')}` },
-    });
+    const { data: inserted } = await supabase
+      .from('diet_labels')
+      .upsert(missing.map((name) => ({ name })), { onConflict: 'name' })
+      .select('id, name');
+    for (const row of (inserted ?? []) as any[]) {
+      found.set(row.name.toUpperCase(), row.id);
+    }
   }
-  return names.map((n) => found.get(n));
+
+  return normalized.map((n) => found.get(n)).filter(Boolean);
 }
 
 // Sincroniza los puentes product_allergens / product_diet_labels (reemplazo total).
@@ -408,7 +420,13 @@ const ModifierGroupSchema = z.object({
   is_required: z.boolean().default(true),
   min_selections: zNumberES('El mínimo debe ser un número').int().min(0, 'El mínimo no puede ser negativo').default(0),
   max_selections: zNumberES('El máximo debe ser un número').int().min(0, 'El máximo no puede ser negativo').default(0),
-});
+}).refine(
+  (data) => data.max_selections === 0 || data.max_selections >= data.min_selections,
+  {
+    message: 'El máximo de selecciones debe ser 0 (sin límite) o mayor o igual al mínimo.',
+    path: ['max_selections'],
+  }
+);
 
 const ModifierOptionSchema = z.object({
   modifier_group_id: z.string().uuid('Grupo de modificadores inválido'),

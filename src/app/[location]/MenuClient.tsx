@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 interface Props {
-  local: { name: string; slug: string; iva_rate: number; delivery_fee: number } | null;
+  local: { name: string; slug: string; iva_rate: number; delivery_fee: number; is_open?: boolean } | null;
   locationId: string;
   categories: Category[];
   products: Product[];
@@ -179,8 +179,17 @@ export default function MenuClient({
                   </h1>
                 </div>
                 <p className="text-xs sm:text-sm text-zinc-400 mt-1 flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Abierto para pedidos</span>
+                  {local.is_open !== false ? (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-emerald-400 font-medium">Abierto para pedidos</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-rose-500" />
+                      <span className="text-rose-400 font-semibold">Cerrado para pedidos</span>
+                    </>
+                  )}
                   <span>·</span>
                   <Link href="/" className="text-orange-400 hover:text-orange-300 transition-colors">
                     Cambiar sucursal
@@ -362,13 +371,21 @@ export default function MenuClient({
                               src={p.image_url}
                               alt={p.name}
                               loading="lazy"
-                              className="w-full aspect-[4/3] object-cover rounded-xl border border-zinc-200/80 bg-zinc-100 mb-3"
+                              onClick={() => available && setModifierProduct(p)}
+                              className={`w-full aspect-[4/3] object-cover rounded-xl border border-zinc-200/80 bg-zinc-100 mb-3 ${
+                                available ? 'cursor-pointer hover:opacity-95 transition-opacity' : ''
+                              }`}
                             />
                           )}
 
                           {/* Título y Estado */}
                           <div className="flex items-start justify-between gap-3 mb-1.5">
-                            <h3 className="font-bold text-zinc-900 text-base group-hover:text-orange-600 transition-colors">
+                            <h3 
+                              onClick={() => available && setModifierProduct(p)}
+                              className={`font-bold text-zinc-900 text-base group-hover:text-orange-600 transition-colors ${
+                                available ? 'cursor-pointer' : ''
+                              }`}
+                            >
                               {p.name}
                             </h3>
                             {!available && (
@@ -408,6 +425,17 @@ export default function MenuClient({
                                 </span>
                               ))}
                           </div>
+
+                          {/* Enlace para personalizar o agregar nota directamente */}
+                          {available && (
+                            <button
+                              type="button"
+                              onClick={() => setModifierProduct(p)}
+                              className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 font-semibold cursor-pointer mt-2.5 hover:underline"
+                            >
+                              <span>✍️ Personalizar / Agregar nota</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Pie de tarjeta: Precio y Controles */}
@@ -506,9 +534,9 @@ export default function MenuClient({
       {modifierProduct && (
         <ModifierSelector
           product={modifierProduct}
-          onConfirm={(modifiers) => {
+          onConfirm={(modifiers, comments) => {
             const qty = quantities[modifierProduct.id] ?? 1;
-            addItem(modifierProduct, qty, modifiers);
+            addItem(modifierProduct, qty, modifiers, comments);
             setModifierProduct(null);
           }}
           onCancel={() => setModifierProduct(null)}

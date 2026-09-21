@@ -10,9 +10,11 @@ import {
   Minus, 
   Trash2, 
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Edit2,
+  Check
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface CartDrawerProps {
   slug: string;
@@ -26,9 +28,13 @@ export function CartDrawer({ slug }: CartDrawerProps) {
     count, 
     total, 
     updateQuantity, 
+    updateComments,
     removeItem, 
     clearCart 
   } = useCart();
+
+  const [editingCommentKey, setEditingCommentKey] = useState<string | null>(null);
+  const [draftComment, setDraftComment] = useState('');
 
   // Bloquear scroll del body cuando el drawer esté abierto
   useEffect(() => {
@@ -157,6 +163,82 @@ export function CartDrawer({ slug }: CartDrawerProps) {
                           </div>
                         ))
                       )}
+                    </div>
+                  )}
+
+                  {/* Observaciones o notas del producto */}
+                  {editingCommentKey === key ? (
+                    <div className="p-2 bg-zinc-50 rounded-lg border border-orange-200 space-y-2">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+                        Nota de preparación:
+                      </label>
+                      <input
+                        type="text"
+                        value={draftComment}
+                        onChange={(e) => setDraftComment(e.target.value)}
+                        placeholder="Ej. Sin cebolla, salsa aparte..."
+                        className="w-full text-xs p-1.5 rounded border border-zinc-300 bg-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        maxLength={150}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateComments(key, draftComment);
+                            setEditingCommentKey(null);
+                          }
+                        }}
+                      />
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCommentKey(null)}
+                          className="text-[11px] px-2 py-0.5 rounded text-zinc-500 hover:bg-zinc-200"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateComments(key, draftComment);
+                            setEditingCommentKey(null);
+                          }}
+                          className="text-[11px] px-2 py-0.5 rounded bg-orange-600 text-white font-medium hover:bg-orange-700"
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                    </div>
+                  ) : item.comments ? (
+                    <div className="pl-2.5 border-l-2 border-amber-400 bg-amber-50/70 rounded-r-lg py-1 px-2 text-xs text-amber-900 flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-[10px] uppercase tracking-wider block text-amber-800">
+                          Observación:
+                        </span>
+                        <span className="italic">{item.comments}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCommentKey(key);
+                          setDraftComment(item.comments || '');
+                        }}
+                        className="text-[11px] text-amber-700 hover:text-amber-900 font-medium underline shrink-0 cursor-pointer"
+                        title="Editar observación"
+                      >
+                        Editar
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCommentKey(key);
+                          setDraftComment('');
+                        }}
+                        className="text-[11px] text-zinc-500 hover:text-orange-600 inline-flex items-center gap-1 hover:underline cursor-pointer"
+                      >
+                        <span>+ Agregar nota al producto</span>
+                      </button>
                     </div>
                   )}
 

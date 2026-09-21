@@ -1,5 +1,6 @@
 // src/app/staff/page.tsx
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { createSessionServerClient } from '@/lib/supabase/session';
 import { createServerClient } from '@/lib/supabase/server';
 import { describeSupabaseError } from '@/lib/errors';
@@ -84,22 +85,37 @@ export async function getCurrentStaff() {
     return { user, staff, local: null };
   }
 
-  const { data: local, error: localError } = await adminSupabase
+  const cookieStore = await cookies();
+  const preferredLocationId = cookieStore.get('staff_active_location_id')?.value;
+  const targetLocationId = preferredLocationId || staff.location_id;
+
+  let { data: local, error: localError } = await adminSupabase
     .from('locals')
-    .select('id, name, slug, timezone, iva_rate, delivery_fee, created_at, updated_at')
-    .eq('id', staff.location_id)
+    .select('*')
+    .eq('id', targetLocationId)
     .maybeSingle();
 
-  // Un fallo de consulta (red, 5xx, etc.) NO invalida la sesión: avisar y
-  // degradar a "sin local" (la UI muestra el aviso amarillo) para reintento.
+  // Si no se encontró por cookie (ej. local eliminado), fallback al local original del staff
+  if (!local && preferredLocationId && preferredLocationId !== staff.location_id) {
+    const fallback = await adminSupabase
+      .from('locals')
+      .select('*')
+      .eq('id', staff.location_id)
+      .maybeSingle();
+    local = fallback.data;
+  }
+
   if (localError) {
     console.error(`getCurrentStaff/local_query: ${describeSupabaseError(localError)}`);
   }
 
+  // Reflejar el local activo en el objeto staff en memoria para este request
+  const effectiveStaff = local ? { ...staff, location_id: local.id } : staff;
+
   return {
     user,
-    staff,
-    local: local ?? null,
+    staff: effectiveStaff,
+    local: local ? { ...local, is_open: (local as any).is_open !== false } : null,
   };
 }
 

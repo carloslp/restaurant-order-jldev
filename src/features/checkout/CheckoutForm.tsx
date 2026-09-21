@@ -22,7 +22,8 @@ import {
   ExternalLink,
   Receipt,
   Navigation,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
 } from 'lucide-react';
 import { estimateDeliveryFee } from '@/features/checkout/estimateDelivery';
 import { type DeliveryFeeResult } from '@/lib/pricing/deliveryMatrix';
@@ -45,6 +46,7 @@ const formSchema = z.object({
     .regex(/^\+?[0-9\s\-\(\)]{10,15}$/, 'Teléfono inválido (mínimo 10 dígitos)'),
   delivery_address: z.string().optional().nullable(),
   delivery_references: z.string().optional().nullable(),
+  notes: z.string().max(500, 'Notas demasiado largas').optional().nullable(),
   idempotency_key: z.string().optional(),
   promo_code: z.string().optional().nullable(),
 });
@@ -197,6 +199,7 @@ export function CheckoutForm({
           orderType === 'DOMICILIO'
             ? (form.delivery_references ?? '').trim() || null
             : null,
+        notes: (form.notes ?? '').trim() || null,
         eta,
         cart,
         idempotency_key: idempotencyKey,
@@ -495,6 +498,27 @@ export function CheckoutForm({
             placeholder="Ej. BIENVENIDO10"
           />
         </div>
+      </div>
+
+      {/* Notas / Comentarios del pedido */}
+      <div className="pt-2">
+        <label htmlFor="notes" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+          <MessageSquare className="w-3.5 h-3.5 text-orange-600" />
+          <span>Notas o comentarios para cocina / entrega (opcional)</span>
+        </label>
+        <textarea
+          id="notes"
+          name="notes"
+          rows={2}
+          value={form.notes ?? ''}
+          onChange={handleChange}
+          className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm p-3 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none resize-none"
+          placeholder="Ej. Alergia al ajo, por favor no incluir cubiertos plásticos, tocar el timbre dos veces..."
+          maxLength={500}
+        />
+        {errors.notes && (
+          <p className="mt-1 text-xs text-red-600 font-medium">{errors.notes}</p>
+        )}
       </div>
 
       {/* Botón de envío */}

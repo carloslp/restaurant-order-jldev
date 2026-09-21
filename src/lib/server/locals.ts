@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { locationSlugSchema } from '@/lib/slugs';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 import { zNumberES } from '@/lib/validation';
@@ -16,6 +17,7 @@ const LocalSchema = z.object({
   timezone: z.string().default('America/Mexico_City'),
   iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
   delivery_fee: zNumberES('La tarifa debe ser un número').min(0, 'La tarifa no puede ser negativa').default(0),
+  is_open: z.boolean().default(true).optional(),
   address: z.string().optional().nullable(),
   latitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
   longitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
@@ -46,6 +48,7 @@ export async function listLocals(): Promise<Array<{
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  is_open: boolean;
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -70,6 +73,7 @@ export async function listLocals(): Promise<Array<{
     timezone: d.timezone,
     iva_rate: Number(d.iva_rate),
     delivery_fee: Number(d.delivery_fee ?? 0),
+    is_open: d.is_open !== false,
     address: d.address ?? null,
     latitude: d.latitude != null ? Number(d.latitude) : null,
     longitude: d.longitude != null ? Number(d.longitude) : null,
@@ -96,23 +100,41 @@ export async function createLocal(payload: z.infer<typeof LocalSchema>) {
     });
   }
 
-  const data = await queryOrThrow(
-    supabase
+  const insertData: Record<string, unknown> = {
+    name: validated.name,
+    slug: validated.slug,
+    timezone: validated.timezone,
+    iva_rate: validated.iva_rate,
+    delivery_fee: validated.delivery_fee,
+    address: validated.address ?? null,
+    latitude: validated.latitude ?? null,
+    longitude: validated.longitude ?? null,
+  };
+  if (validated.is_open !== undefined) {
+    insertData.is_open = validated.is_open;
+  }
+
+  let { data, error } = await supabase
+    .from('locals')
+    .insert(insertData)
+    .select()
+    .single();
+
+  if (error && (error.code === '42703' || error.message?.includes('is_open'))) {
+    delete insertData.is_open;
+    const retry = await supabase
       .from('locals')
-      .insert({
-        name: validated.name,
-        slug: validated.slug,
-        timezone: validated.timezone,
-        iva_rate: validated.iva_rate,
-        delivery_fee: validated.delivery_fee,
-        address: validated.address ?? null,
-        latitude: validated.latitude ?? null,
-        longitude: validated.longitude ?? null,
-      })
+      .insert(insertData)
       .select()
-      .single(),
-    { action: 'createLocal', fallback: 'No se pudo crear el local. Inténtalo de nuevo.' }
-  );
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    console.error('createLocal:', error);
+    throw new AppError('No se pudo crear el local. Inténtalo de nuevo.');
+  }
 
   revalidatePath('/staff/admin');
   return data;
@@ -137,27 +159,96 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
     });
   }
 
-  const data = await queryOrThrow(
-    supabase
+  const updateData: Record<string, unknown> = {
+    name: validated.name,
+    slug: validated.slug,
+    timezone: validated.timezone,
+    iva_rate: validated.iva_rate,
+    delivery_fee: validated.delivery_fee,
+    address: validated.address ?? null,
+    latitude: validated.latitude ?? null,
+    longitude: validated.longitude ?? null,
+  };
+  if (validated.is_open !== undefined) {
+    updateData.is_open = validated.is_open;
+  }
+
+  let { data, error } = await supabase
+    .from('locals')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error && (error.code === '42703' || error.message?.includes('is_open'))) {
+    delete updateData.is_open;
+    const retry = await supabase
       .from('locals')
-      .update({
-        name: validated.name,
-        slug: validated.slug,
-        timezone: validated.timezone,
-        iva_rate: validated.iva_rate,
-        delivery_fee: validated.delivery_fee,
-        address: validated.address ?? null,
-        latitude: validated.latitude ?? null,
-        longitude: validated.longitude ?? null,
-      })
+      .update(updateData)
       .eq('id', id)
       .select()
-      .single(),
-    { action: 'updateLocal', fallback: 'No se pudo actualizar el local. Verifica que siga existiendo.' }
-  );
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    console.error('updateLocal:', error);
+    throw new AppError('No se pudo actualizar el local. Verifica que siga existiendo.');
+  }
 
   revalidatePath('/staff/admin');
   return data;
+}
+
+export async function toggleLocalOpenStatus(localId: string, isOpen: boolean) {
+  await getStaffContext();
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('locals')
+    .update({ is_open: isOpen })
+    .eq('id', localId)
+    .select('id, name')
+    .single();
+
+  if (error) {
+    if (error.code === '42703' || error.message?.includes('is_open')) {
+      console.warn('locals.is_open no existe aún en la base de datos.');
+      throw new AppError(
+        'La columna is_open no existe en la base de datos. Por favor ejecuta el script docs/migration-location-open-status.sql en Supabase SQL Editor.'
+      );
+    }
+    console.error('toggleLocalOpenStatus:', error);
+    throw new AppError('No se pudo cambiar el estado del local.');
+  }
+
+  revalidatePath('/staff');
+  revalidatePath('/staff/admin');
+  revalidatePath('/staff/kds');
+  revalidatePath('/staff/caja');
+  return { ok: true, is_open: isOpen };
+}
+
+export async function setActiveStaffLocation(locationId: string) {
+  const cookieStore = await cookies();
+  cookieStore.set('staff_active_location_id', locationId, {
+    path: '/',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 30, // 30 días
+  });
+  revalidatePath('/staff');
+  revalidatePath('/staff/admin');
+  revalidatePath('/staff/kds');
+  revalidatePath('/staff/caja');
+  return { ok: true };
+}
+
+export async function getActiveStaffLocationId(): Promise<string> {
+  const cookieStore = await cookies();
+  const active = cookieStore.get('staff_active_location_id')?.value;
+  if (active) return active;
+  const { staff } = await getCurrentStaff();
+  return staff.location_id;
 }
 
 export async function deleteLocal(id: string) {

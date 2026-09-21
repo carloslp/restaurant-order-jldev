@@ -200,6 +200,33 @@ export function CashierView({ locationId }: CashierViewProps) {
                   {new Date(order.eta).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                 </p>
 
+                {/* Lista de productos y observaciones */}
+                <div className="mt-2 space-y-1.5 text-xs bg-zinc-50 border border-zinc-200/80 rounded-xl p-2.5 max-w-xl">
+                  {order.cart_snapshot.items.map((it, idx) => (
+                    <div key={idx} className="flex justify-between items-start gap-2 border-b border-zinc-100 last:border-b-0 pb-1 last:pb-0">
+                      <div>
+                        <span className="font-semibold text-zinc-900">{it.quantity}× {it.product_name}</span>
+                        {it.modifiers?.length > 0 && (
+                          <span className="text-zinc-500 text-[11px] block">
+                            {it.modifiers.flatMap(m => m.selections.map(s => s.option_name)).join(', ')}
+                          </span>
+                        )}
+                        {it.comments && (
+                          <span className="text-amber-800 text-[11px] font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block mt-0.5">
+                            ⚠️ Obs: {it.comments}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {(order.notes || (order.cart_snapshot as any)?.notes) && (
+                    <div className="mt-1 pt-1.5 border-t border-zinc-200 text-orange-950 font-medium text-[11px]">
+                      <span className="font-bold text-orange-800 uppercase text-[10px] block">Nota comanda:</span>
+                      <span>{order.notes || (order.cart_snapshot as any)?.notes}</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Reparto (solo DOMICILIO): repartidor asignado + link de un solo uso */}
                 {order.order_type === 'DOMICILIO' && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
