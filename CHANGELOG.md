@@ -1,4 +1,43 @@
 # Changelog
+## [0.6.1] — 2026-09-20
+
+### Fixed — "cannot add `postgres_changes` callbacks ... after `subscribe()`" (canal realtime roto en menú/checkout)
+- **Síntoma**: `Uncaught (in promise) Error: cannot add \`postgres_changes\`
+  callbacks for realtime:products-availability-... after \`subscribe()\`` en el
+  menú público y el checkout. Además del error, el canal quedaba roto (sin
+  actualizaciones de disponibilidad) y había un canal huérfano suscrito (leak).
+- **Causa (supabase-js 2.x)**: `channel(name)` **reutiliza** el canal si el
+  topic sigue registrado (`RealtimeClient.getChannels().find(topic)`) y
+  `removeChannel` es **async** (el canal sale del array cuando termina el
+  unsubscribe). En `useProductAvailability` el canal se creaba DESPUÉS de un
+  `await` (carga inicial) y el cleanup solo removía `channelRef.current`
+  (null durante el await): si el effect se desmontaba ahí — StrictMode en dev
+  (monta → limpia → monta) o cambio de deps — el canal se creaba tras el
+  cleanup → huérfano y suscrito para siempre → la corrida siguiente del effect
+  reutilizaba ese canal ya suscrito y `.on()` lanzaba el error.
+  Amplificador: `loadInitialAvailability` dependía de la identidad del array
+  `productIds` (los callers lo construyen inline con `cart.items.map(...)`)
+  → re-efecto en cada render.
+- **`src/features/menu/useProductAvailability.ts`**:
+  - El canal solo se crea si el effect sigue montado (guard `mounted` tras
+    cada `await`) y después de remover (y **esperar**) cualquier canal stale
+    con el mismo topic → canal siempre fresco, sin "cannot add ... after
+    subscribe()".
+  - `productIds` entra al effect como key estable (`productIds.join(',')`)
+    en vez de por identidad del array: fin de la re-suscripción por render.
+  - `init()` con try/catch: el fallo se loguea en vez de ser "uncaught".
+  - Si el effect se desmonta justo tras el subscribe, el canal se remueve
+    (antes quedaba huérfano y nadie lo removía).
+- **`src/features/staff/useRealtimeOrders.ts`** (mismo patrón de riesgo en
+  Caja/KDS — StrictMode los re-monta en dev): el setup del canal ahora es
+  async — quita el stale con el mismo topic (await) antes de crear el canal,
+  descarta el canal nuevo si el effect se desmontó durante el setup, y el
+  fallo del setup se loguea en vez de ser uncaught.
+- **Validación**: `npx tsc --noEmit` → 0 errores; `eslint` en tocados → 0
+  problemas; `npm run test` → 53/53; `npm run build` → OK.
+
+---
+
 ## [0.6.0] — 2026-09-20
 
 ### Fixed — Pedido invisible en Caja/KDS + el link de seguimiento del checkout era el del repartidor

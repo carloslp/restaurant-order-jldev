@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { listOrdersForLocation } from '@/lib/server/order';
-import { REALTIME_SUBSCRIBE_STATES, type RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { REALTIME_SUBSCRIBE_STATES, type RealtimeChannel, type RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Order } from '@/lib/types';
 
 /**
@@ -109,82 +109,116 @@ export function useRealtimeOrders(opts: {
     window.addEventListener('focus', refreshOnce);
 
     // 4) Realtime: eventos INSERT/UPDATE/DELETE de orders del local.
+    //    Setup async: supabase-js reutiliza el canal si el topic sigue
+    //    registrado y removeChannel es async. En dev, StrictMode corre
+    //    effect → cleanup → effect en el mismo tick: sin esta limpieza el
+    //    .channel(topic) devolvería el canal viejo ya suscrito y el .on()
+    //    lanzaría "cannot add postgres_changes callbacks ... after subscribe()".
     const realtimeStatuses = statusesKey
       ? (statusesKey.split(',') as Order['status'][])
       : undefined;
-    const channel = supabase
-      .current!.channel(`orders-realtime-${locationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-          filter: `location_id=eq.${locationId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<{ [key: string]: never }>) => {
-          setOrders((prev) => {
-            const incoming = payload.new as Partial<Order> | undefined;
-            // El payload del Realtime incluye TODO el row de orders (columnas
-            // reales). Lo normalizamos para la UI.
-            const normalizedIncoming = incoming
-              ? ({
-                  ...incoming,
-                  delivery_address: incoming.delivery_address ?? null,
-                  delivery_references: incoming.delivery_references ?? null,
-                  customer_phone: incoming.customer_phone ?? '',
-                } as Order)
-              : undefined;
-            const oldId = (payload.old as { id?: string } | undefined)?.id;
+    let realtimeChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null;
 
-            if (payload.eventType === 'INSERT' && normalizedIncoming) {
-              return [normalizedIncoming, ...prev].slice(0, limit);
-            }
+    async function setupChannel() {
+      const client = supabase.current!;
+      const topic = `orders-realtime-${locationId}`;
+      const stale = client
+        .getChannels()
+        .find((c: RealtimeChannel) => c.topic === `realtime:${topic}`);
+      if (stale) {
+        await client.removeChannel(stale);
+        if (cancelled) return;
+      }
 
-            if (payload.eventType === 'UPDATE' && normalizedIncoming) {
-              const exists = prev.some((o) => o.id === normalizedIncoming.id);
-              if (!exists) {
-                if (
-                  realtimeStatuses?.length &&
-                  !realtimeStatuses.includes(normalizedIncoming.status)
-                ) {
-                  return prev;
-                }
+      const ch = client
+        .channel(topic)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `location_id=eq.${locationId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<{ [key: string]: never }>) => {
+            setOrders((prev) => {
+              const incoming = payload.new as Partial<Order> | undefined;
+              // El payload del Realtime incluye TODO el row de orders (columnas
+              // reales). Lo normalizamos para la UI.
+              const normalizedIncoming = incoming
+                ? ({
+                    ...incoming,
+                    delivery_address: incoming.delivery_address ?? null,
+                    delivery_references: incoming.delivery_references ?? null,
+                    customer_phone: incoming.customer_phone ?? '',
+                  } as Order)
+                : undefined;
+              const oldId = (payload.old as { id?: string } | undefined)?.id;
+
+              if (payload.eventType === 'INSERT' && normalizedIncoming) {
                 return [normalizedIncoming, ...prev].slice(0, limit);
               }
-              return prev.map((o) =>
-                o.id === normalizedIncoming.id
-                  ? { ...o, ...normalizedIncoming }
-                  : o
-              );
-            }
 
-            if (payload.eventType === 'DELETE') {
-              return prev.filter((o) => o.id !== oldId);
-            }
+              if (payload.eventType === 'UPDATE' && normalizedIncoming) {
+                const exists = prev.some((o) => o.id === normalizedIncoming.id);
+                if (!exists) {
+                  if (
+                    realtimeStatuses?.length &&
+                    !realtimeStatuses.includes(normalizedIncoming.status)
+                  ) {
+                    return prev;
+                  }
+                  return [normalizedIncoming, ...prev].slice(0, limit);
+                }
+                return prev.map((o) =>
+                  o.id === normalizedIncoming.id
+                    ? { ...o, ...normalizedIncoming }
+                    : o
+                );
+              }
 
-            return prev;
-          });
-        }
-      )
-      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
-        // Al (re)conectar el canal sincronizamos con el servidor: cubre los
-        // eventos perdidos mientras el canal estuvo desconectado o sin
-        // configurar (publication/policy en Supabase).
-        if (
-          status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED ||
-          status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
-          status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR
-        ) {
-          refreshOnce();
-        }
-      });
+              if (payload.eventType === 'DELETE') {
+                return prev.filter((o) => o.id !== oldId);
+              }
+
+              return prev;
+            });
+          }
+        )
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
+          if (cancelled) return;
+          // Al (re)conectar el canal sincronizamos con el servidor: cubre los
+          // eventos perdidos mientras el canal estuvo desconectado o sin
+          // configurar (publication/policy en Supabase).
+          if (
+            status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED ||
+            status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
+            status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR
+          ) {
+            refreshOnce();
+          }
+        });
+
+      if (cancelled) {
+        // Desmontado durante el setup: no dejar el canal huérfano.
+        void client.removeChannel(ch);
+        return;
+      }
+      realtimeChannel = ch;
+    }
+
+    void setupChannel().catch((err) => {
+      console.error('useRealtimeOrders/setupChannel:', err);
+    });
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
       window.removeEventListener('focus', refreshOnce);
-      supabase.current!.removeChannel(channel);
+      if (realtimeChannel) {
+        void supabase.current!.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+      }
     };
   }, [locationId, statusesKey, limit, enabled, refresh]);
 

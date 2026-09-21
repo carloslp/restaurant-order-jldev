@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface ProductAvailabilityState {
   [productId: string]: boolean;
@@ -41,9 +41,15 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null);
 
+  // Los callers suelen construir productIds inline (cart.items.map(...)): su
+  // identidad cambia en cada render. El effect depende del join, no del array,
+  // para no re-suscribirse (y recrear el canal) en cada render.
+  const productIdsKey = productIds.join(',');
+
   // Cargar estado inicial
   const loadInitialAvailability = useCallback(async () => {
-    if (!enabled || !locationId || !productIds.length) {
+    const ids = productIdsKey ? productIdsKey.split(',') : [];
+    if (!enabled || !locationId || ids.length === 0) {
       setLoaded(true);
       return;
     }
@@ -57,7 +63,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         .from('products')
         .select('id, is_available')
         .eq('location_id', locationId)
-        .in('id', productIds);
+        .in('id', ids);
 
       if (!error && data) {
         const initialState: ProductAvailabilityState = {};
@@ -66,7 +72,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         }
         // Productos pedidos pero ausentes en la respuesta (RLS los oculta
         // por is_available=false) se marcan explícitamente no disponibles.
-        for (const id of productIds) {
+        for (const id of ids) {
           if (!(id in initialState)) initialState[id] = false;
         }
         setAvailability(initialState);
@@ -76,7 +82,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
     } finally {
       setLoaded(true);
     }
-  }, [enabled, locationId, productIds]);
+  }, [enabled, locationId, productIdsKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -87,55 +93,85 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         return;
       }
 
-      await loadInitialAvailability();
-
       if (!supabase.current) {
         supabase.current = createClient();
       }
+      const client = supabase.current;
 
-      // Suscribirse a cambios de disponibilidad
-      const channel = supabase.current
-        .channel(`products-availability-${locationId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'products',
-            filter: `location_id=eq.${locationId}`,
-          },
-          (payload: RealtimePostgresChangesPayload<ProductAvailabilityRow>) => {
-            if (!mounted) return;
-            const newProduct = payload.new as ProductAvailabilityRow;
-            const oldProduct = payload.old as ProductAvailabilityRow;
+      try {
+        // Carga inicial (antes del canal: si tarda, no bloquea la UI).
+        await loadInitialAvailability();
 
-            // Solo reaccionar si cambió is_available y es un producto que nos interesa
-            if (
-              newProduct.is_available !== oldProduct.is_available &&
-              productIds.includes(newProduct.id)
-            ) {
-              setAvailability((prev) => ({
-                ...prev,
-                [newProduct.id]: newProduct.is_available,
-              }));
+        // El cleanup pudo correr (StrictMode en dev / deps cambiadas) durante
+        // el await: no tocar el canal si el effect ya se desmontó.
+        if (!mounted) return;
+
+        const topic = `products-availability-${locationId}`;
+        // Remover (y esperar) cualquier canal stale con el mismo topic:
+        // supabase-js REUTILIZA el canal registrado con ese topic, y llamar
+        // .on() sobre un canal ya suscrito lanza "cannot add postgres_changes
+        // callbacks ... after subscribe()".
+        const stale = client
+          .getChannels()
+          .find((c: RealtimeChannel) => c.topic === `realtime:${topic}`);
+        if (stale) {
+          await client.removeChannel(stale);
+          if (!mounted) return;
+        }
+
+        // Suscribirse a cambios de disponibilidad (canal fresco).
+        const trackedIds = productIdsKey.split(',');
+        const channel = client
+          .channel(topic)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'products',
+              filter: `location_id=eq.${locationId}`,
+            },
+            (payload: RealtimePostgresChangesPayload<ProductAvailabilityRow>) => {
+              if (!mounted) return;
+              const newProduct = payload.new as ProductAvailabilityRow;
+              const oldProduct = payload.old as ProductAvailabilityRow;
+
+              // Solo reaccionar si cambió is_available y es un producto que nos interesa
+              if (
+                newProduct.is_available !== oldProduct.is_available &&
+                trackedIds.includes(newProduct.id)
+              ) {
+                setAvailability((prev) => ({
+                  ...prev,
+                  [newProduct.id]: newProduct.is_available,
+                }));
+              }
             }
-          }
-        )
-        .subscribe();
+          )
+          .subscribe();
 
-      channelRef.current = channel;
+        if (mounted) {
+          channelRef.current = channel;
+        } else {
+          // Desmontado justo tras el subscribe: no dejar el canal huérfano.
+          void client.removeChannel(channel);
+        }
+      } catch (err) {
+        // Antes este fallo era un "Uncaught (in promise)" que dejaba el canal
+        // roto en silencio (StrictMode re-monta los effects en dev).
+        console.error('useProductAvailability/init:', err);
+      }
     }
 
-    init();
+    void init();
 
     return () => {
       mounted = false;
-      if (channelRef.current) {
-        supabase.current?.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      const ch = channelRef.current;
+      channelRef.current = null;
+      if (ch) void supabase.current?.removeChannel(ch);
     };
-  }, [enabled, locationId, productIds.join(','), loadInitialAvailability]);
+  }, [enabled, locationId, productIdsKey, loadInitialAvailability]);
 
   // Función para verificar disponibilidad actual (útil antes de confirmar pedido)
   // Sin dato y aún sin cargar → true (no bloquear el menú en el primer render).
