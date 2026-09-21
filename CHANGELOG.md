@@ -1,4 +1,28 @@
 # Changelog
+
+## [0.6.2] — 2026-09-21
+
+### Fixed — Deploy en Vercel falla en `npm install` (ERESOLVE: vitest 5 vs @types/node 20)
+- **Síntoma**: el deploy de Vercel moría en "Installing dependencies" con
+  `ERESOLVE could not resolve: peerOptional @types/node@"^22.0.0 || >=24.0.0"
+  from vitest@5.0.1` mientras el proyecto declaraba `@types/node@"^20"`.
+- **Causa**: `vitest@5.0.1` exige `@types/node ^22 || >=24` como peer y
+  `vite@8.3.0` exige `^20.19.0 || >=22.12.0`; con `^20` resuelto a 20.19.43,
+  el install limpio de CI no podía satisfacer ambos. En local no explotaba
+  porque `node_modules` tenía `@types/node@22.20.4` de un estado anterior
+  (el lockfile además estaba stale: raíz `0.5.4` vs `0.6.1` del package.json).
+- **Fix**: `@types/node@"^20"` → `"^22"` en devDependencies (satisface ambos
+  peers y coincide con el runtime real: Node 22 local / Vercel) y
+  `package-lock.json` regenerado con `npm install` (raíz ahora `0.6.2`,
+  `@types/node@22.20.4` deduped en root/vite/vitest). Sin `.npmrc` con
+  `legacy-peer-deps` (ocultaría conflictos reales).
+- **Validación**: `npm install` limpio → OK, 0 vulnerabilidades;
+  `npm ls @types/node vitest vite @vitest/mocker` → árbol consistente;
+  `npx tsc --noEmit` → 0 errores; `npm run test` → 77/77;
+  `npm run build` → OK.
+
+---
+
 ## [0.6.1] — 2026-09-20
 
 ### Fixed — "cannot add `postgres_changes` callbacks ... after `subscribe()`" (canal realtime roto en menú/checkout)
