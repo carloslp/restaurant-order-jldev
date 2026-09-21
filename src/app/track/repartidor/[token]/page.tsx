@@ -4,8 +4,20 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { getOrderByPlainToken } from '@/lib/server/order';
 import { markOrderAsDeliveredByToken } from '@/lib/server/order';
+import { geocodeAddressAction } from '@/lib/server/locals';
 import { formatMXN } from '@/lib/pricing';
 import Link from 'next/link';
+import { 
+  MapPin, 
+  Navigation, 
+  ExternalLink, 
+  Phone, 
+  CheckCircle2, 
+  Clock, 
+  Map as MapIcon, 
+  Receipt, 
+  AlertCircle 
+} from 'lucide-react';
 
 type OrderStatus =
   | 'CREADO'
@@ -20,8 +32,10 @@ interface TrackedOrder {
   id: string;
   status: OrderStatus;
   customer_name: string;
+  customer_phone?: string | null;
   delivery_address: string | null;
   delivery_references: string | null;
+  delivery_zone?: string | null;
   order_type: string;
   payment_method: string;
   eta: string;
@@ -42,6 +56,7 @@ export default function RepartidorTrackingPage() {
   const token = params.token ?? '';
 
   const [order, setOrder] = useState<TrackedOrder | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [delivered, setDelivered] = useState(false);
@@ -54,9 +69,17 @@ export default function RepartidorTrackingPage() {
         setError(null);
         const res = await getOrderByPlainToken(token);
         if (res) {
-          setOrder(res as unknown as TrackedOrder);
-          if ((res as unknown as TrackedOrder).status === 'COMPLETADO') {
+          const tracked = res as unknown as TrackedOrder;
+          setOrder(tracked);
+          if (tracked.status === 'COMPLETADO') {
             setDelivered(true);
+          }
+          if (tracked.delivery_address) {
+            geocodeAddressAction(tracked.delivery_address).then((geo) => {
+              if (geo.ok && geo.coordinates) {
+                setCoords(geo.coordinates);
+              }
+            });
           }
         } else {
           setError('Orden no encontrada o token inválido');
@@ -150,24 +173,90 @@ export default function RepartidorTrackingPage() {
           </div>
 
           {/* Detalles de entrega */}
-          <div className="border-b pb-4">
-            <h2 className="font-semibold text-gray-700 mb-2">Datos de entrega</h2>
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Cliente:</span> {order.customer_name}
-            </p>
-            {order.delivery_address && (
-              <p className="text-sm text-gray-600 mt-1">
-                <span className="font-medium">Dirección:</span> {order.delivery_address}
-              </p>
+          <div className="border-b pb-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-gray-800 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-orange-600" />
+                <span>Datos de entrega</span>
+              </h2>
+              {order.delivery_zone && (
+                <span className="text-[11px] font-semibold bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">
+                  {order.delivery_zone}
+                </span>
+              )}
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-2 border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-gray-400 block">Cliente</span>
+                  <span className="font-semibold text-gray-800">{order.customer_name}</span>
+                </div>
+                {order.customer_phone && (
+                  <a
+                    href={`tel:${order.customer_phone}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Llamar</span>
+                  </a>
+                )}
+              </div>
+
+              {order.delivery_address && (
+                <div>
+                  <span className="text-xs text-gray-400 block">Dirección de entrega</span>
+                  <p className="font-medium text-gray-800">{order.delivery_address}</p>
+                </div>
+              )}
+
+              {order.delivery_references && (
+                <div>
+                  <span className="text-xs text-gray-400 block">Referencias</span>
+                  <p className="text-xs text-gray-600 italic">{order.delivery_references}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Mapa de destino y botón de navegación para el repartidor */}
+            {order.order_type === 'DOMICILIO' && order.delivery_address && (
+              <div className="space-y-2.5 pt-1">
+                {/* Enlace rápido a Google Maps */}
+                <a
+                  href={
+                    coords
+                      ? `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`
+                      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.delivery_address)}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm shadow-md shadow-blue-600/20 transition-all"
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span>Abrir ruta en Google Maps</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                </a>
+
+                {/* Mapa embebido */}
+                {coords ? (
+                  <div className="overflow-hidden rounded-xl border border-gray-200 shadow-2xs">
+                    <iframe
+                      title="Ubicación de entrega"
+                      width="100%"
+                      height="220"
+                      loading="lazy"
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${coords.lng - 0.008}%2C${coords.lat - 0.006}%2C${coords.lng + 0.008}%2C${coords.lat + 0.006}&layer=mapnik&marker=${coords.lat}%2C${coords.lng}`}
+                      className="w-full h-52 border-0"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-36 rounded-xl border border-dashed border-gray-200 bg-gray-50/70 flex flex-col items-center justify-center text-xs text-gray-400 gap-1">
+                    <MapIcon className="w-5 h-5 text-gray-300" />
+                    <span>Cargando vista previa del mapa...</span>
+                  </div>
+                )}
+              </div>
             )}
-            {order.delivery_references && (
-              <p className="text-sm text-gray-600 mt-1">
-                <span className="font-medium">Referencias:</span> {order.delivery_references}
-              </p>
-            )}
-            <p className="text-sm text-gray-600 mt-1">
-              <span className="font-medium">Tipo:</span> {order.order_type === 'DOMICILIO' ? 'Domicilio' : 'Recoger'}
-            </p>
           </div>
 
           {/* Items del pedido */}

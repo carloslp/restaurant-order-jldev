@@ -20,8 +20,13 @@ import {
   ArrowRight, 
   Loader2, 
   ExternalLink,
-  Receipt
+  Receipt,
+  Navigation,
+  AlertTriangle
 } from 'lucide-react';
+import { estimateDeliveryFee } from '@/features/checkout/estimateDelivery';
+import { type DeliveryFeeResult } from '@/lib/pricing/deliveryMatrix';
+import { formatMXN } from '@/lib/pricing';
 
 interface CheckoutFormProps {
   locationId: string; // ID de la location (resuelto por path en el server)
@@ -30,6 +35,7 @@ interface CheckoutFormProps {
   paymentMethod: 'EFECTIVO_EXACTO' | 'EFECTIVO_CON_CAMBIO' | 'TARJETA_CONTRA_ENTREGA';
   eta: string; // ISO string from server (local time)
   onSuccess?: (orderId: string, trackToken?: string) => void;
+  onDeliveryEstimationChange?: (fee: number, zoneName: string | null, isDeliverable: boolean) => void;
 }
 
 const formSchema = z.object({
@@ -52,6 +58,7 @@ export function CheckoutForm({
   paymentMethod,
   eta,
   onSuccess,
+  onDeliveryEstimationChange,
 }: CheckoutFormProps) {
   const { cart, clearCart } = useCart();
   const [form, setForm] = useState<Record<string, string | null | undefined>>(() => {
@@ -64,12 +71,52 @@ export function CheckoutForm({
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+  const [estimation, setEstimation] = useState<DeliveryFeeResult | null>(null);
   const [result, setResult] = useState<{
     ok: boolean;
     error?: string;
     orderId?: string;
     trackToken?: string;
   } | null>(null);
+
+  const runEstimation = useCallback(
+    async (addr?: string, testKey?: string) => {
+      if (orderType !== 'DOMICILIO') return;
+      const targetAddress = addr ?? (form.delivery_address as string | undefined);
+      if (!targetAddress?.trim() && !testKey) return;
+
+      setEstimating(true);
+      try {
+        const res = await estimateDeliveryFee({
+          locationId,
+          address: targetAddress,
+          testScenarioKey: testKey,
+        });
+
+        if (res.ok && res.data) {
+          setEstimation(res.data);
+          onDeliveryEstimationChange?.(res.data.fee, res.data.zoneName, res.data.isDeliverable);
+        }
+      } catch (err) {
+        console.error('Error estimando tarifa de envío:', err);
+      } finally {
+        setEstimating(false);
+      }
+    },
+    [locationId, orderType, form.delivery_address, onDeliveryEstimationChange]
+  );
+
+  // Debounce para estimar al teclear dirección
+  useEffect(() => {
+    if (orderType !== 'DOMICILIO' || !form.delivery_address || form.delivery_address.trim().length < 5) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      runEstimation(form.delivery_address as string);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [form.delivery_address, orderType, runEstimation]);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -114,6 +161,14 @@ export function CheckoutForm({
       ) {
         setErrors({
           delivery_address: 'La dirección es obligatoria para pedidos a domicilio',
+        });
+        setSubmitting(false);
+        return;
+      }
+
+      if (orderType === 'DOMICILIO' && estimation && !estimation.isDeliverable) {
+        setErrors({
+          delivery_address: estimation.reason || 'La dirección está fuera de nuestra zona de cobertura.',
         });
         setSubmitting(false);
         return;
@@ -354,6 +409,52 @@ export function CheckoutForm({
               <p className="mt-1 text-xs text-red-600 font-medium">
                 {errors.delivery_address}
               </p>
+            )}
+
+            {/* Estado de estimación de distancia */}
+            {estimating && (
+              <div className="mt-2 flex items-center gap-2 p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/60 text-xs text-orange-800 animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+                <span>Calculando costo de entrega y distancia...</span>
+              </div>
+            )}
+
+            {!estimating && estimation && (
+              <div
+                className={`mt-2 p-3 rounded-xl border text-xs transition-all ${
+                  estimation.isDeliverable
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                    : 'bg-red-50 border-red-200 text-red-800'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {estimation.isDeliverable ? (
+                    <Navigation className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-0.5">
+                    <div className="font-bold flex items-center gap-2">
+                      <span>{estimation.zoneName}</span>
+                      {estimation.isDeliverable && (
+                        <span className="font-extrabold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
+                          {formatMXN(estimation.fee)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] opacity-90">
+                      {estimation.isDeliverable ? (
+                        <span>
+                          Distancia estimada: <strong>{estimation.distanceKm} km</strong>
+                          {estimation.durationMinutes ? ` · Tiempo de viaje: ~${Math.round(estimation.durationMinutes)} min` : ''}
+                        </span>
+                      ) : (
+                        <span>{estimation.reason}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 

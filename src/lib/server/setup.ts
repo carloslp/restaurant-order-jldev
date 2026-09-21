@@ -24,6 +24,9 @@ const SetupSchema = z
     timezone: z.string().default('America/Mexico_City'),
     iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
     delivery_fee: zNumberES('La tarifa debe ser un número').min(0, 'La tarifa no puede ser negativa').default(0),
+    address: z.string().optional().nullable(),
+    latitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
+    longitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
   })
   .refine((data) => data.adminPassword === data.adminPasswordConfirm, {
     message: 'Las contraseñas no coinciden',
@@ -61,6 +64,9 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
         timezone: validated.timezone,
         iva_rate: validated.iva_rate,
         delivery_fee: validated.delivery_fee,
+        address: validated.address ?? null,
+        latitude: validated.latitude ?? null,
+        longitude: validated.longitude ?? null,
       })
       .select()
       .single(),

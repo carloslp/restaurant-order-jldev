@@ -7,12 +7,14 @@ import {
   updateLocal,
   deleteLocal,
   getLocalById,
+  geocodeAddressAction,
 } from '@/lib/server/locals';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 import { ZoneCapacityEditor } from '@/features/admin/ZoneCapacityEditor';
 import { validateLocationSlug } from '@/lib/slugs';
+import { MapPin, Search, Loader2 } from 'lucide-react';
 
 interface Local {
   id: string;
@@ -21,6 +23,9 @@ interface Local {
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,6 +36,9 @@ interface LocalFormData {
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 const initialFormData: LocalFormData = {
@@ -39,6 +47,9 @@ const initialFormData: LocalFormData = {
   timezone: 'America/Mexico_City',
   iva_rate: 0.16,
   delivery_fee: 0,
+  address: '',
+  latitude: null,
+  longitude: null,
 };
 
 export function AdminLocals() {
@@ -49,6 +60,7 @@ export function AdminLocals() {
   const [formData, setFormData] = useState<LocalFormData>(initialFormData);
   const [showForm, setShowForm] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
   const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
   const loadLocals = useCallback(async () => {
@@ -67,6 +79,47 @@ export function AdminLocals() {
   useEffect(() => {
     loadLocals();
   }, [loadLocals]);
+
+  const handleGeocode = async () => {
+    if (!formData.address?.trim()) {
+      toast({
+        title: 'Dirección requerida',
+        description: 'Escribe la dirección del local antes de buscar coordenadas.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGeocoding(true);
+    try {
+      const res = await geocodeAddressAction(formData.address);
+      if (res.ok && res.coordinates) {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: res.coordinates!.lat,
+          longitude: res.coordinates!.lng,
+        }));
+        toast({
+          title: 'Coordenadas encontradas',
+          description: `Lat: ${res.coordinates.lat.toFixed(6)}, Lng: ${res.coordinates.lng.toFixed(6)}`,
+        });
+      } else {
+        toast({
+          title: 'No se encontraron coordenadas',
+          description: res.error || 'Verifica la dirección o ingrésalas manualmente.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Error de búsqueda',
+        description: 'No se pudo obtener las coordenadas de la dirección.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +156,9 @@ export function AdminLocals() {
       timezone: local.timezone,
       iva_rate: local.iva_rate,
       delivery_fee: local.delivery_fee,
+      address: local.address ?? '',
+      latitude: local.latitude ?? null,
+      longitude: local.longitude ?? null,
     });
     setSlugError(null);
     setShowForm(true);
@@ -240,6 +296,79 @@ export function AdminLocals() {
                 <FieldError id="local-fee-error" message={fieldErrors.delivery_fee} />
               </div>
 
+              <div className="border-t pt-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-orange-600" />
+                    <span>Ubicación y Coordenadas Geográficas</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGeocode}
+                    disabled={geocoding || !formData.address?.trim()}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 disabled:text-gray-400 bg-orange-50 hover:bg-orange-100 disabled:bg-gray-100 px-2.5 py-1 rounded-md transition-colors"
+                  >
+                    {geocoding ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Search className="w-3.5 h-3.5" />
+                    )}
+                    <span>{geocoding ? 'Buscando...' : 'Obtener coordenadas'}</span>
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Dirección física (Calle, Número, Colonia, Ciudad)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.address ?? ''}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    placeholder="Ej. Av. Juárez 70, Centro, Cuauhtémoc, CDMX"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Punto de origen para calcular las distancias viales de entrega a domicilio.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Latitud GPS</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={formData.latitude ?? ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          latitude: e.target.value === '' ? null : parseFloat(e.target.value),
+                        })
+                      }
+                      placeholder="19.432608"
+                      className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Longitud GPS</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={formData.longitude ?? ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          longitude: e.target.value === '' ? null : parseFloat(e.target.value),
+                        })
+                      }
+                      placeholder="-99.143612"
+                      className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={handleCancel} className="btn-secondary">
                   Cancelar
@@ -259,6 +388,7 @@ export function AdminLocals() {
             <tr>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Nombre</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Ruta</th>
+              <th className="text-left p-3 text-sm font-semibold text-gray-500">Ubicación / GPS</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Zona horaria</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">IVA</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Delivery</th>
@@ -271,6 +401,24 @@ export function AdminLocals() {
               <tr key={local.id} className="hover:bg-gray-50">
                 <td className="p-3 font-medium">{local.name}</td>
                 <td className="p-3 text-sm text-gray-600 font-mono">/{local.slug}</td>
+                <td className="p-3 text-xs text-gray-600 max-w-xs">
+                  {local.address ? (
+                    <div>
+                      <span className="line-clamp-1 text-gray-800 font-medium">{local.address}</span>
+                      {local.latitude != null && local.longitude != null ? (
+                        <span className="font-mono text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                          GPS: {local.latitude.toFixed(4)}, {local.longitude.toFixed(4)}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                          Sin GPS
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 italic">Sin dirección</span>
+                  )}
+                </td>
                 <td className="p-3 text-sm text-gray-600">{local.timezone}</td>
                 <td className="p-3 text-sm text-gray-600">{local.iva_rate * 100}%</td>
                 <td className="p-3 text-sm text-gray-600">${local.delivery_fee.toFixed(2)}</td>
@@ -301,7 +449,7 @@ export function AdminLocals() {
             ))}
             {localsList.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400">
+                <td colSpan={8} className="p-8 text-center text-gray-400">
                   No hay locales. Crea el primero para empezar.
                 </td>
               </tr>
@@ -316,8 +464,9 @@ export function AdminLocals() {
         <h3 className="mb-2 text-sm font-semibold text-gray-700">Información</h3>
         <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
           <li>La <strong>ruta</strong> identifica a la sucursal en la URL pública (ej: <code>tudominio.com/centro</code>). El dominio es irrelevante: cada restaurante usa el suyo.</li>
+          <li>La <strong>ubicación y GPS</strong> definen el punto de origen exacto del local para el cálculo de distancias viales de reparto.</li>
           <li>El <strong>IVA</strong> se expresa como decimal (0.16 = 16%). Es el IVA incluido en los precios públicos.</li>
-          <li>La <strong>tarifa de delivery</strong> es un monto fijo por pedido a domicilio para este local.</li>
+          <li>La <strong>tarifa de delivery</strong> actúa como tarifa base / fallback si un pedido a domicilio no tiene coordenadas válidas.</li>
           <li>Eliminar un local elimina <strong>en cascada</strong> todo: staff, menú, órdenes, reservas, descuentos.</li>
           <li>Cualquier staff autenticado puede gestionar locales.</li>
         </ul>

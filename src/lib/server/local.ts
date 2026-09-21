@@ -12,6 +12,9 @@ export interface LocalInfo {
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface LocalSummary {
@@ -28,6 +31,9 @@ function toLocalInfo(data: Record<string, unknown>): LocalInfo {
     timezone: data.timezone as string,
     iva_rate: Number(data.iva_rate),
     delivery_fee: Number(data.delivery_fee ?? 0),
+    address: (data.address as string | undefined) ?? null,
+    latitude: data.latitude != null ? Number(data.latitude) : null,
+    longitude: data.longitude != null ? Number(data.longitude) : null,
   };
 }
 

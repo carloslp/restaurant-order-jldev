@@ -7,6 +7,9 @@ export interface Local {
   timezone: string;
   iva_rate: number;     // Ej: 0.16 para 16%
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +37,9 @@ export interface LocalFormData {
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 // ---------------------------------------------------------------------------

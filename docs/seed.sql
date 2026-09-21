@@ -28,8 +28,8 @@ DECLARE
     v_grp_salsas UUID;
 BEGIN
     -- ── Local demo (ruta pública: /demo) ─────────────────────────────────
-    INSERT INTO locals (name, slug, timezone, iva_rate, delivery_fee)
-    VALUES ('Restaurante Demo JLDev', 'demo', 'America/Mexico_City', 0.16, 30.00)
+    INSERT INTO locals (name, slug, timezone, iva_rate, delivery_fee, address, latitude, longitude)
+    VALUES ('Restaurante Demo JLDev', 'demo', 'America/Mexico_City', 0.16, 30.00, 'Av. Juárez 70, Centro, Cuauhtémoc, 06010 Ciudad de México, CDMX', 19.432608, -99.143612)
     RETURNING id INTO v_local;
 
     -- ── Staff ────────────────────────────────────────────────────────────

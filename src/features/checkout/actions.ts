@@ -16,6 +16,8 @@ import { linePrice } from '@/lib/pricing';
 import { isValidAddress, isValidName, isValidPhone, isValidReferences } from '@/lib/validation';
 import { generateToken, hashToken } from '@/lib/tokens';
 import { calculateBestDiscount } from '@/lib/pricing/discounts';
+import { calculateDeliveryFee } from '@/lib/osm/distanceMatrix';
+import type { Coordinates } from '@/lib/pricing/deliveryMatrix';
 import type { Cart, Order, OrderType, PaymentMethod, CartItemModifiers, Discount } from '@/lib/types';
 
 export interface CreateOrderInput {
@@ -168,8 +170,33 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   
   const discountedSubtotal = discountResult.final_subtotal;
 
-  // 7. Calcular totales con el IVA del local
-  const deliveryFee = input.order_type === 'DOMICILIO' ? local.delivery_fee : 0;
+  // 7. Calcular costo de envío por matriz de distancia (si es a DOMICILIO)
+  let deliveryFee = 0;
+  let deliveryZone: string | null = null;
+
+  if (input.order_type === 'DOMICILIO') {
+    const origin: Coordinates =
+      local.latitude != null && local.longitude != null
+        ? { lat: local.latitude, lng: local.longitude }
+        : { lat: 19.432608, lng: -99.143612 }; // Fallback CDMX Centro demo
+
+    const deliveryResult = await calculateDeliveryFee({
+      origin,
+      destinationAddress: input.delivery_address,
+      localFallbackFee: local.delivery_fee,
+    });
+
+    if (!deliveryResult.isDeliverable) {
+      return {
+        ok: false,
+        error: deliveryResult.reason ?? 'La dirección está fuera de nuestra zona de cobertura.',
+      };
+    }
+
+    deliveryFee = deliveryResult.fee;
+    deliveryZone = deliveryResult.zoneName;
+  }
+
   const subtotal = discountedSubtotal;
   const iva_amount = Math.round(subtotal * (local.iva_rate / (1 + local.iva_rate)) * 100) / 100;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
@@ -190,9 +217,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       payment_status: 'PENDIENTE',
       subtotal,
       iva_amount,
-      delivery_fee_amount: input.order_type === 'DOMICILIO' ? local.delivery_fee : 0,
+      delivery_fee_amount: deliveryFee,
       total,
       cart_snapshot: { version: '1', items: snapshotItems },
+      delivery_zone: deliveryZone,
       delivery_token: deliveryTokenUuid,
       delivery_token_expires_at: expiresAt,
       delivery_token_rotated_at: new Date().toISOString(),

@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- restaurant-order-jldev â€” InstalaciÃ³n limpia en un solo archivo
 -- ============================================================================
 -- Ejecutar en el SQL Editor de Supabase (rol postgres) sobre un proyecto nuevo.
@@ -68,6 +68,9 @@ CREATE TABLE locals (
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
+    address TEXT NULL,
+    latitude NUMERIC(10,7) NULL,
+    longitude NUMERIC(10,7) NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -673,7 +676,10 @@ FROM orders o;
 -- ============================================================================
 COMMENT ON TABLE locals IS 'Multi-tenant root: cada local/restaurante';
 COMMENT ON COLUMN locals.iva_rate IS 'Tasa de IVA del local (0.16 = 16%). Ajustable por local.';
-COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija de delivery del local (v1). Futuro: por zona vÃ­a OSRM.';
+COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija base de delivery del local (fallback cuando no aplica cálculo por matriz OSM).';
+COMMENT ON COLUMN locals.address IS 'Dirección física del local o sucursal';
+COMMENT ON COLUMN locals.latitude IS 'Latitud GPS del local para cálculo de matriz de distancias';
+COMMENT ON COLUMN locals.longitude IS 'Longitud GPS del local para cálculo de matriz de distancias';
 COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculaciÃ³n directa y consultas sin depender de email';
 COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios pÃºblicos (IVA incluido)';
 COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_id, product_name, base_price (IVA incl.), quantity, modifiers[{group, selections[]}]}';

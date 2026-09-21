@@ -60,6 +60,9 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
   const [orderType, setOrderType] = useState<OrderType>('RECOGER');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('EFECTIVO_EXACTO');
   const [eta] = useState(() => new Date(Date.now() + 30 * 60 * 1000).toISOString());
+  const [estimatedDeliveryFee, setEstimatedDeliveryFee] = useState<number>(0);
+  const [deliveryZone, setDeliveryZone] = useState<string | null>(null);
+  const [isDeliverable, setIsDeliverable] = useState<boolean>(true);
 
   // Si el pedido se acaba de crear, mostramos la pantalla de éxito con el link de seguimiento
   if (createdOrder) {
@@ -328,6 +331,11 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
                       paymentMethod,
                     });
                   }}
+                  onDeliveryEstimationChange={(fee, zone, deliverable) => {
+                    setEstimatedDeliveryFee(fee);
+                    setDeliveryZone(zone);
+                    setIsDeliverable(deliverable);
+                  }}
                 />
               )}
 
@@ -466,24 +474,48 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
               </div>
 
               {/* Totales y desglose */}
-              <div className="mt-4 pt-4 border-t border-zinc-100 space-y-2">
-                <div className="flex justify-between text-xs text-zinc-500">
-                  <span>Subtotal</span>
-                  <span>{formatMXN(total)}</span>
-                </div>
-                <div className="flex justify-between items-baseline pt-2 border-t border-zinc-100">
-                  <span className="text-sm font-bold text-zinc-900">Total a pagar</span>
-                  <span className="text-xl font-extrabold text-orange-600">
-                    {formatMXN(total)}
-                  </span>
-                </div>
+              {(() => {
+                const activeDeliveryFee = orderType === 'DOMICILIO' ? estimatedDeliveryFee : 0;
+                const finalTotal = total + activeDeliveryFee;
 
-                {/* Leyenda legal IVA */}
-                <div className="mt-3 flex items-center justify-end gap-1.5 text-[11px] text-zinc-400">
-                  <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Precios en MXN · IVA incluido (16%)</span>
-                </div>
-              </div>
+                return (
+                  <div className="mt-4 pt-4 border-t border-zinc-100 space-y-2">
+                    <div className="flex justify-between text-xs text-zinc-500">
+                      <span>Subtotal productos</span>
+                      <span>{formatMXN(total)}</span>
+                    </div>
+
+                    {orderType === 'DOMICILIO' && (
+                      <div className="flex justify-between text-xs text-zinc-600">
+                        <span className="flex items-center gap-1.5">
+                          <span>Envío a domicilio</span>
+                          {deliveryZone && (
+                            <span className="text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200/60 px-1.5 py-0.5 rounded-md">
+                              {deliveryZone}
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-semibold text-zinc-800">
+                          {estimatedDeliveryFee > 0 ? formatMXN(estimatedDeliveryFee) : '$0.00'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-baseline pt-2 border-t border-zinc-100">
+                      <span className="text-sm font-bold text-zinc-900">Total a pagar</span>
+                      <span className="text-xl font-extrabold text-orange-600">
+                        {formatMXN(finalTotal)}
+                      </span>
+                    </div>
+
+                    {/* Leyenda legal IVA */}
+                    <div className="mt-3 flex items-center justify-end gap-1.5 text-[11px] text-zinc-400">
+                      <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Precios en MXN · IVA incluido (16%)</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </aside>
         </div>

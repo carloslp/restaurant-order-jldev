@@ -18,13 +18,15 @@ import {
   ArrowRight, 
   Loader2, 
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  MapPin
 } from 'lucide-react';
 
 export function SetupForm() {
   const [formData, setFormData] = useState({
     localName: '',
     slug: '',
+    address: '',
     adminEmail: '',
     adminName: '',
     adminPassword: '',
@@ -192,6 +194,27 @@ export function SetupForm() {
         {errors.slug && (
           <p className="mt-1 text-xs text-red-600 font-medium">{errors.slug}</p>
         )}
+      </div>
+
+      {/* Dirección física del local */}
+      <div>
+        <label htmlFor="address" className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+          Dirección física de la sucursal (para cálculo de envíos)
+        </label>
+        <div className="relative">
+          <MapPin className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            id="address"
+            type="text"
+            value={formData.address}
+            onChange={(e) => handleChange('address', e.target.value)}
+            className="w-full rounded-xl border border-zinc-200/80 bg-zinc-50/50 hover:bg-zinc-50 focus:bg-white text-zinc-900 text-sm pl-10 pr-3.5 py-2.5 transition-all outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+            placeholder="Ej. Av. Juárez 70, Centro Histórico, CDMX"
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-zinc-400">
+          Se utilizará como punto de origen para calcular las distancias de reparto a domicilio.
+        </p>
       </div>
 
       {/* Email y Nombre Administrador en 2 columnas */}

@@ -16,6 +16,9 @@ const LocalSchema = z.object({
   timezone: z.string().default('America/Mexico_City'),
   iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
   delivery_fee: zNumberES('La tarifa debe ser un número').min(0, 'La tarifa no puede ser negativa').default(0),
+  address: z.string().optional().nullable(),
+  latitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
+  longitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
 });
 
 // --- Helpers ---
@@ -43,6 +46,9 @@ export async function listLocals(): Promise<Array<{
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at: string;
 }>> {
@@ -57,16 +63,19 @@ export async function listLocals(): Promise<Array<{
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as Array<{
-    id: string;
-    name: string;
-    slug: string;
-    timezone: string;
-    iva_rate: number;
-    delivery_fee: number;
-    created_at: string;
-    updated_at: string;
-  }>;
+  return (data ?? []).map((d) => ({
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    timezone: d.timezone,
+    iva_rate: Number(d.iva_rate),
+    delivery_fee: Number(d.delivery_fee ?? 0),
+    address: d.address ?? null,
+    latitude: d.latitude != null ? Number(d.latitude) : null,
+    longitude: d.longitude != null ? Number(d.longitude) : null,
+    created_at: d.created_at,
+    updated_at: d.updated_at,
+  }));
 }
 
 export async function createLocal(payload: z.infer<typeof LocalSchema>) {
@@ -96,6 +105,9 @@ export async function createLocal(payload: z.infer<typeof LocalSchema>) {
         timezone: validated.timezone,
         iva_rate: validated.iva_rate,
         delivery_fee: validated.delivery_fee,
+        address: validated.address ?? null,
+        latitude: validated.latitude ?? null,
+        longitude: validated.longitude ?? null,
       })
       .select()
       .single(),
@@ -134,6 +146,9 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
         timezone: validated.timezone,
         iva_rate: validated.iva_rate,
         delivery_fee: validated.delivery_fee,
+        address: validated.address ?? null,
+        latitude: validated.latitude ?? null,
+        longitude: validated.longitude ?? null,
       })
       .eq('id', id)
       .select()
@@ -180,6 +195,9 @@ export async function getLocalById(id: string): Promise<{
   timezone: string;
   iva_rate: number;
   delivery_fee: number;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at: string;
 } | null> {
@@ -203,7 +221,27 @@ export async function getLocalById(id: string): Promise<{
     timezone: data.timezone,
     iva_rate: Number(data.iva_rate),
     delivery_fee: Number(data.delivery_fee ?? 0),
+    address: data.address ?? null,
+    latitude: data.latitude != null ? Number(data.latitude) : null,
+    longitude: data.longitude != null ? Number(data.longitude) : null,
     created_at: data.created_at,
     updated_at: data.updated_at,
   };
+}
+
+export async function geocodeAddressAction(address: string): Promise<{
+  ok: boolean;
+  coordinates?: { lat: number; lng: number } | null;
+  error?: string;
+}> {
+  try {
+    const { geocodeAddressWithOsm } = await import('@/lib/osm/distanceMatrix');
+    const coords = await geocodeAddressWithOsm(address);
+    if (!coords) {
+      return { ok: false, error: 'No se encontraron coordenadas para esta dirección.' };
+    }
+    return { ok: true, coordinates: coords };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Error al geocodificar' };
+  }
 }
