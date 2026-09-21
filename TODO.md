@@ -1,6 +1,7 @@
 # TODO - Restaurant Order JLDev
 
-**Fuente**: `PLAN.md` — Generado 2025-09-17
+**Generado**: 2025-09-17 · Este documento es la fuente de estado del proyecto
+(sustituye a `PLAN.md`, eliminado en v0.5.4).
 **Total**: 47 tareas · ~253h estimadas
 
 ---

@@ -12,7 +12,8 @@
    - Deja la base **vacía**: al abrir la app, `/setup` arranca el onboarding
      (crea el primer local + admin). No ejecutes seeds en producción.
    - ¿Proyecto ya existente con datos? Aplica las migraciones incrementales:
-     `docs/migrate-subdomain-to-slug.sql`, `docs/migration-link-auth-staff.sql` (idempotentes).
+     `docs/migration-link-auth-staff.sql` (idempotente). La migración
+     subdominio→slug ya está incluida dentro de `install.sql`.
 3. **Authentication → Providers**: deja habilitado **Email** (magic link + contraseña).
    En **URL Configuration** añade tu dominio a *Site URL* y *Redirect URLs*:
    `https://tudominio.com/staff/auth/callback`, `https://tudominio.com/auth/confirm`,

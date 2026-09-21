@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.4] — 2026-09-20
+
+### Removed — Limpieza de archivos innecesarios
+- **Assets default de create-next-app eliminados**: `public/file.svg`,
+  `globe.svg`, `next.svg`, `vercel.svg` y `window.svg` no tenían ninguna
+  referencia en el código.
+- **Código muerto eliminado**: `src/lib/supabase/jwt.ts` (verificación de JWT
+  vía JWKS con `jose`) no era importado por ningún módulo; la app protege
+  rutas con sesión de cookies (`@supabase/ssr`). Se removió también la
+  dependencia `jose` de `package.json`, que solo la usaba ese archivo.
+- **Docs y scripts one-off de la migración subdominio → slug (v0.5.1)
+  eliminados**: `PLAN.md` (snapshot desactualizado, superado por `TODO.md`),
+  `scripts/migrate-subdomain-to-slug.mjs`,
+  `scripts/test-menu-images-bucket.mjs` y
+  `docs/migrate-subdomain-to-slug.sql` (todo su contenido ya está incluido
+  en `docs/install.sql`).
+- **Artefactos de build eliminados**: `tsconfig.tsbuildinfo` y `.next/`
+  (regenerables, ya ignorados por `.gitignore`).
+- **Referencias colgantes actualizadas**: `docs/DEPLOY.md` ya no lista el SQL
+  de migración subdominio→slug (eliminado) y `TODO.md` ya no cita a `PLAN.md`
+  como fuente.
+
+---
+
 ## [0.5.3] — 2026-09-20
 
 ### Changed — Un solo SQL de instalación (`install.sql` sin seed)

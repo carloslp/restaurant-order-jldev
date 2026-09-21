@@ -3,7 +3,7 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 import { locationSlugSchema } from '@/lib/slugs';
-import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow, describeSupabaseError } from '@/lib/errors';
 import { zNumberES } from '@/lib/validation';
 
 // --- Schemas ---
@@ -43,7 +43,7 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
     .limit(1);
 
   if (checkError) {
-    console.error('initializeSystem/check:', checkError);
+    console.error('initializeSystem/check:', describeSupabaseError(checkError));
     throw new AppError(parsePostgrestError(checkError, 'No se pudo verificar el estado del sistema.'));
   }
 
@@ -82,7 +82,7 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
   if (staffError || !staff) {
     // Rollback: eliminar local si falla staff
     await supabase.from('locals').delete().eq('id', local.id);
-    console.error('initializeSystem/staff:', staffError);
+    console.error('initializeSystem/staff:', describeSupabaseError(staffError));
     throw new AppError(parsePostgrestError(staffError, 'No se pudo crear el administrador. Inténtalo de nuevo.'));
   }
 
@@ -108,7 +108,7 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
         fieldErrors: { adminEmail: 'Ese email ya está registrado.' },
       });
     }
-    console.error('initializeSystem/authUser:', authError);
+    console.error('initializeSystem/authUser:', describeSupabaseError(authError));
     throw new AppError('No se pudo crear el usuario administrador. Inténtalo de nuevo.');
   }
 
@@ -119,7 +119,7 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
     .eq('id', staff.id);
 
   if (linkError) {
-    console.error('Error vinculando auth_user_id:', linkError);
+    console.error('Error vinculando auth_user_id:', describeSupabaseError(linkError));
     // No fallar aquí: el login por email+password ya funciona; el fallback
     // de getCurrentStaff (búsqueda por email) cubre mientras se re-vincula.
   }
@@ -137,7 +137,7 @@ export async function checkSystemInitialized(): Promise<boolean> {
     .limit(1);
 
   if (error) {
-    console.error('checkSystemInitialized:', error);
+    console.error('checkSystemInitialized:', describeSupabaseError(error));
     throw new AppError(parsePostgrestError(error, 'No se pudo verificar el estado del sistema.'));
   }
   return (data ?? []).length > 0;
