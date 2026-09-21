@@ -109,7 +109,9 @@ export async function initializeSystem(payload: z.infer<typeof SetupSchema>) {
       });
     }
     console.error('initializeSystem/authUser:', describeSupabaseError(authError));
-    throw new AppError('No se pudo crear el usuario administrador. Inténtalo de nuevo.');
+    throw new AppError('No se pudo crear el usuario administrador. Inténtalo de nuevo.', {
+      cause: authError,
+    });
   }
 
   // 5. Vincular auth_user_id al registro staff (directo, el usuario ya existe)

@@ -1,5 +1,132 @@
 # Changelog
 
+## [0.5.8] — 2026-09-20
+
+### Fixed — Causa raíz de toda la saga de login: `staff.created_by`/`updated_by` no existen
+- **Verificación en BD viva (solo lectura)**: las consultas de `getCurrentStaff`
+  fallaban **siempre** con `42703 column staff.created_by does not exist` (5/5
+  intentos). El esquema canónico (`docs/install.sql` §3.3) define `staff` sin
+  columnas de auditoría — decisión de diseño de v0.2.6 ("la tabla raíz no lleva
+  auditoría: dependencia circular `locals↔staff`"; `reservations` §3.5 sí las
+  tiene porque no hay ciclo). El código quedó con referencias fantasma.
+- **Esta única causa explica toda la saga**: en ≤0.5.5 el error se tragaba
+  (solo se leía `data`) → "no hay staff" → INSERT en cada visita → `23505
+  duplicate key staff_auth_user_id_key` + bucle `/staff`↔`/login`; en 0.5.6 el
+  mismo fantasma → `no_staff` (cierre de sesión); en 0.5.7 el check de error
+  lo reveló como `staff_lookup_failed`. La fila de staff en BD siempre estuvo
+  bien.
+- **`src/app/staff/page.tsx`**: quitadas `created_by, updated_by` de los dos
+  SELECTs de `getCurrentStaff`. El login/portal vuelve a resolver el staff por
+  `auth_user_id` (y fallback por email).
+- **`src/lib/server/staff.ts`** (panel admin, roto por el mismo 42703/PGRST204):
+  `listStaff` (SELECT + tipo de retorno), `createStaff` (INSERT), `updateStaff`
+  (UPDATE), `toggleStaffActive` (UPDATE) e `inviteStaff` (INSERT) ya no
+  referencian columnas de auditoría inexistentes.
+- **`src/lib/types.ts`**: interface `Staff` sin `created_by`/`updated_by`
+  (coincide con el esquema y con `AdminStaff.tsx`, que nunca las renderizó).
+- **`src/lib/server/reservations.ts` no se toca**: `reservations` SÍ tiene
+  `created_by`/`updated_by` (install.sql §3.5) — su uso es válido.
+- **Validación**: re-probe read-only de las consultas exactas de
+  `getCurrentStaff` → resuelven sin error (fila de `me@juanlopez.dev`
+  encontrada por `auth_user_id` y por email); `npx tsc --noEmit` → 0 errores;
+  eslint en tocados → 0 problemas; `npm run test` → 53/53; `npm run build` → OK.
+
+---
+
+## [0.5.7] — 2026-09-20
+
+### Fixed — `getCurrentStaff` no traga errores de consulta (falso "no hay staff")
+- **Diagnóstico**: tras 0.5.6 el flujo reportó `no_staff` para
+  `me@juanlopez.dev` y cerró la sesión. Verificación contra la BD (solo
+  lectura, `staff` + `auth.users`): el estado es consistente — existe 1 local
+  (`centro`), 1 staff (`me@juanlopez.dev`, activo, con `auth_user_id`
+  vinculado) y 1 auth user confirmado con metadata `location_id` correcta.
+  El reporte correspondió a un momento en que la fila aún no existía; hoy el
+  acceso por `auth_user_id` resuelve normalmente.
+- **Causa estructural (hardening)**: las dos búsquedas de `getCurrentStaff`
+  (`src/app/staff/page.tsx`) solo destructuraban `data` e ignoraban `error`:
+  un fallo transitorio (red, 5xx, `PGRST116` en `maybeSingle()`) se
+  interpretaba como "no hay staff" → **cerraba la sesión** injustamente.
+- **`src/app/staff/page.tsx`**: ambas búsquedas (por `auth_user_id` y fallback
+  por email) ahora verifican `error`; ante fallo loguean
+  `getCurrentStaff/lookup_error` (con `describeSupabaseError`) y redirigen a
+  `/login?error=staff_lookup_failed` **sin cerrar la sesión** (con el error
+  visible, `/login` renderiza el formulario en vez de auto-redirigir a
+  `/staff`, así que no hay bucle). El caso genuino "sin staff" sigue cerrando
+  sesión vía `/staff/auth/logout?reason=no_staff`.
+- **`src/app/login/page.tsx`**: nuevo código `staff_lookup_failed` → "No se
+  pudieron verificar tus datos de acceso. Intenta de nuevo en unos segundos."
+
+---
+
+## [0.5.6] — 2026-09-20
+
+### Removed — El sistema ya NO auto-crea staff: el alta es manual
+- **`src/app/staff/page.tsx` (`getCurrentStaff`)**: eliminado el bloque de
+  auto-creación de staff (buscar primer local, GUC `app.local_id`, `INSERT` en
+  `staff` y redirect de debug con `staff_create_failed`). Era la única pieza de
+  "instalación automática": cualquier usuario autenticado sin registro de staff
+  disparaba un `INSERT`, que al no ser atómico (búsqueda → inserción)
+  competía consigo mismo en la cadena `/staff` → `/login` → `/staff` y
+  provocaba el `23505 duplicate key ... staff_auth_user_id_key` + bucle de
+  redirecciones. Se conservan la búsqueda por `auth_user_id`, el fallback por
+  email y la vinculación de `auth_user_id` (sincronización de registros
+  existentes; `/setup` e `inviteStaff` crean el staff primero y vinculan
+  después).
+- **Comportamiento nuevo sin staff**: usuario autenticado sin registro de
+  staff → su sesión se cierra vía `GET /staff/auth/logout?reason=no_staff`
+  (route handler nuevo; un Server Component no puede escribir cookies y
+  redirigir a `/login` con sesión activa era un bucle) → `/login?error=no_staff`.
+- **`src/app/login/page.tsx`**: ahora lee `searchParams` (Promise en Next 16)
+  y muestra el error en la UI (antes `?error=...` era un parámetro muerto que
+  nadie renderizaba). Con error visible ya no auto-redirige a `/staff` (rompe
+  el bucle). Mapa de códigos → mensajes ES: `no_staff` y `1` (callback de
+  magic link), con fallback genérico para códigos desconocidos.
+- **`src/features/staff/SignInForm.tsx`**: nueva prop opcional `initialError`
+  renderizada en el recuadro de error existente. De paso, el enlace
+  `<a href="/recuperar">` se migró a `<Link />` (corregía el único error de
+  lint del archivo: `@next/next/no-html-link-for-pages`).
+- **Nota operativa**: el alta de staff sigue siendo manual — wizard `/setup`
+  (primer admin), invitación desde el panel admin (`inviteStaff`) o SQL
+  (`docs/install.sql`). El 23505 desaparece como efecto colateral de eliminar
+  el `INSERT` automático.
+- **Validación**: `npx tsc --noEmit` → 0 errores; `eslint` en los 4 archivos
+  tocados → 0 problemas (el resto de errores/warnings de lint son preexistentes
+  en módulos no tocados); `npm run test` → 53/53; `npm run build` → OK con la
+  ruta nueva `/staff/auth/logout` registrada.
+
+---
+
+## [0.5.5] — 2026-09-20
+
+### Fixed — `/setup` fallaba al crear el admin: trigger sobre `auth.users` sin `SECURITY DEFINER`
+- **Causa raíz (verificada)**: el trigger `trigger_auth_user_sync_staff`
+  (AFTER INSERT ON `auth.users`; `docs/install.sql` §5.3 y
+  `docs/migration-link-auth-staff.sql` §5) ejecutaba
+  `auth_user_sync_staff()` en modo SECURITY INVOKER. El INSERT lo realiza el
+  rol `supabase_auth_admin` (servicio GoTrue), que NO tiene privilegios sobre
+  `public.staff` → `permission denied for table staff` (42501) → la
+  transacción se revierte → GoTrue responde "Database error creating new user"
+  (HTTP 500, `AuthRetryableFetchError`). Afectaba a `/setup`
+  (`initializeSystem`) y a la invitación de staff con contraseña
+  (`inviteStaff`, `src/lib/server/staff.ts`).
+- **`docs/fix-auth-user-sync-staff.sql` (nuevo)**: parche idempotente para la
+  BD viva. Recrea las dos funciones de auth-sync como `SECURITY DEFINER` con
+  `SET search_path = ''` y nombres calificados (patrón oficial de Supabase
+  para triggers sobre `auth.users`). Fail-soft: un fallo de vinculación queda
+  como WARNING y no aborta la creación del usuario (la app ya vincula
+  explícitamente `auth_user_id` y hay fallback por email). Incluye query de
+  verificación (`prosecdef = true`).
+- **`docs/install.sql` §5.2/5.3 y `docs/migration-link-auth-staff.sql` §4/§5**:
+  mismo endurecimiento para instalaciones y migraciones futuras.
+- **`src/lib/server/setup.ts` / `staff.ts`**: los `AppError` de creación de
+  usuario ahora preservan `cause: authError` (y `staff.ts` loguea con
+  `describeSupabaseError`) para conservar la cadena de causalidad en logs.
+- **Acción requerida**: ejecutar `docs/fix-auth-user-sync-staff.sql` en el SQL
+  Editor de Supabase y reintentar `/setup`.
+
+---
+
 ## [0.5.4] — 2026-09-20
 
 ### Removed — Limpieza de archivos innecesarios

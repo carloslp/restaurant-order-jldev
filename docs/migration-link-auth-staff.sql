@@ -22,12 +22,16 @@ SELECT public.link_staff_to_auth();
 
 -- 4. Trigger: al insertar/actualizar staff, vincular automáticamente si coincide email
 CREATE OR REPLACE FUNCTION public.staff_sync_auth_user()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
   IF NEW.auth_user_id IS NULL AND NEW.email IS NOT NULL THEN
-    SELECT id INTO NEW.auth_user_id
-    FROM auth.users
-    WHERE email = NEW.email
+    SELECT u.id INTO NEW.auth_user_id
+    FROM auth.users u
+    WHERE u.email = NEW.email
     LIMIT 1;
   END IF;
   RETURN NEW;
@@ -40,13 +44,25 @@ BEFORE INSERT OR UPDATE ON staff
 FOR EACH ROW EXECUTE FUNCTION public.staff_sync_auth_user();
 
 -- 5. Trigger inverso: al crear usuario auth, si hay staff pendiente con ese email, vincularlo
+-- SECURITY DEFINER + search_path bloqueado: el INSERT en auth.users lo
+-- ejecuta supabase_auth_admin (GoTrue), sin privilegios sobre public.staff;
+-- en SECURITY INVOKER el UPDATE fallaba (42501) y la creacion del usuario
+-- moria con "Database error creating new user" (HTTP 500).
 CREATE OR REPLACE FUNCTION public.auth_user_sync_staff()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
-  UPDATE staff
-  SET auth_user_id = NEW.id
-  WHERE auth_user_id IS NULL
-    AND email = NEW.email;
+  BEGIN
+    UPDATE public.staff
+    SET auth_user_id = NEW.id
+    WHERE auth_user_id IS NULL
+      AND email = NEW.email;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'auth_user_sync_staff: %', SQLERRM;
+  END;
   RETURN NEW;
 END;
 $$;

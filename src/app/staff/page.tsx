@@ -2,11 +2,13 @@
 import { redirect } from 'next/navigation';
 import { createSessionServerClient } from '@/lib/supabase/session';
 import { createServerClient } from '@/lib/supabase/server';
+import { describeSupabaseError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
 // Función helper: obtener sesión + staff + local del usuario autenticado.
-// Auto-crea el registro de staff si no existe (cualquier usuario autenticado puede acceder).
+// El alta de staff es MANUAL (wizard /setup, invitación desde el panel admin o
+// SQL): el sistema NUNCA auto-crea registros de staff.
 export async function getCurrentStaff() {
   const supabase = await createSessionServerClient();
   const {
@@ -20,20 +22,33 @@ export async function getCurrentStaff() {
   const adminSupabase = createServerClient();
 
   // 1. Buscar por auth_user_id
-  let { data: staff } = await adminSupabase
+  const byAuthId = await adminSupabase
     .from('staff')
-    .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at, created_by, updated_by')
+    .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
+  // Un fallo de consulta (red, 5xx, etc.) NO significa "no hay staff":
+  // avisar y dejar la sesión intacta para reintentar, sin cerrarla.
+  if (byAuthId.error) {
+    console.error(`getCurrentStaff/lookup_error: ${describeSupabaseError(byAuthId.error)}`);
+    redirect('/login?error=staff_lookup_failed');
+  }
+  let staff = byAuthId.data;
+
   // 2. Fallback: buscar por email
   if (!staff) {
-    const { data: staffByEmail } = await adminSupabase
+    const byEmail = await adminSupabase
       .from('staff')
-      .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at, created_by, updated_by')
+      .select('id, location_id, email, full_name, is_active, auth_user_id, created_at, updated_at')
       .eq('email', user.email)
       .maybeSingle();
-    staff = staffByEmail;
+
+    if (byEmail.error) {
+      console.error(`getCurrentStaff/lookup_error: ${describeSupabaseError(byEmail.error)}`);
+      redirect('/login?error=staff_lookup_failed');
+    }
+    staff = byEmail.data;
   }
 
   // 3. Si existe por email pero sin auth_user_id, vincularlo
@@ -45,56 +60,15 @@ export async function getCurrentStaff() {
     staff.auth_user_id = user.id;
   }
 
-  // 4. Si no existe, auto-crear en el primer local disponible
+  // 4. Sin registro de staff: cerrar sesión y avisar en /login (el alta es
+  //    manual, el sistema no auto-crea). Vía route handler porque un Server
+  //    Component no puede escribir cookies; y redirigir a /login con sesión
+  //    activa sería un bucle (login re-redirige a /staff).
   if (!staff) {
-    const { data: firstLocal } = await adminSupabase
-      .from('locals')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-
-    if (!firstLocal) {
-      console.error('No hay locales configurados. Ejecuta el setup primero.');
-      redirect('/setup');
-    }
-
-    // Configurar GUC para bypass RLS check
-    await adminSupabase.rpc('set_config', {
-      name: 'app.local_id',
-      value: firstLocal.id,
-      is_local: true,
-    });
-
-    // Debug: verificar qué key está usando el cliente
-    console.log('AdminSupabase client created, attempting insert...');
-    console.log('firstLocal.id:', firstLocal.id);
-    console.log('user.email:', user.email);
-    console.log('user.id:', user.id);
-
-    const { data: newStaff, error: createError } = await adminSupabase
-      .from('staff')
-      .insert({
-        email: user.email!,
-        full_name: user.user_metadata?.full_name ?? user.email!.split('@')[0],
-        is_active: true,
-        location_id: firstLocal.id,
-        auth_user_id: user.id,
-      })
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creando staff automáticamente:', JSON.stringify(createError, null, 2));
-      // Mostrar el error completo en la URL para debug
-      redirect(`/login?error=staff_create_failed&details=${encodeURIComponent(createError.message)}&code=${createError.code}&hint=${encodeURIComponent(createError.hint ?? '')}`);
-    }
-
-    staff = newStaff;
-  }
-
-  // Garantía de no-null para todos los consumidores (caja, kds, admin, staff).
-  if (!staff) {
-    redirect('/login?error=staff_resolve_failed');
+    console.error(
+      `getCurrentStaff/no_staff: usuario autenticado sin registro de staff (user_id=${user.id}, email=${user.email ?? 'n/d'}). Cerrando sesión.`
+    );
+    redirect('/staff/auth/logout?reason=no_staff');
   }
 
   // 5. Cargar local
@@ -112,7 +86,7 @@ export async function getCurrentStaff() {
 }
 
 export default async function StaffDashboardPage() {
-  const { staff, local } = await getCurrentStaff();
+  await getCurrentStaff();
 
   // Redirigir siempre al panel de administración ya que no hay roles
   redirect('/staff/admin');

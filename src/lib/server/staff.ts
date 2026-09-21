@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow, describeSupabaseError } from '@/lib/errors';
 
 // --- Schemas ---
 
@@ -52,8 +52,6 @@ export async function listStaff(): Promise<Array<{
   created_at: string;
   updated_at: string;
   auth_user_id: string | null;
-  created_by: string | null;
-  updated_by: string | null;
 }>> {
   const staff = await getStaffContext();
   const supabase = createServerClient();
@@ -62,7 +60,7 @@ export async function listStaff(): Promise<Array<{
 
   const { data, error } = await supabase
     .from('staff')
-    .select('id, location_id, email, full_name, is_active, created_at, updated_at, auth_user_id, created_by, updated_by')
+    .select('id, location_id, email, full_name, is_active, created_at, updated_at, auth_user_id')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -75,8 +73,6 @@ export async function listStaff(): Promise<Array<{
     created_at: string;
     updated_at: string;
     auth_user_id: string | null;
-    created_by: string | null;
-    updated_by: string | null;
   }>;
 }
 
@@ -107,7 +103,6 @@ export async function createStaff(payload: z.infer<typeof StaffSchema>) {
         full_name: validated.full_name,
         is_active: validated.is_active,
         location_id: staff.location_id,
-        created_by: staff.id,
       })
       .select()
       .single(),
@@ -145,7 +140,6 @@ export async function updateStaff(id: string, payload: z.infer<typeof StaffSchem
         email: validated.email,
         full_name: validated.full_name,
         is_active: validated.is_active,
-        updated_by: staff.id,
       })
       .eq('id', id)
       .eq('location_id', staff.location_id)
@@ -193,7 +187,7 @@ export async function toggleStaffActive(id: string, isActive: boolean) {
   const data = await queryOrThrow(
     supabase
       .from('staff')
-      .update({ is_active: isActive, updated_by: staff.id })
+      .update({ is_active: isActive })
       .eq('id', id)
       .eq('location_id', staff.location_id)
       .select()
@@ -235,7 +229,6 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
         full_name: validated.full_name,
         is_active: true,
         location_id: staff.location_id,
-        created_by: staff.id,
       })
       .select()
       .single(),
@@ -263,8 +256,10 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
           fieldErrors: { email: 'Ese email ya está registrado.' },
         });
       }
-      console.error('inviteStaff/createUser:', authError);
-      throw new AppError('No se pudo crear el acceso. Inténtalo de nuevo.');
+      console.error('inviteStaff/createUser:', describeSupabaseError(authError));
+      throw new AppError('No se pudo crear el acceso. Inténtalo de nuevo.', {
+        cause: authError,
+      });
     }
 
     // Vincular auth_user_id al registro staff

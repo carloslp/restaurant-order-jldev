@@ -2,11 +2,15 @@
 'use client';
 
 import { useActionState } from 'react';
+import Link from 'next/link';
 import { signInWithEmailPassword } from './auth';
 import { Lock, Mail, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
-export function SignInForm() {
-  const [state, formAction, pending] = useActionState(signInWithEmailPassword, null);
+export function SignInForm({ initialError }: { initialError?: string }) {
+  const [state, formAction, pending] = useActionState(
+    signInWithEmailPassword,
+    initialError ? { error: initialError } : null
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-zinc-50 to-white flex items-center justify-center p-4 sm:p-6">
@@ -86,9 +90,9 @@ export function SignInForm() {
         </form>
 
         <div className="mt-4 text-center">
-          <a href="/recuperar" className="text-xs font-semibold text-orange-600 hover:text-orange-700 transition-colors">
+          <Link href="/recuperar" className="text-xs font-semibold text-orange-600 hover:text-orange-700 transition-colors">
             ¿Olvidaste tu contraseña?
-          </a>
+          </Link>
         </div>
 
         <div className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-center gap-1.5 text-[11px] text-zinc-400">

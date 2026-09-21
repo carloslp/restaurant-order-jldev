@@ -323,13 +323,21 @@ END;
 $$;
 
 -- 5.2 Trigger en staff: al insertar/actualizar, vincular si coincide email
+-- SECURITY DEFINER + search_path bloqueado (patron oficial Supabase para
+-- triggers que cruzan schemas): la funcion corre como su dueno (postgres),
+-- con acceso garantizado a auth.users sin depender de los GRANTs del rol
+-- que inserta. Nombres calificados porque search_path = ''.
 CREATE OR REPLACE FUNCTION public.staff_sync_auth_user()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
   IF NEW.auth_user_id IS NULL AND NEW.email IS NOT NULL THEN
-    SELECT id INTO NEW.auth_user_id
-    FROM auth.users
-    WHERE email = NEW.email
+    SELECT u.id INTO NEW.auth_user_id
+    FROM auth.users u
+    WHERE u.email = NEW.email
     LIMIT 1;
   END IF;
   RETURN NEW;
@@ -342,13 +350,28 @@ BEFORE INSERT OR UPDATE ON staff
 FOR EACH ROW EXECUTE FUNCTION public.staff_sync_auth_user();
 
 -- 5.3 Trigger inverso: al crear usuario auth, vincular staff pendiente
+-- CRITICO: SECURITY DEFINER + search_path bloqueado. El INSERT en auth.users
+-- lo ejecuta el rol supabase_auth_admin (GoTrue), que NO tiene privilegios
+-- sobre public.staff; en SECURITY INVOKER el UPDATE fallaba con 42501 y
+-- GoTrue respondia "Database error creating new user" (HTTP 500), bloqueando
+-- /setup y la invitacion de staff. Fail-soft: un fallo de vinculacion queda
+-- como WARNING y no aborta la creacion del usuario (la app vincula
+-- explicitamente auth_user_id tras crearlo; fallback por email).
 CREATE OR REPLACE FUNCTION public.auth_user_sync_staff()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
-  UPDATE staff
-  SET auth_user_id = NEW.id
-  WHERE auth_user_id IS NULL
-    AND email = NEW.email;
+  BEGIN
+    UPDATE public.staff
+    SET auth_user_id = NEW.id
+    WHERE auth_user_id IS NULL
+      AND email = NEW.email;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'auth_user_sync_staff: %', SQLERRM;
+  END;
   RETURN NEW;
 END;
 $$;
