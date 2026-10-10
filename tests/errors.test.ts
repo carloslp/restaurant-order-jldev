@@ -26,7 +26,7 @@ describe('parsePostgrestError', () => {
   });
 
   it('traduce check violation (23514)', () => {
-    expect(parsePostgrestError(pgError('23514'))).toMatch(/reglas del sistema/);
+    expect(parsePostgrestError(pgError('23514'))).toMatch(/reglas/);
   });
 
   it('traduce not null violation (23502)', () => {

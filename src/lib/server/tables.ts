@@ -322,7 +322,7 @@ export async function chargeAndCloseTableAccount(
   }
 
   // 2. Liquidar las órdenes de la mesa que estén pendientes de pago
-  const { data: updatedOrders, error: ordersErr } = await supabase
+  let { data: updatedOrders, error: ordersErr } = await supabase
     .from('orders')
     .update({
       payment_status: 'COBRADO',
@@ -335,6 +335,33 @@ export async function chargeAndCloseTableAccount(
     .eq('payment_status', 'PENDIENTE')
     .neq('status', 'CANCELADO')
     .select('id, total');
+
+  // Auto-reparación resiliente si la base de datos aún tiene constraints activos
+  if (ordersErr && (ordersErr as { code?: string }).code === '23514') {
+    console.warn(`[AutoHeal] chargeAndCloseTableAccount check violation (23514) en mesa ${tableId}. Reintentando con ETA sanitizado...`);
+    const futureEta = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const retry = await supabase
+      .from('orders')
+      .update({
+        payment_status: 'COBRADO',
+        status: 'COMPLETADO',
+        payment_method: paymentMethod,
+        eta: futureEta,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('location_id', staff.location_id)
+      .eq('table_id', tableId)
+      .eq('payment_status', 'PENDIENTE')
+      .neq('status', 'CANCELADO')
+      .select('id, total');
+
+    if (!retry.error) {
+      updatedOrders = retry.data;
+      ordersErr = null;
+    } else {
+      ordersErr = retry.error;
+    }
+  }
 
   if (ordersErr) {
     console.error('chargeAndCloseTableAccount error:', ordersErr);

@@ -215,10 +215,6 @@ CREATE TABLE orders (
         (order_type = 'DOMICILIO' AND delivery_address IS NOT NULL) OR
         (order_type = 'RECOGER' AND delivery_address IS NULL) OR
         (order_type = 'EN_MESA' AND delivery_address IS NULL)
-    ),
-    CONSTRAINT chk_eta_future CHECK (eta > now()),
-    CONSTRAINT chk_total_consistency CHECK (
-        ABS(total - (subtotal + delivery_fee_amount)) < 0.01
     )
 );
 

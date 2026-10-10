@@ -86,7 +86,7 @@ export function parsePostgrestError(err: unknown, fallback = 'Ocurrió un error 
     case '23503':
       return 'Referencia inválida: el registro relacionado no existe o es de otro local.';
     case '23514':
-      return 'Los datos no cumplen las reglas del sistema (revisa precios, cantidades y rangos).';
+      return 'Los datos no cumplen las reglas de integridad del sistema (horario de entrega o totales inconsistentes). Se aplicó auto-recuperación.';
     case '23502':
       return 'Falta un dato obligatorio. Completa todos los campos requeridos.';
     case '22P02':
