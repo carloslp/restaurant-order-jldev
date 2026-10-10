@@ -18,7 +18,7 @@ export default function AddToCartButton({ product, quantity, onAdd, disabled = f
       type="button"
       onClick={() => onAdd(product, quantity)}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all active:scale-95 select-none ${
+      className={`min-h-[48px] inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all active:scale-95 select-none ${
         disabled
           ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed shadow-none'
           : 'bg-orange-600 hover:bg-orange-700 active:bg-orange-800 shadow-orange-600/20'

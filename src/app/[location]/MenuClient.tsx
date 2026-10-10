@@ -600,9 +600,10 @@ export default function MenuClient({
       {modifierProduct && (
         <ModifierSelector
           product={modifierProduct}
-          onConfirm={(modifiers, comments) => {
-            const qty = quantities[modifierProduct.id] ?? 1;
-            addItem(modifierProduct, qty, modifiers, comments);
+          initialQuantity={quantities[modifierProduct.id] ?? 1}
+          onConfirm={(modifiers, comments, qty) => {
+            const finalQty = qty ?? quantities[modifierProduct.id] ?? 1;
+            addItem(modifierProduct, finalQty, modifiers, comments);
             setModifierProduct(null);
           }}
           onCancel={() => setModifierProduct(null)}
