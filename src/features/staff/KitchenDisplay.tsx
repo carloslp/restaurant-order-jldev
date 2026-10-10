@@ -52,12 +52,18 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
   async function handleTransition(orderId: string, nextStatus: Order['status']) {
     setError(null);
     setPendingOrder(orderId);
+
+    // Mutación optimista inmediata: la tarjeta salta de columna instantáneamente (0 ms)
+    const rollback = orders.mutateOrderStatusOptimistic?.(orderId, nextStatus);
+
     try {
       const result = await updateOrderStatus(orderId, nextStatus);
       if (!result.ok) {
-        setError(result.error ?? 'No se pudo actualizar');
+        rollback?.();
+        setError(result.error ?? 'No se pudo actualizar la comanda');
       }
     } catch {
+      rollback?.();
       setError('Error de comunicación al actualizar la comanda');
     } finally {
       setPendingOrder(null);
@@ -149,7 +155,7 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
                 return (
                   <div
                     key={order.id}
-                    className={`rounded-2xl ${visuals.borderClass} ${visuals.bgClass} ${visuals.pulseClass} flex flex-col justify-between shadow-xs transition-all overflow-hidden`}
+                    className={`rounded-2xl ${visuals.borderClass} ${visuals.bgClass} ${visuals.pulseClass} flex flex-col justify-between shadow-xs transition-all overflow-hidden animate-in fade-in zoom-in-95 duration-200`}
                   >
                     <div className="p-4 sm:p-5 flex-1">
                       {/* Cabecera del ticket */}

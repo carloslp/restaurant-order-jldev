@@ -125,9 +125,18 @@ export function CashierView({ locationId }: CashierViewProps) {
 
   async function handleAction(orderId: string, nextStatus: Order['status']) {
     setError(null);
-    const result = await updateOrderStatus(orderId, nextStatus);
-    if (!result.ok) {
-      setError(result.error ?? 'No se pudo actualizar la orden');
+    // Mutación optimista inmediata en caja (0 ms)
+    const rollback = orders.mutateOrderStatusOptimistic?.(orderId, nextStatus);
+
+    try {
+      const result = await updateOrderStatus(orderId, nextStatus);
+      if (!result.ok) {
+        rollback?.();
+        setError(result.error ?? 'No se pudo actualizar la orden');
+      }
+    } catch {
+      rollback?.();
+      setError('Error de comunicación al actualizar la comanda');
     }
   }
 

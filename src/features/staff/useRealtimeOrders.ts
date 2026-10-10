@@ -28,18 +28,62 @@ import type { Order } from '@/lib/types';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
+export interface UseRealtimeOrdersResult extends Array<Order> {
+  orders?: Order[];
+  mutateOrderStatusOptimistic?: (orderId: string, nextStatus: Order['status']) => () => void;
+  refresh?: () => Promise<void>;
+}
+
 export function useRealtimeOrders(opts: {
   locationId: string;
   statuses?: Order['status'][];
   limit?: number;
   enabled?: boolean;
   includePendingTableOrders?: boolean;
-}): Order[] {
+}): Order[] & {
+  mutateOrderStatusOptimistic: (orderId: string, nextStatus: Order['status']) => () => void;
+  refresh: () => Promise<void>;
+} {
   const { locationId, statuses, limit = 100, enabled = true, includePendingTableOrders = false } = opts;
   // Los callers pasan literales; key estable para las dependencias del efecto.
   const statusesKey = statuses?.join(',') ?? '';
   const [orders, setOrders] = useState<Order[]>([]);
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
+
+  /**
+   * Actualiza el estado de una orden optimísticamente en memoria sin esperar al servidor.
+   * Devuelve una función para revertir el cambio si la llamada remota falla.
+   */
+  const mutateOrderStatusOptimistic = useCallback(
+    (orderId: string, nextStatus: Order['status']) => {
+      let previousOrder: Order | undefined;
+
+      setOrders((prev) => {
+        const target = prev.find((o) => o.id === orderId);
+        if (!target) return prev;
+        previousOrder = { ...target };
+
+        return prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                status: nextStatus,
+                updated_at: new Date().toISOString(),
+              }
+            : o
+        );
+      });
+
+      // Retorna función de rollback
+      return () => {
+        if (!previousOrder) return;
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? (previousOrder as Order) : o))
+        );
+      };
+    },
+    []
+  );
 
   // Carga/refetch desde el servidor. Concilia con el estado actual para que
   // un refetch en vuelo no reviva estados viejos ni tape un pedido recién
@@ -227,5 +271,9 @@ export function useRealtimeOrders(opts: {
     };
   }, [locationId, statusesKey, limit, enabled, refresh]);
 
-  return orders;
+  // Retornar el array extendido con los helpers para evitar breaking changes
+  return Object.assign(orders, {
+    mutateOrderStatusOptimistic,
+    refresh,
+  });
 }
