@@ -416,6 +416,7 @@ export default function CheckoutClient({ locationId, slug }: CheckoutClientProps
                     setDeliveryZone(zone);
                     setIsDeliverable(deliverable);
                   }}
+                  onOrderTypeChange={setOrderType}
                 />
               )}
 
