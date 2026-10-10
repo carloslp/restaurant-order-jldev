@@ -12,9 +12,15 @@ import {
   ArrowRight,
   ShieldCheck,
   Edit2,
-  Check
+  Check,
+  UtensilsCrossed
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { 
+  EMPTY_CART_COPY, 
+  getCartLiveAnnouncement, 
+  FIRST_CATEGORY_SELECTORS 
+} from '@/features/cart/cartAccessibility';
 
 interface CartDrawerProps {
   slug: string;
@@ -37,6 +43,35 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
   const [editingCommentKey, setEditingCommentKey] = useState<string | null>(null);
   const [draftComment, setDraftComment] = useState('');
 
+  // Anuncio para lectores de pantalla ante cambios en el carrito
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const [lastAnnouncedCount, setLastAnnouncedCount] = useState(count);
+
+  useEffect(() => {
+    const msg = getCartLiveAnnouncement(count, lastAnnouncedCount);
+    if (msg) {
+      setLiveAnnouncement(msg);
+    }
+    setLastAnnouncedCount(count);
+  }, [count, lastAnnouncedCount]);
+
+  const handleExploreTopDishes = () => {
+    setOpen(false);
+    // Enfocar la primera categoría en el menú tras cerrar el drawer
+    setTimeout(() => {
+      const firstCategoryBtn = document.querySelector<HTMLButtonElement>(
+        FIRST_CATEGORY_SELECTORS
+      );
+      if (firstCategoryBtn) {
+        firstCategoryBtn.focus();
+        firstCategoryBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        const menuHeader = document.querySelector<HTMLElement>('#menu-principal, main');
+        menuHeader?.focus();
+      }
+    }, 150);
+  };
+
   // Bloquear scroll del body cuando el drawer esté abierto
   useEffect(() => {
     if (isOpen) {
@@ -53,6 +88,16 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Región aria-live para anunciar cambios de estado de forma accesible */}
+      <div 
+        role="status" 
+        aria-live="polite" 
+        className="sr-only"
+        data-testid="cart-live-announcer"
+      >
+        {liveAnnouncement}
+      </div>
+
       {/* Backdrop oscuro */}
       <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in"
@@ -85,7 +130,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
               <button
                 type="button"
                 onClick={() => clearCart()}
-                className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg border border-zinc-200 hover:border-red-200 hover:bg-red-50 transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg border border-zinc-200 hover:border-red-200 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                 title="Eliminar todos los productos del carrito"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -96,7 +141,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               aria-label="Cerrar carrito"
             >
               <X className="w-5 h-5" />
@@ -107,22 +152,28 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
         {/* Lista de productos */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 divide-y divide-zinc-100">
           {cart.items.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-              <div className="w-16 h-16 rounded-2xl bg-zinc-100 text-zinc-400 flex items-center justify-center">
-                <ShoppingBag className="w-8 h-8" />
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4" data-testid="cart-empty-state">
+              <div className="relative w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200/80 text-amber-600 flex items-center justify-center shadow-sm">
+                <UtensilsCrossed className="w-10 h-10 stroke-[1.75]" />
+                <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-orange-600 text-white text-[11px] font-black flex items-center justify-center shadow-sm">
+                  0
+                </span>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-zinc-800">Tu carrito está vacío</h3>
-                <p className="text-xs text-zinc-400 mt-1 max-w-xs">
-                  Aún no has agregado ningún platillo. Explora el menú para añadir tus opciones favoritas.
+              <div className="space-y-1.5 max-w-xs">
+                <h3 className="text-lg font-bold text-zinc-900 tracking-tight">
+                  {EMPTY_CART_COPY.heading}
+                </h3>
+                <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+                  {EMPTY_CART_COPY.description}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
-                className="mt-2 text-xs font-semibold text-orange-600 hover:text-orange-700 underline"
+                onClick={handleExploreTopDishes}
+                className="w-full sm:w-auto min-h-[48px] px-5 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-[0.98] text-white text-xs sm:text-sm font-bold shadow-md shadow-orange-600/20 transition-all flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 cursor-pointer"
               >
-                Volver al menú
+                <span>{EMPTY_CART_COPY.ctaText}</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           ) : (
@@ -192,7 +243,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                         <button
                           type="button"
                           onClick={() => setEditingCommentKey(null)}
-                          className="text-[11px] px-2 py-0.5 rounded text-zinc-500 hover:bg-zinc-200"
+                          className="text-[11px] px-2 py-0.5 rounded text-zinc-500 hover:bg-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         >
                           Cancelar
                         </button>
@@ -202,7 +253,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                             updateComments(key, draftComment);
                             setEditingCommentKey(null);
                           }}
-                          className="text-[11px] px-2 py-0.5 rounded bg-orange-600 text-white font-medium hover:bg-orange-700"
+                          className="text-[11px] px-2 py-0.5 rounded bg-orange-600 text-white font-medium hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         >
                           Guardar
                         </button>
@@ -222,7 +273,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                           setEditingCommentKey(key);
                           setDraftComment(item.comments || '');
                         }}
-                        className="text-[11px] text-amber-700 hover:text-amber-900 font-medium underline shrink-0 cursor-pointer"
+                        className="text-[11px] text-amber-700 hover:text-amber-900 font-medium underline shrink-0 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         title="Editar observación"
                       >
                         Editar
@@ -236,7 +287,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                           setEditingCommentKey(key);
                           setDraftComment('');
                         }}
-                        className="text-[11px] text-zinc-500 hover:text-orange-600 inline-flex items-center gap-1 hover:underline cursor-pointer"
+                        className="text-[11px] text-zinc-500 hover:text-orange-600 inline-flex items-center gap-1 hover:underline cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                       >
                         <span>+ Agregar nota al producto</span>
                       </button>
@@ -255,7 +306,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                             updateQuantity(key, item.quantity - 1);
                           }
                         }}
-                        className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors"
+                        className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         aria-label="Disminuir cantidad"
                       >
                         <Minus className="w-3 h-3" />
@@ -266,7 +317,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                       <button
                         type="button"
                         onClick={() => updateQuantity(key, item.quantity + 1)}
-                        className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors"
+                        className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         aria-label="Aumentar cantidad"
                       >
                         <Plus className="w-3 h-3" />
@@ -276,7 +327,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                     <button
                       type="button"
                       onClick={() => removeItem(key)}
-                      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-red-600 transition-colors px-2 py-1 rounded hover:bg-red-50"
+                      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-red-600 transition-colors px-2 py-1 rounded hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                       aria-label="Eliminar producto"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -307,7 +358,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
             <Link
               href={checkoutHref || `/${slug}/checkout`}
               onClick={() => setOpen(false)}
-              className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm py-3.5 px-4 rounded-xl shadow-lg shadow-orange-600/25 active:scale-[0.98] transition-all"
+              className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm py-3.5 px-4 rounded-xl shadow-lg shadow-orange-600/25 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
             >
               <span>{checkoutHref?.includes('mesa=') ? 'Enviar pedido a Cocina' : 'Ir al Checkout'}</span>
               <ArrowRight className="w-4 h-4" />

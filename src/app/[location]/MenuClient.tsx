@@ -361,20 +361,21 @@ export default function MenuClient({
       {/* Lista de Productos por Categoría */}
       <section className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
         {filteredProducts.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="w-12 h-12 bg-zinc-100 text-zinc-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <Search className="w-6 h-6" />
+          <div className="py-16 text-center" role="status" aria-live="polite">
+            <div className="w-14 h-14 bg-zinc-100 text-zinc-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <Search className="w-7 h-7" />
             </div>
             <h3 className="text-base font-bold text-zinc-800">No encontramos resultados</h3>
             <p className="text-xs text-zinc-500 mt-1 max-w-xs mx-auto">
-              Intenta con otra palabra clave o revisa la ortografía.
+              Intenta con otra palabra clave o revisa la ortografía de tu búsqueda.
             </p>
             {search && (
               <button
+                type="button"
                 onClick={() => setSearch('')}
-                className="mt-4 text-xs font-semibold text-orange-600 hover:text-orange-700 underline underline-offset-4"
+                className="mt-4 inline-flex items-center justify-center min-h-[44px] px-4 py-2 text-xs font-semibold text-orange-600 hover:text-orange-700 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-lg cursor-pointer"
               >
-                Limpiar búsqueda
+                Limpiar búsqueda y ver todo el menú
               </button>
             )}
           </div>
