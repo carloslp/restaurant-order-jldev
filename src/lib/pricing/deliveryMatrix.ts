@@ -30,6 +30,7 @@ export interface DeliveryFeeResult {
   isDeliverable: boolean;
   source: 'OSM_MATRIX' | 'HAVERSINE_FALLBACK' | 'TEST_PRESET' | 'FALLBACK_FLAT';
   reason?: string;
+  failedToCalculate?: boolean;
 }
 
 /**

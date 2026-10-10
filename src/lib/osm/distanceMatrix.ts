@@ -51,7 +51,7 @@ export interface OsmMatrixResponse {
 export async function getOsmDistanceMatrix(
   origin: Coordinates,
   destination: Coordinates,
-  timeoutMs = 4000
+  timeoutMs = 3000
 ): Promise<OsmMatrixResponse | null> {
   // Validar coordenadas
   if (
@@ -111,7 +111,7 @@ export async function getOsmDistanceMatrix(
  */
 export async function geocodeAddressWithOsm(
   address: string,
-  timeoutMs = 3500
+  timeoutMs = 3000
 ): Promise<Coordinates | null> {
   const normalized = address.trim().toLowerCase();
   if (!normalized) return null;
@@ -208,24 +208,28 @@ export async function calculateDeliveryFee(
       );
     }
 
-    destCoords = await geocodeAddressWithOsm(input.destinationAddress);
+    destCoords = await geocodeAddressWithOsm(input.destinationAddress, 3000);
   }
 
   // 3. Si no hay coordenadas de destino disponibles, usar tarifa fallback fija
   if (!destCoords) {
+    const isExplicitAddress = Boolean(input.destinationAddress && input.destinationAddress.trim().length > 0);
     return {
       fee: input.localFallbackFee ?? config.fallbackFlatFee,
       distanceKm: 0,
       tier: null,
-      zoneName: 'Tarifa Fija (Sin geolocalizar)',
+      zoneName: isExplicitAddress ? 'Por confirmar' : 'Tarifa Fija (Sin geolocalizar)',
       isDeliverable: true,
       source: 'FALLBACK_FLAT',
-      reason: 'No se pudieron determinar las coordenadas del domicilio; se aplica tarifa base.',
+      failedToCalculate: isExplicitAddress,
+      reason: isExplicitAddress
+        ? 'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte'
+        : 'No se pudieron determinar las coordenadas del domicilio; se aplica tarifa base.',
     };
   }
 
   // 4. Intentar obtener distancia vial real con OpenStreetMap (OSRM)
-  const osmResult = await getOsmDistanceMatrix(input.origin, destCoords);
+  const osmResult = await getOsmDistanceMatrix(input.origin, destCoords, 3000);
   if (osmResult) {
     return evaluateDeliveryMatrix(
       osmResult.distanceKm,
@@ -237,10 +241,16 @@ export async function calculateDeliveryFee(
 
   // 5. Fallback a distancia geodésica con Haversine + factor vial
   const fallbackDistanceKm = calculateHaversineDistanceKm(input.origin, destCoords);
-  return evaluateDeliveryMatrix(
+  const fallbackResult = evaluateDeliveryMatrix(
     fallbackDistanceKm,
     config,
     'HAVERSINE_FALLBACK',
     Math.round(fallbackDistanceKm * 2.8)
   );
+
+  return {
+    ...fallbackResult,
+    failedToCalculate: true,
+    reason: 'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte',
+  };
 }

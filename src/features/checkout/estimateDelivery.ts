@@ -16,6 +16,7 @@ export interface EstimateDeliveryResult {
   ok: boolean;
   error?: string;
   data?: DeliveryFeeResult;
+  calculationFailed?: boolean;
 }
 
 // Coordenadas fallback por defecto si el local aún no tiene coordenadas cargadas en la BD (CDMX Centro)
@@ -46,6 +47,15 @@ export async function estimateDeliveryFee(
       localFallbackFee: local.delivery_fee,
     });
 
+    if (result.failedToCalculate) {
+      return {
+        ok: true,
+        calculationFailed: true,
+        data: result,
+        error: 'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte',
+      };
+    }
+
     return {
       ok: true,
       data: result,
@@ -54,7 +64,8 @@ export async function estimateDeliveryFee(
     console.error('estimateDeliveryFee error:', error);
     return {
       ok: false,
-      error: 'No se pudo estimar el costo de envío.',
+      calculationFailed: true,
+      error: 'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte',
     };
   }
 }

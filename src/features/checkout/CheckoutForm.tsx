@@ -87,6 +87,7 @@ export function CheckoutForm({
   const [submitting, setSubmitting] = useState(false);
   const [estimating, setEstimating] = useState(false);
   const [estimation, setEstimation] = useState<DeliveryFeeResult | null>(null);
+  const [estimationError, setEstimationError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     ok: boolean;
     error?: string;
@@ -98,9 +99,14 @@ export function CheckoutForm({
     async (addr?: string, testKey?: string) => {
       if (orderType !== 'DOMICILIO') return;
       const targetAddress = addr ?? (form.delivery_address as string | undefined);
-      if (!targetAddress?.trim() && !testKey) return;
+      if (!targetAddress?.trim() && !testKey) {
+        setEstimation(null);
+        setEstimationError(null);
+        return;
+      }
 
       setEstimating(true);
+      setEstimationError(null);
       try {
         const res = await estimateDeliveryFee({
           locationId,
@@ -110,10 +116,29 @@ export function CheckoutForm({
 
         if (res.ok && res.data) {
           setEstimation(res.data);
-          onDeliveryEstimationChange?.(res.data.fee, res.data.zoneName, res.data.isDeliverable);
+          if (res.calculationFailed || res.data.failedToCalculate) {
+            setEstimationError(
+              'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte'
+            );
+            onDeliveryEstimationChange?.(res.data.fee, 'Por confirmar al contactarte', true);
+          } else {
+            setEstimationError(null);
+            onDeliveryEstimationChange?.(res.data.fee, res.data.zoneName, res.data.isDeliverable);
+          }
+        } else {
+          setEstimation(null);
+          setEstimationError(
+            'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte'
+          );
+          onDeliveryEstimationChange?.(0, 'Por confirmar al contactarte', true);
         }
       } catch (err) {
         console.error('Error estimando tarifa de envío:', err);
+        setEstimation(null);
+        setEstimationError(
+          'No pudimos calcular la distancia exacta. El costo de envío se confirmará al contactarte'
+        );
+        onDeliveryEstimationChange?.(0, 'Por confirmar al contactarte', true);
       } finally {
         setEstimating(false);
       }
@@ -152,6 +177,8 @@ export function CheckoutForm({
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      // CA-1: Bloqueo de doble clic (Idempotencia de UI)
+      if (submitting) return;
       setSubmitting(true);
       setResult(null);
 
@@ -496,15 +523,43 @@ export function CheckoutForm({
                   </p>
                 )}
 
-                {/* Estado de estimación de distancia */}
+                {/* Estado de estimación de distancia con feedback visual */}
                 {estimating && (
-                  <div className="mt-2 flex items-center gap-2 p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/60 text-xs text-orange-800 animate-pulse">
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-2.5 flex items-center gap-2 p-3 rounded-xl bg-orange-50/90 border border-orange-200/80 text-xs text-orange-900 animate-pulse font-medium"
+                  >
                     <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
                     <span>Calculando costo de entrega y distancia...</span>
                   </div>
                 )}
 
-                {!estimating && estimation && (
+                {/* CA-2: Manejo de fallo en cálculo de distancia OSM con alerta accesible y reintento */}
+                {!estimating && estimationError && (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className="mt-2.5 p-3.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200 shadow-2xs"
+                  >
+                    <div className="flex items-start sm:items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+                      <span className="font-semibold text-amber-900">
+                        {estimationError}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => runEstimation(form.delivery_address as string)}
+                      disabled={estimating || submitting}
+                      className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-all shadow-2xs self-end sm:self-auto shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {!estimating && !estimationError && estimation && (
                   <div
                     className={`mt-2 p-3 rounded-xl border text-xs transition-all ${
                       estimation.isDeliverable
@@ -605,21 +660,28 @@ export function CheckoutForm({
         </div>
       )}
 
-      {/* Botón de envío */}
+      {/* Botón de envío - CA-1: Bloqueo de doble clic (Idempotencia de UI) y estado loading */}
       <div className="pt-4">
         <button
           type="submit"
-          disabled={submitting}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-lg shadow-orange-600/25 hover:bg-orange-700 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition-all select-none"
+          disabled={submitting || (orderType === 'DOMICILIO' && estimating)}
+          aria-busy={submitting}
+          className={`w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-lg shadow-orange-600/25 hover:bg-orange-700 active:scale-[0.99] transition-all select-none ${
+            submitting
+              ? 'pointer-events-none opacity-70 cursor-not-allowed'
+              : (orderType === 'DOMICILIO' && estimating)
+                ? 'opacity-60 cursor-not-allowed'
+                : 'cursor-pointer'
+          }`}
         >
           {submitting ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Confirmando y enviando a cocina...</span>
+              <span>Procesando pedido...</span>
             </>
           ) : (
             <>
-              <span>{orderType === 'EN_MESA' ? 'Enviar comanda a cocina' : 'Confirmar y realizar pedido'}</span>
+              <span>{orderType === 'EN_MESA' ? 'Confirmar Pedido (Mesa)' : 'Confirmar Pedido'}</span>
               <ArrowRight className="w-5 h-5" />
             </>
           )}
