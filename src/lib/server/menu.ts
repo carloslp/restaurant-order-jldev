@@ -377,6 +377,61 @@ export async function updateProduct(id: string, payload: z.infer<typeof ProductS
   return data as Product;
 }
 
+export async function toggleProductAvailability(
+  productId: string,
+  isAvailable: boolean
+): Promise<{ ok: boolean; product?: Product; error?: string }> {
+  try {
+    const staff = await getStaffContext();
+    const supabase = createServerClient();
+
+    await supabase.rpc('set_config', {
+      name: 'app.local_id',
+      value: staff.location_id,
+      is_local: true,
+    });
+
+    const { data, error } = await supabase
+      .from('products')
+      .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
+      .eq('id', productId)
+      .eq('location_id', staff.location_id)
+      .select('id, location_id, category_id, name, description, image_url, base_price, is_available')
+      .single();
+
+    if (error || !data) {
+      console.error('toggleProductAvailability error:', error);
+      return {
+        ok: false,
+        error: 'No se pudo actualizar el estado del platillo',
+      };
+    }
+
+    // Obtener slug del local para revalidar el menú público y staff
+    const { data: local } = await supabase
+      .from('locals')
+      .select('slug')
+      .eq('id', staff.location_id)
+      .maybeSingle();
+
+    if (local?.slug) {
+      revalidatePath(`/${local.slug}`);
+      revalidatePath(`/${local.slug}/checkout`);
+    }
+    revalidatePath('/staff/kds');
+    revalidatePath('/staff/caja');
+    revalidatePath('/staff/admin');
+
+    return { ok: true, product: data as Product };
+  } catch (err) {
+    console.error('toggleProductAvailability catch:', err);
+    return {
+      ok: false,
+      error: 'No se pudo actualizar el estado del platillo',
+    };
+  }
+}
+
 export async function deleteProduct(id: string) {
   const staff = await getStaffContext();
   const supabase = createServerClient();

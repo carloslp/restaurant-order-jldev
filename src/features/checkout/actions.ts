@@ -124,8 +124,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   let items_subtotal = 0;
   for (const item of input.cart.items) {
     const product = products.find((p) => p.id === item.product_id);
-    if (!product) return { ok: false, error: `Producto inválido: ${item.product_name}` };
-    if (!product.is_available) return { ok: false, error: `${product.name} no está disponible` };
+    if (!product) return { ok: false, error: `El producto "${item.product_name}" ya no está disponible en el menú. Remuévelo o reemplázalo para continuar.` };
+    if (!product.is_available) {
+      return {
+        ok: false,
+        error: `El platillo "${product.name}" se ha agotado. Por favor remuévelo o reemplázalo en tu carrito para continuar con el pedido.`,
+      };
+    }
 
     // Validar modificadores contra la BD
     const mods: CartItemModifiers[] = [];

@@ -10,6 +10,8 @@ import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import { toUserMessage } from '@/lib/errors';
 import type { Order, RestaurantTable, PaymentMethod } from '@/lib/types';
 import { formatMXN } from '@/lib/pricing';
+import { Ban, UtensilsCrossed } from 'lucide-react';
+import { ProductAvailabilityManager } from '@/features/staff/ProductAvailabilityManager';
 
 interface CashierViewProps {
   locationId: string;
@@ -82,6 +84,7 @@ export function CashierView({ locationId }: CashierViewProps) {
   const [chargingTableId, setChargingTableId] = useState<string | null>(null);
   const [tablePaymentMethods, setTablePaymentMethods] = useState<Record<string, PaymentMethod>>({});
   const [preCuentaTable, setPreCuentaTable] = useState<TableAccountGroup | null>(null);
+  const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
 
   useEffect(() => {
     if (!copiedOrderId) return;
@@ -301,45 +304,63 @@ export function CashierView({ locationId }: CashierViewProps) {
           </p>
         </div>
 
-        {/* Selector de Pestañas */}
-        <div className="flex bg-zinc-100 p-1 rounded-xl border border-zinc-200 self-start sm:self-auto">
+        {/* Selector de Pestañas y Disponibilidad Rápida */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setActiveTab('mesas')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'mesas'
-                ? 'bg-white text-orange-600 shadow-xs ring-1 ring-black/5'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
+            type="button"
+            onClick={() => setIsAvailabilityOpen(true)}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 cursor-pointer"
           >
-            <span>🍽️ Cuentas de Mesa (QR)</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
-                activeTab === 'mesas' ? 'bg-orange-100 text-orange-700' : 'bg-zinc-200 text-zinc-700'
-              }`}
-            >
-              {tableGroups.length}
-            </span>
+            <Ban className="w-4 h-4 text-red-400" />
+            <span>Agotados (86) / Menú</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('delivery')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'delivery'
-                ? 'bg-white text-indigo-600 shadow-xs ring-1 ring-black/5'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
-          >
-            <span>🛵 Delivery y Para Llevar</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
-                activeTab === 'delivery' ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-200 text-zinc-700'
+          <div className="flex bg-zinc-100 p-1 rounded-xl border border-zinc-200 self-start sm:self-auto">
+            <button
+              onClick={() => setActiveTab('mesas')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'mesas'
+                  ? 'bg-white text-orange-600 shadow-xs ring-1 ring-black/5'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              {deliveryOrders.length}
-            </span>
-          </button>
+              <span>🍽️ Cuentas de Mesa (QR)</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                  activeTab === 'mesas' ? 'bg-orange-100 text-orange-700' : 'bg-zinc-200 text-zinc-700'
+                }`}
+              >
+                {tableGroups.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('delivery')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'delivery'
+                  ? 'bg-white text-indigo-600 shadow-xs ring-1 ring-black/5'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <span>🛵 Delivery y Para Llevar</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                  activeTab === 'delivery' ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-200 text-zinc-700'
+                }`}
+              >
+                {deliveryOrders.length}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Modal de disponibilidad rápida */}
+      <ProductAvailabilityManager
+        locationId={locationId}
+        isOpen={isAvailabilityOpen}
+        onClose={() => setIsAvailabilityOpen(false)}
+      />
 
       {/* Alertas */}
       {error && (

@@ -133,13 +133,12 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
             },
             (payload: RealtimePostgresChangesPayload<ProductAvailabilityRow>) => {
               if (!mounted) return;
-              const newProduct = payload.new as ProductAvailabilityRow;
-              const oldProduct = payload.old as ProductAvailabilityRow;
-
-              // Solo reaccionar si cambió is_available y es un producto que nos interesa
+              const newProduct = payload.new as ProductAvailabilityRow | undefined;
+              // Reaccionar cuando se actualiza is_available y es un producto que nos interesa
               if (
-                newProduct.is_available !== oldProduct.is_available &&
-                trackedIds.includes(newProduct.id)
+                newProduct &&
+                typeof newProduct.is_available === 'boolean' &&
+                (trackedIds.length === 0 || trackedIds.includes(newProduct.id))
               ) {
                 setAvailability((prev) => ({
                   ...prev,

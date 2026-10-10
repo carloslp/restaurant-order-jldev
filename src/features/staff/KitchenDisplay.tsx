@@ -11,7 +11,8 @@ import {
   getKdsActionConfig,
 } from '@/features/staff/kdsUtils';
 import type { Order } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Ban, UtensilsCrossed } from 'lucide-react';
+import { ProductAvailabilityManager } from '@/features/staff/ProductAvailabilityManager';
 
 interface KitchenDisplayProps {
   locationId: string;
@@ -38,6 +39,7 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
   const [pendingOrder, setPendingOrder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
+  const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
 
   // Actualizador en vivo de tiempo transcurrido cada 15 segundos para alertas en KDS
   useEffect(() => {
@@ -76,7 +78,7 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">
             Pantalla de Cocina (KDS)
@@ -85,13 +87,33 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
             Comandas activas en tiempo real para preparación y despacho
           </p>
         </div>
-        {(pending || pendingOrder) && (
-          <div className="flex items-center gap-1.5 text-xs text-orange-600 font-bold bg-orange-50 px-3 py-1.5 rounded-full border border-orange-200">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>Actualizando comanda...</span>
-          </div>
-        )}
+        
+        <div className="flex items-center gap-2">
+          {/* CA-1 & CA-8: Botón contextual de disponibilidad rápida en KDS (mínimo 44x44 px) */}
+          <button
+            type="button"
+            onClick={() => setIsAvailabilityOpen(true)}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 cursor-pointer"
+          >
+            <Ban className="w-4 h-4 text-red-400" />
+            <span>Agotados (86) / Menú</span>
+          </button>
+
+          {(pending || pendingOrder) && (
+            <div className="flex items-center gap-1.5 text-xs text-orange-600 font-bold bg-orange-50 px-3 py-1.5 rounded-full border border-orange-200">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Actualizando comanda...</span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Modal de disponibilidad rápida */}
+      <ProductAvailabilityManager
+        locationId={locationId}
+        isOpen={isAvailabilityOpen}
+        onClose={() => setIsAvailabilityOpen(false)}
+      />
 
       {error && (
         <div className="rounded-xl bg-red-50 border border-red-200 p-3.5 text-sm text-red-700 font-medium">
