@@ -9,6 +9,15 @@ import { AdminStaff } from '@/features/admin/AdminStaff';
 import { AdminReports } from '@/features/admin/AdminReports';
 import { AdminLocals } from '@/features/admin/AdminLocals';
 import { getPendingReservationsCount } from '@/lib/server/reservations';
+import { 
+  LayoutDashboard, 
+  UtensilsCrossed, 
+  CalendarDays, 
+  BadgePercent, 
+  BarChart3, 
+  Users, 
+  Store 
+} from 'lucide-react';
 import type { Staff, Local } from '@/lib/types';
 
 interface AdminViewProps {
@@ -17,6 +26,13 @@ interface AdminViewProps {
 }
 
 type AdminTab = 'dashboard' | 'menu' | 'discounts' | 'reservations' | 'staff' | 'reports' | 'locals';
+
+interface TabItem {
+  id: AdminTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  showBadge?: boolean;
+}
 
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -34,92 +50,64 @@ export function AdminView({ staff, local }: AdminViewProps) {
     };
   }, [activeTab]);
 
+  const tabs: TabItem[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'menu', label: 'Menú', icon: UtensilsCrossed },
+    { id: 'reservations', label: 'Reservas', icon: CalendarDays, showBadge: true },
+    { id: 'discounts', label: 'Descuentos', icon: BadgePercent },
+    { id: 'reports', label: 'Reportes', icon: BarChart3 },
+    { id: 'staff', label: 'Staff', icon: Users },
+    { id: 'locals', label: 'Locales', icon: Store },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Cabecera y Submenú Adaptable a Móvil */}
+      <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Panel de administración</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Bienvenido, {staff.full_name}. Control total del local {local?.name}.
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+            Panel de administración
+          </h1>
+          <p className="mt-0.5 text-xs sm:text-sm text-gray-500 font-medium">
+            Bienvenido, <span className="font-semibold text-gray-700">{staff.full_name}</span>. Control total del local {local?.name}.
           </p>
         </div>
-        <nav className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                  <button
-                    onClick={() => setActiveTab('dashboard')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'dashboard'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Dashboard
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('menu')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'menu'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Menú
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('reservations')}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'reservations'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    <span>Reservas</span>
-                    {pendingReservationsCount > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-xs bg-amber-500 text-white font-extrabold animate-pulse">
-                        {pendingReservationsCount}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('discounts')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'discounts'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Descuentos
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('reports')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'reports'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Reportes
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('staff')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'staff'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Staff
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('locals')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                      activeTab === 'locals'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Locales
-                  </button>
-                </nav>
+
+        {/* Submenú de administración con scroll horizontal suave y táctil */}
+        <div className="relative -mx-4 px-4 sm:mx-0 sm:px-0">
+          <nav 
+            aria-label="Submenú de administración"
+            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth p-1.5 bg-zinc-100/90 rounded-2xl border border-zinc-200/80 shadow-xs"
+          >
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex items-center gap-2 px-3.5 sm:px-4 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 active:scale-95 ${
+                    isActive
+                      ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200/60'
+                      : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-orange-600' : 'text-zinc-500'}`} />
+                  <span>{tab.label}</span>
+                  {tab.showBadge && pendingReservationsCount > 0 && (
+                    <span 
+                      aria-label={`${pendingReservationsCount} reservas pendientes`}
+                      className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-black bg-amber-500 text-white shadow-xs animate-pulse"
+                    >
+                      {pendingReservationsCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </div>
 
       {activeTab === 'dashboard' && (

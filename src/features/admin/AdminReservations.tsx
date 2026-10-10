@@ -313,83 +313,85 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
       </div>
 
       {/* Barra de Navegación de Secciones */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
-        <nav className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('pending')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'pending'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            <Inbox className="w-4 h-4" />
-            <span>Pendientes</span>
-            {pendingReservations.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500 text-white font-extrabold animate-pulse">
-                {pendingReservations.length}
-              </span>
-            )}
-          </button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-200 pb-3">
+        <div className="relative -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto no-scrollbar">
+          <nav className="flex items-center gap-1.5 py-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('pending')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'pending'
+                  ? 'bg-zinc-900 text-white shadow-md'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <Inbox className="w-4 h-4 shrink-0" />
+              <span>Pendientes</span>
+              {pendingReservations.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-amber-500 text-white font-extrabold animate-pulse">
+                  {pendingReservations.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('calendar')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'calendar'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            <CalendarIcon className="w-4 h-4" />
-            <span>Agenda / Calendario</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'calendar'
+                  ? 'bg-zinc-900 text-white shadow-md'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4 shrink-0" />
+              <span>Agenda / Calendario</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('tables')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'tables'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4 text-emerald-500" />
-            <span>Sala y Mesas (Hostess & QR)</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tables')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'tables'
+                  ? 'bg-zinc-900 text-white shadow-md'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0 text-emerald-500" />
+              <span>Sala y Mesas (Hostess & QR)</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('shifts')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'shifts'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            <Clock className="w-4 h-4 text-orange-500" />
-            <span>Turnos y Horarios</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('shifts')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'shifts'
+                  ? 'bg-zinc-900 text-white shadow-md'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <Clock className="w-4 h-4 shrink-0 text-orange-500" />
+              <span>Turnos y Horarios</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('capacity')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'capacity'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            <span>Aforo Global</span>
-          </button>
-        </nav>
+            <button
+              type="button"
+              onClick={() => setActiveTab('capacity')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'capacity'
+                  ? 'bg-zinc-900 text-white shadow-md'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <Sliders className="w-4 h-4 shrink-0" />
+              <span>Aforo Global</span>
+            </button>
+          </nav>
+        </div>
 
         <button
           type="button"
           onClick={handleNewReservation}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold shadow-md shadow-orange-600/20 transition-all cursor-pointer shrink-0"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-orange-600/20 transition-all select-none cursor-pointer shrink-0 active:scale-95 w-full sm:w-auto"
         >
           <Plus className="w-4 h-4" />
           Nueva Reserva Manual
