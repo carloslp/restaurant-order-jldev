@@ -16,8 +16,9 @@ import { X, Check, AlertCircle, Plus, Minus } from 'lucide-react';
 interface Props {
   product: Product;
   initialQuantity?: number;
-  onConfirm: (modifiers: CartItemModifiers[], comments: string, quantity?: number) => void;
+  onConfirm?: (modifiers: CartItemModifiers[], comments: string, quantity?: number) => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
 export default function ModifierSelector({
@@ -25,6 +26,7 @@ export default function ModifierSelector({
   initialQuantity = 1,
   onConfirm,
   onCancel,
+  readOnly = false,
 }: Props) {
   const groups = product.modifier_groups || [];
 
@@ -180,7 +182,7 @@ export default function ModifierSelector({
         })),
     }));
 
-    onConfirm(modifiers, comments, quantity);
+    onConfirm?.(modifiers, comments, quantity);
   };
 
   return (
@@ -373,99 +375,120 @@ export default function ModifierSelector({
             );
           })}
 
-          {/* Instrucciones de preparación / comentarios */}
-          <div className="pt-2">
-            <label
-              htmlFor="product-comments"
-              className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-2 flex items-center justify-between"
-            >
-              <span>Instrucciones de preparación / comentarios</span>
-              <span className="text-xs text-zinc-600 font-medium normal-case">
-                Opcional · máx. 250 caract.
-              </span>
-            </label>
-            <textarea
-              id="product-comments"
-              rows={3}
-              value={comments}
-              onChange={(e) => setComments(e.target.value)}
-              autoFocus={groups.length === 0}
-              placeholder="Ej. Sin cebolla, término medio, salsa aparte, alérgico a..."
-              className="w-full min-h-[48px] rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white p-3 text-sm text-zinc-900 placeholder:text-zinc-500 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all resize-none"
-              maxLength={250}
-            />
-          </div>
+          {/* Instrucciones de preparación / comentarios (solo en modo pedido) */}
+          {!readOnly && (
+            <div className="pt-2">
+              <label
+                htmlFor="product-comments"
+                className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-2 flex items-center justify-between"
+              >
+                <span>Instrucciones de preparación / comentarios</span>
+                <span className="text-xs text-zinc-600 font-medium normal-case">
+                  Opcional · máx. 250 caract.
+                </span>
+              </label>
+              <textarea
+                id="product-comments"
+                rows={3}
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                autoFocus={groups.length === 0}
+                placeholder="Ej. Sin cebolla, término medio, salsa aparte, alérgico a..."
+                className="w-full min-h-[48px] rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white p-3 text-sm text-zinc-900 placeholder:text-zinc-500 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all resize-none"
+                maxLength={250}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Footer fijo con selector de cantidad, resumen de precio y botón de acción */}
+        {/* Footer fijo con selector de cantidad o vista informativa */}
         <div className="p-4 sm:p-5 border-t border-zinc-100 bg-zinc-50/95 backdrop-blur-xs pb-safe shrink-0">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
-                Cantidad:
-              </span>
-              <div className="flex items-center bg-white rounded-xl border border-zinc-300 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  disabled={quantity <= 1}
-                  className="min-w-[48px] min-h-[48px] rounded-l-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-                  aria-label="Disminuir cantidad"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-8 text-center font-bold text-sm text-zinc-900 select-none">
-                  {quantity}
+          {readOnly ? (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <span className="text-xs text-zinc-500 block font-medium">Precio</span>
+                <span className="text-xl font-extrabold text-zinc-900">
+                  {formatMXN(product.base_price)}
                 </span>
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="min-h-[48px] px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-95 transition-all cursor-pointer shadow-sm"
+              >
+                Cerrar detalles
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3 px-1">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+                    Cantidad:
+                  </span>
+                  <div className="flex items-center bg-white rounded-xl border border-zinc-300 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      disabled={quantity <= 1}
+                      className="min-w-[48px] min-h-[48px] rounded-l-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                      aria-label="Disminuir cantidad"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center font-bold text-sm text-zinc-900 select-none">
+                      {quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => q + 1)}
+                      className="min-w-[48px] min-h-[48px] rounded-r-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                      aria-label="Aumentar cantidad"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-xs font-semibold text-zinc-600 block uppercase tracking-wider">
+                    Precio total
+                  </span>
+                  <span className="text-xl font-extrabold text-orange-600">
+                    {formatMXN(totalPrice)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setQuantity((q) => q + 1)}
-                  className="min-w-[48px] min-h-[48px] rounded-r-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-                  aria-label="Aumentar cantidad"
+                  onClick={onCancel}
+                  className="min-h-[48px] min-w-[44px] px-4 py-3 rounded-xl text-sm font-bold text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 active:scale-95 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
                 >
-                  <Plus className="w-4 h-4" />
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={!actionButtonState.isValid}
+                  className={`min-h-[48px] min-w-[44px] flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center justify-center text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                    actionButtonState.isValid
+                      ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/25 cursor-pointer'
+                      : 'bg-zinc-200 text-zinc-700 shadow-none cursor-not-allowed border border-zinc-300'
+                  }`}
+                  aria-label={
+                    actionButtonState.isValid
+                      ? `Agregar al pedido por ${actionButtonState.formattedPrice}`
+                      : actionButtonState.buttonText
+                  }
+                >
+                  {actionButtonState.buttonText}
                 </button>
               </div>
-            </div>
-
-            <div className="text-right">
-              <span className="text-xs font-semibold text-zinc-600 block uppercase tracking-wider">
-                Precio total
-              </span>
-              <span className="text-xl font-extrabold text-orange-600">
-                {formatMXN(totalPrice)}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="min-h-[48px] min-w-[44px] px-4 py-3 rounded-xl text-sm font-bold text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 active:scale-95 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-            >
-              Cancelar
-            </button>
-
-            {/* US-01: Botón de acción con texto contextual y precio dinámico */}
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={!actionButtonState.isValid}
-              className={`min-h-[48px] min-w-[44px] flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center justify-center text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
-                actionButtonState.isValid
-                  ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/25 cursor-pointer'
-                  : 'bg-zinc-200 text-zinc-700 shadow-none cursor-not-allowed border border-zinc-300'
-              }`}
-              aria-label={
-                actionButtonState.isValid
-                  ? `Agregar al pedido por ${actionButtonState.formattedPrice}`
-                  : actionButtonState.buttonText
-              }
-            >
-              {actionButtonState.buttonText}
-            </button>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>

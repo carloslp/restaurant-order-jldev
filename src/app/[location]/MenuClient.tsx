@@ -27,7 +27,15 @@ import {
 } from 'lucide-react';
 
 interface Props {
-  local: { name: string; slug: string; iva_rate: number; delivery_fee: number; is_open?: boolean } | null;
+  local: { 
+    name: string; 
+    slug: string; 
+    iva_rate: number; 
+    delivery_fee: number; 
+    is_open?: boolean;
+    is_catalog_only?: boolean;
+    reservations_enabled?: boolean;
+  } | null;
   locationId: string;
   categories: Category[];
   products: Product[];
@@ -202,12 +210,14 @@ export default function MenuClient({
                   {local.is_open !== false ? (
                     <>
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-emerald-400 font-medium">Abierto para pedidos</span>
+                      <span className="text-emerald-400 font-medium">
+                        {local.is_catalog_only ? 'Abierto' : 'Abierto para pedidos'}
+                      </span>
                     </>
                   ) : (
                     <>
                       <span className="inline-block w-2 h-2 rounded-full bg-rose-500" />
-                      <span className="text-rose-400 font-semibold">Cerrado para pedidos</span>
+                      <span className="text-rose-400 font-semibold">Cerrado</span>
                     </>
                   )}
                   <span>·</span>
@@ -229,28 +239,32 @@ export default function MenuClient({
                   Envío: {formatMXN(local.delivery_fee)}
                 </span>
               )}
-              <Link
-                href={`/${local.slug}/reservar`}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer border border-white/15"
-                title="Reservar una mesa en este restaurante"
-              >
-                <Calendar className="w-3.5 h-3.5 text-orange-400" />
-                <span>Reservar Mesa</span>
-              </Link>
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
-                title="Ver carrito de compras"
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>Carrito</span>
-                {cartItemsCount > 0 && (
-                  <span className="bg-white text-orange-600 font-extrabold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                    {cartItemsCount}
-                  </span>
-                )}
-              </button>
+              {local?.reservations_enabled !== false && (
+                <Link
+                  href={`/${local.slug}/reservar`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer border border-white/15"
+                  title="Reservar una mesa en este restaurante"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-orange-400" />
+                  <span>Reservar Mesa</span>
+                </Link>
+              )}
+              {!local?.is_catalog_only && (
+                <button
+                  type="button"
+                  onClick={() => setOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="Ver carrito de compras"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Carrito</span>
+                  {cartItemsCount > 0 && (
+                    <span className="bg-white text-orange-600 font-extrabold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                      {cartItemsCount}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -299,6 +313,7 @@ export default function MenuClient({
           </div>
         </div>
       )}
+
 
       {/* Barra de Filtros y Búsqueda */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-xs">
@@ -480,14 +495,18 @@ export default function MenuClient({
                               ))}
                           </div>
 
-                          {/* Enlace para personalizar o agregar nota directamente */}
+                          {/* Enlace para personalizar o consultar opciones */}
                           {available && (
                             <button
                               type="button"
                               onClick={() => setModifierProduct(p)}
                               className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 font-semibold cursor-pointer mt-2.5 hover:underline"
                             >
-                              <span>✍️ Personalizar / Agregar nota</span>
+                              <span>
+                                {local?.is_catalog_only 
+                                  ? '🔍 Ver opciones e ingredientes' 
+                                  : '✍️ Personalizar / Agregar nota'}
+                              </span>
                             </button>
                           )}
                         </div>
@@ -501,41 +520,51 @@ export default function MenuClient({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            {/* Stepper táctil ergonómico (≥ 44×44 px y foco accesible) */}
-                            {available && (
-                              <div className="flex items-center bg-zinc-100 rounded-xl p-0.5 border border-zinc-200">
-                                <button
-                                  type="button"
-                                  onClick={() => updateQuantity(p.id, -1)}
-                                  disabled={qty <= 1}
-                                  className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-                                  aria-label="Disminuir cantidad"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                                <span className="w-7 text-center font-bold text-xs text-zinc-800 select-none">
-                                  {qty}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateQuantity(p.id, 1)}
-                                  className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-                                  aria-label="Aumentar cantidad"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
+                          {local?.is_catalog_only ? (
+                            <button
+                              type="button"
+                              onClick={() => setModifierProduct(p)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 hover:text-zinc-900 transition-colors cursor-pointer"
+                            >
+                              Ver detalles
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {/* Stepper táctil ergonómico (≥ 44×44 px y foco accesible) */}
+                              {available && (
+                                <div className="flex items-center bg-zinc-100 rounded-xl p-0.5 border border-zinc-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(p.id, -1)}
+                                    disabled={qty <= 1}
+                                    className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                                    aria-label="Disminuir cantidad"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className="w-7 text-center font-bold text-xs text-zinc-800 select-none">
+                                    {qty}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(p.id, 1)}
+                                    className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                                    aria-label="Aumentar cantidad"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
 
-                            {/* Botón de agregar */}
-                            <AddToCartButton
-                              product={p}
-                              quantity={qty}
-                              onAdd={addToCart}
-                              disabled={!available}
-                            />
-                          </div>
+                              {/* Botón de agregar */}
+                              <AddToCartButton
+                                product={p}
+                                quantity={qty}
+                                onAdd={addToCart}
+                                disabled={!available}
+                              />
+                            </div>
+                          )}
                         </div>
                       </article>
                     );
@@ -547,8 +576,8 @@ export default function MenuClient({
         )}
       </section>
 
-      {/* Barra flotante inferior de Carrito estilo App */}
-      {cart.items.length > 0 && (
+      {/* Barra flotante inferior de Carrito estilo App (solo en modo pedidos) */}
+      {!local?.is_catalog_only && cart.items.length > 0 && (
         <aside className="fixed bottom-4 inset-x-0 z-30 flex justify-center px-4 pointer-events-none pb-safe">
           <div
             className="pointer-events-auto w-full max-w-md bg-zinc-950 text-white rounded-2xl p-3 sm:p-3.5 shadow-2xl shadow-zinc-950/40 border border-white/10 flex items-center justify-between gap-3 hover:bg-zinc-900 transition-all"
@@ -589,19 +618,22 @@ export default function MenuClient({
         </aside>
       )}
 
-      {/* Cart Drawer para ver/editar/vaciar pedido en el menú */}
-      <CartDrawer 
-        slug={local.slug} 
-        checkoutHref={mesaParam 
-          ? `/${local.slug}/checkout?mesa=${encodeURIComponent(mesaParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`
-          : undefined} 
-      />
+      {/* Cart Drawer para ver/editar/vaciar pedido en el menú (solo en modo pedidos) */}
+      {!local?.is_catalog_only && (
+        <CartDrawer 
+          slug={local.slug} 
+          checkoutHref={mesaParam 
+            ? `/${local.slug}/checkout?mesa=${encodeURIComponent(mesaParam)}${tokenParam ? `&token=${encodeURIComponent(tokenParam)}` : ''}`
+            : undefined} 
+        />
+      )}
 
       {/* Selector Modal / Bottom-Sheet de Modificadores */}
       {modifierProduct && (
         <ModifierSelector
           product={modifierProduct}
           initialQuantity={quantities[modifierProduct.id] ?? 1}
+          readOnly={Boolean(local?.is_catalog_only)}
           onConfirm={(modifiers, comments, qty) => {
             const finalQty = qty ?? quantities[modifierProduct.id] ?? 1;
             addItem(modifierProduct, finalQty, modifiers, comments);

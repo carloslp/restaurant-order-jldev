@@ -55,6 +55,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   if (local.is_open === false) {
     return { ok: false, error: 'Esta sucursal se encuentra cerrada para pedidos en este momento.' };
   }
+  if (local.is_catalog_only) {
+    return { ok: false, error: 'Esta sucursal tiene el menú en modo solo visualización. No se aceptan pedidos en línea.' };
+  }
   const location_id = local.id;
 
   // FEATURE F-03: Protección multisede: verificar que el carrito no pertenezca a otra sucursal

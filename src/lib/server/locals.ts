@@ -18,6 +18,8 @@ const LocalSchema = z.object({
   iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),
   delivery_fee: zNumberES('La tarifa debe ser un número').min(0, 'La tarifa no puede ser negativa').default(0),
   is_open: z.boolean().default(true).optional(),
+  is_catalog_only: z.boolean().default(false).optional(),
+  reservations_enabled: z.boolean().default(true).optional(),
   address: z.string().optional().nullable(),
   latitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
   longitude: z.preprocess((val) => (val === '' || val === null || val === undefined ? null : Number(val)), z.number().optional().nullable()),
@@ -49,6 +51,8 @@ export async function listLocals(): Promise<Array<{
   iva_rate: number;
   delivery_fee: number;
   is_open: boolean;
+  is_catalog_only: boolean;
+  reservations_enabled: boolean;
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -74,6 +78,8 @@ export async function listLocals(): Promise<Array<{
     iva_rate: Number(d.iva_rate),
     delivery_fee: Number(d.delivery_fee ?? 0),
     is_open: d.is_open !== false,
+    is_catalog_only: Boolean(d.is_catalog_only),
+    reservations_enabled: d.reservations_enabled !== false,
     address: d.address ?? null,
     latitude: d.latitude != null ? Number(d.latitude) : null,
     longitude: d.longitude != null ? Number(d.longitude) : null,
@@ -172,6 +178,12 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
   if (validated.is_open !== undefined) {
     updateData.is_open = validated.is_open;
   }
+  if (validated.is_catalog_only !== undefined) {
+    updateData.is_catalog_only = validated.is_catalog_only;
+  }
+  if (validated.reservations_enabled !== undefined) {
+    updateData.reservations_enabled = validated.reservations_enabled;
+  }
 
   let { data, error } = await supabase
     .from('locals')
@@ -180,8 +192,10 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
     .select()
     .single();
 
-  if (error && (error.code === '42703' || error.message?.includes('is_open'))) {
+  if (error && (error.code === '42703' || error.message?.includes('is_open') || error.message?.includes('is_catalog_only') || error.message?.includes('reservations_enabled'))) {
     delete updateData.is_open;
+    delete updateData.is_catalog_only;
+    delete updateData.reservations_enabled;
     const retry = await supabase
       .from('locals')
       .update(updateData)
@@ -227,6 +241,66 @@ export async function toggleLocalOpenStatus(localId: string, isOpen: boolean) {
   revalidatePath('/staff/kds');
   revalidatePath('/staff/caja');
   return { ok: true, is_open: isOpen };
+}
+
+export async function toggleLocalCatalogMode(localId: string, isCatalogOnly: boolean) {
+  await getStaffContext();
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('locals')
+    .update({ is_catalog_only: isCatalogOnly })
+    .eq('id', localId)
+    .select('id, name, slug')
+    .single();
+
+  if (error) {
+    if (error.code === '42703' || error.message?.includes('is_catalog_only')) {
+      console.warn('locals.is_catalog_only no existe aún en la base de datos.');
+      throw new AppError(
+        'La columna is_catalog_only no existe en la base de datos. Por favor ejecuta el script docs/migration-catalog-mode-and-reservations.sql en Supabase SQL Editor.'
+      );
+    }
+    console.error('toggleLocalCatalogMode:', error);
+    throw new AppError('No se pudo cambiar el modo de catálogo del local.');
+  }
+
+  if (data?.slug) {
+    revalidatePath(`/${data.slug}`);
+    revalidatePath(`/${data.slug}/checkout`);
+  }
+  revalidatePath('/staff');
+  revalidatePath('/staff/admin');
+  return { ok: true, is_catalog_only: isCatalogOnly };
+}
+
+export async function toggleLocalReservationsEnabled(localId: string, enabled: boolean) {
+  await getStaffContext();
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('locals')
+    .update({ reservations_enabled: enabled })
+    .eq('id', localId)
+    .select('id, name, slug')
+    .single();
+
+  if (error) {
+    if (error.code === '42703' || error.message?.includes('reservations_enabled')) {
+      console.warn('locals.reservations_enabled no existe aún en la base de datos.');
+      throw new AppError(
+        'La columna reservations_enabled no existe en la base de datos. Por favor ejecuta el script docs/migration-catalog-mode-and-reservations.sql en Supabase SQL Editor.'
+      );
+    }
+    console.error('toggleLocalReservationsEnabled:', error);
+    throw new AppError('No se pudo cambiar el estado de reservaciones del local.');
+  }
+
+  if (data?.slug) {
+    revalidatePath(`/${data.slug}`);
+    revalidatePath(`/${data.slug}/reservar`);
+  }
+  revalidatePath('/staff');
+  revalidatePath('/staff/admin');
+  return { ok: true, reservations_enabled: enabled };
 }
 
 export async function setActiveStaffLocation(locationId: string) {

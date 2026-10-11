@@ -142,6 +142,10 @@ export async function getPublicAvailability(
     return { ok: false, slots: [], error: 'Sucursal no encontrada' };
   }
 
+  if (local.reservations_enabled === false) {
+    return { ok: false, slots: [], error: 'Las reservaciones en línea están desactivadas temporalmente para esta sucursal.' };
+  }
+
   if (partySize < 1) {
     return { ok: false, slots: [], error: 'El número de comensales debe ser al menos 1' };
   }
@@ -288,6 +292,10 @@ export async function createPublicReservation(payload: PublicReservationInput) {
   const local = await getLocalBySlug(validated.location_slug);
   if (!local) {
     return { ok: false, error: 'Sucursal no encontrada' };
+  }
+
+  if (local.reservations_enabled === false) {
+    return { ok: false, error: 'Las reservaciones en línea están desactivadas temporalmente para esta sucursal.' };
   }
 
   // Validar que la fecha y hora sean futuras

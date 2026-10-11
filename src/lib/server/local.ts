@@ -16,6 +16,8 @@ export interface LocalInfo {
   latitude?: number | null;
   longitude?: number | null;
   is_open?: boolean;
+  is_catalog_only?: boolean;
+  reservations_enabled?: boolean;
 }
 
 export interface LocalSummary {
@@ -24,7 +26,7 @@ export interface LocalSummary {
   slug: string;
 }
 
-function toLocalInfo(data: Record<string, unknown>): LocalInfo {
+export function toLocalInfo(data: Record<string, unknown>): LocalInfo {
   return {
     id: data.id as string,
     name: data.name as string,
@@ -36,6 +38,8 @@ function toLocalInfo(data: Record<string, unknown>): LocalInfo {
     latitude: data.latitude != null ? Number(data.latitude) : null,
     longitude: data.longitude != null ? Number(data.longitude) : null,
     is_open: data.is_open !== false,
+    is_catalog_only: Boolean(data.is_catalog_only),
+    reservations_enabled: data.reservations_enabled !== false,
   };
 }
 

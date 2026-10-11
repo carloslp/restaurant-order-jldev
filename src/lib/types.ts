@@ -11,6 +11,8 @@ export interface Local {
   latitude?: number | null;
   longitude?: number | null;
   is_open?: boolean;
+  is_catalog_only?: boolean;
+  reservations_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +44,8 @@ export interface LocalFormData {
   latitude?: number | null;
   longitude?: number | null;
   is_open?: boolean;
+  is_catalog_only?: boolean;
+  reservations_enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------

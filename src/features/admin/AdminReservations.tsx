@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useTransition } from 'react';
 import { 
   listReservations, 
   deleteReservation, 
@@ -11,6 +11,7 @@ import {
   rejectReservation,
   reassignReservationTable
 } from '@/lib/server/reservations';
+import { toggleLocalReservationsEnabled } from '@/lib/server/locals';
 import { getStaffTables } from '@/lib/server/tables';
 import { AdminTableManager } from './AdminTableManager';
 import { AdminShiftsEditor } from './AdminShiftsEditor';
@@ -20,7 +21,7 @@ import { FormAlert } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 import { toUserMessage } from '@/lib/errors';
 import { useToast } from '@/components/ui/use-toast';
-import type { ReservationStatus, RestaurantTable, Zone } from '@/lib/types';
+import type { ReservationStatus, RestaurantTable, Zone, Local } from '@/lib/types';
 import { 
   format, 
   addDays, 
@@ -50,7 +51,8 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
-  LayoutDashboard
+  LayoutDashboard,
+  RefreshCw
 } from 'lucide-react';
 
 const TIME_SLOT_MINUTES = 30;
@@ -71,8 +73,15 @@ import { AdminWaitlistManager } from './AdminWaitlistManager';
 import { listActiveWaitlist } from '@/lib/server/waitlist';
 import type { WaitlistParty } from '@/lib/types';
 
-export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
+interface AdminReservationsProps {
+  localSlug?: string;
+  local?: Local | null;
+}
+
+export function AdminReservations({ localSlug, local }: AdminReservationsProps = {}) {
   const { toast } = useToast();
+  const [isPendingReservationsToggle, startTransitionReservationsToggle] = useTransition();
+  const [reservationsEnabled, setReservationsEnabled] = useState(local?.reservations_enabled !== false);
   const [activeTab, setActiveTab] = useState<'pending' | 'waitlist' | 'calendar' | 'tables' | 'shifts' | 'capacity'>('pending');
   const [calendarView, setCalendarView] = useState<'day' | 'week'>('day');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -85,6 +94,29 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
   const [showForm, setShowForm] = useState(false);
   const [savingCapacity, setSavingCapacity] = useState<Zone | null>(null);
   const { formError, setFormError, submit } = useServerForm();
+
+  const handleToggleReservations = () => {
+    if (!local?.id) return;
+    const nextState = !reservationsEnabled;
+    startTransitionReservationsToggle(async () => {
+      try {
+        await toggleLocalReservationsEnabled(local.id, nextState);
+        setReservationsEnabled(nextState);
+        toast({
+          title: nextState ? 'Reservaciones habilitadas' : 'Reservaciones pausadas',
+          description: nextState
+            ? 'Los clientes ahora pueden reservar mesas desde el portal y menú público.'
+            : 'Las reservaciones en línea han sido pausadas para esta sucursal.',
+        });
+      } catch (err: any) {
+        toast({
+          title: 'Error al cambiar estado de reservaciones',
+          description: err?.message || 'No se pudo actualizar el estado.',
+          variant: 'destructive',
+        });
+      }
+    });
+  };
 
   // Cargar datos
   const loadData = useCallback(async () => {
@@ -230,6 +262,56 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
   return (
     <div className="space-y-6">
       <FormAlert message={formError} />
+
+      {/* Banner de Estado de Reservas */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-zinc-200/80 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className={`p-2 rounded-xl ${reservationsEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+            <CalendarIcon className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-zinc-900">
+                {reservationsEnabled ? 'Reservaciones en Línea Activas' : 'Reservaciones en Línea Pausadas'}
+              </span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                reservationsEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {reservationsEnabled ? 'Habilitado' : 'Pausado'}
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-500 mt-0.5">
+              {reservationsEnabled
+                ? 'Los clientes pueden ingresar a /reservar y solicitar mesas en los horarios configurados.'
+                : 'El portal de reservas está temporalmente desactivado para clientes. Las solicitudes existentes se mantienen.'}
+            </p>
+          </div>
+        </div>
+
+        {local && (
+          <button
+            type="button"
+            onClick={handleToggleReservations}
+            disabled={isPendingReservationsToggle}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50 ${
+              reservationsEnabled
+                ? 'bg-zinc-800 hover:bg-zinc-900 text-zinc-100'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {isPendingReservationsToggle ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : reservationsEnabled ? (
+              <XCircle className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {reservationsEnabled ? 'Desactivar reservas públicas' : 'Habilitar reservas públicas'}
+            </span>
+          </button>
+        )}
+      </div>
 
       {/* KPI Stats Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -185,7 +185,7 @@ export function AdminView({ staff, local }: AdminViewProps) {
             )}
 
             {activeTab === 'reservations' && (
-              <AdminReservations localSlug={local?.slug} />
+              <AdminReservations local={local} localSlug={local?.slug} />
             )}
 
             {activeTab === 'discounts' && <AdminDiscounts />}

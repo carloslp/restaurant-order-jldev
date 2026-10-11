@@ -9,13 +9,15 @@ import {
   getLocalById,
   geocodeAddressAction,
   toggleLocalOpenStatus,
+  toggleLocalCatalogMode,
+  toggleLocalReservationsEnabled,
 } from '@/lib/server/locals';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 import { ZoneCapacityEditor } from '@/features/admin/ZoneCapacityEditor';
 import { validateLocationSlug } from '@/lib/slugs';
-import { MapPin, Search, Loader2, Power } from 'lucide-react';
+import { MapPin, Search, Loader2, Power, Eye, ShoppingCart, Calendar } from 'lucide-react';
 
 interface Local {
   id: string;
@@ -28,6 +30,8 @@ interface Local {
   latitude?: number | null;
   longitude?: number | null;
   is_open?: boolean;
+  is_catalog_only?: boolean;
+  reservations_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +46,8 @@ interface LocalFormData {
   latitude?: number | null;
   longitude?: number | null;
   is_open: boolean;
+  is_catalog_only: boolean;
+  reservations_enabled: boolean;
 }
 
 const initialFormData: LocalFormData = {
@@ -54,6 +60,8 @@ const initialFormData: LocalFormData = {
   latitude: null,
   longitude: null,
   is_open: true,
+  is_catalog_only: false,
+  reservations_enabled: true,
 };
 
 export function AdminLocals() {
@@ -173,6 +181,48 @@ export function AdminLocals() {
     }
   };
 
+  const handleToggleCatalogMode = async (local: Local) => {
+    const newState = !(local.is_catalog_only ?? false);
+    try {
+      setLocalsList((prev) =>
+        prev.map((l) => (l.id === local.id ? { ...l, is_catalog_only: newState } : l))
+      );
+      await toggleLocalCatalogMode(local.id, newState);
+      toast({
+        title: newState ? 'Modo Solo Mostrar activado' : 'Modo Pedidos activado',
+        description: `El local "${local.name}" ahora está en modo ${newState ? 'catálogo informativo' : 'pedidos activos'}.`,
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'No se pudo actualizar el modo del menú.',
+        variant: 'destructive',
+      });
+      loadLocals();
+    }
+  };
+
+  const handleToggleReservations = async (local: Local) => {
+    const newState = !(local.reservations_enabled !== false);
+    try {
+      setLocalsList((prev) =>
+        prev.map((l) => (l.id === local.id ? { ...l, reservations_enabled: newState } : l))
+      );
+      await toggleLocalReservationsEnabled(local.id, newState);
+      toast({
+        title: newState ? 'Reservaciones activadas' : 'Reservaciones pausadas',
+        description: `Las reservas en línea del local "${local.name}" ahora están ${newState ? 'habilitadas' : 'pausadas'}.`,
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'No se pudo actualizar el estado de las reservaciones.',
+        variant: 'destructive',
+      });
+      loadLocals();
+    }
+  };
+
   const handleEdit = (local: Local) => {
     setEditingLocal(local);
     setFormData({
@@ -185,6 +235,8 @@ export function AdminLocals() {
       latitude: local.latitude ?? null,
       longitude: local.longitude ?? null,
       is_open: local.is_open ?? true,
+      is_catalog_only: local.is_catalog_only ?? false,
+      reservations_enabled: local.reservations_enabled !== false,
     });
     setSlugError(null);
     setShowForm(true);
@@ -340,6 +392,42 @@ export function AdminLocals() {
                 </label>
               </div>
 
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3 bg-gray-50/70">
+                <div>
+                  <span className="block text-sm font-medium text-gray-800">Modo Solo Mostrar (Catálogo)</span>
+                  <span className="block text-xs text-gray-500">
+                    Desactiva compras y carrito. El menú funciona únicamente como visualización informativa de platillos y precios.
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_catalog_only}
+                    onChange={(e) => setFormData({ ...formData, is_catalog_only: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3 bg-gray-50/70">
+                <div>
+                  <span className="block text-sm font-medium text-gray-800">Permitir Reservas de Mesa</span>
+                  <span className="block text-xs text-gray-500">
+                    Si se desactiva, los comensales no podrán reservar mesas en línea para esta sucursal.
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.reservations_enabled}
+                    onChange={(e) => setFormData({ ...formData, reservations_enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
               <div className="border-t pt-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="block text-sm font-semibold text-gray-800 flex items-center gap-1.5">
@@ -437,6 +525,8 @@ export function AdminLocals() {
               <th className="text-left p-3 text-sm font-semibold text-gray-500">IVA</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Delivery</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Estado</th>
+              <th className="text-left p-3 text-sm font-semibold text-gray-500">Modo Menú</th>
+              <th className="text-left p-3 text-sm font-semibold text-gray-500">Reservas</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Creado</th>
               <th className="text-left p-3 text-sm font-semibold text-gray-500">Acciones</th>
             </tr>
@@ -486,6 +576,40 @@ export function AdminLocals() {
                     {local.is_open !== false ? 'Abierto' : 'Cerrado'}
                   </button>
                 </td>
+                <td className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCatalogMode(local)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all border ${
+                      local.is_catalog_only
+                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                    title="Clic para alternar entre Modo Catálogo y Modo Pedidos"
+                  >
+                    {local.is_catalog_only ? (
+                      <Eye className="w-3 h-3 text-amber-600" />
+                    ) : (
+                      <ShoppingCart className="w-3 h-3 text-emerald-600" />
+                    )}
+                    {local.is_catalog_only ? 'Catálogo' : 'Pedidos'}
+                  </button>
+                </td>
+                <td className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReservations(local)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all border ${
+                      local.reservations_enabled !== false
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
+                    }`}
+                    title="Clic para alternar reservas públicas"
+                  >
+                    <Calendar className="w-3 h-3 text-zinc-600" />
+                    {local.reservations_enabled !== false ? 'Activas' : 'Pausadas'}
+                  </button>
+                </td>
                 <td className="p-3 text-sm text-gray-500">
                   {new Date(local.created_at).toLocaleDateString('es-ES', {
                     day: '2-digit',
@@ -513,7 +637,7 @@ export function AdminLocals() {
             ))}
             {localsList.length === 0 && (
               <tr>
-                <td colSpan={9} className="p-8 text-center text-gray-400">
+                <td colSpan={11} className="p-8 text-center text-gray-400">
                   No hay locales. Crea el primero para empezar.
                 </td>
               </tr>

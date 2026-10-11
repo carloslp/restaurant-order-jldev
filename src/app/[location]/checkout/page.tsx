@@ -1,6 +1,6 @@
 // Checkout de una location — resuelto por PATH: /{location}/checkout.
 // Server component: valida el slug contra la DB y pasa el locationId al cliente.
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getLocalBySlug } from '@/lib/server/local';
 import CheckoutClient from './CheckoutClient';
 
@@ -18,6 +18,11 @@ export default async function CheckoutPage({
     local = await getLocalBySlug(slug);
   }
   if (!local) notFound();
+
+  // Si el local está en modo catálogo (solo visualización), no se permite checkout
+  if (local.is_catalog_only) {
+    redirect(`/${local.slug}`);
+  }
 
   return <CheckoutClient locationId={local.id} slug={local.slug} />;
 }
