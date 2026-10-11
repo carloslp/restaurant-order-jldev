@@ -82,7 +82,7 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
   const { toast } = useToast();
   const [isPendingReservationsToggle, startTransitionReservationsToggle] = useTransition();
   const [reservationsEnabled, setReservationsEnabled] = useState(local?.reservations_enabled !== false);
-  const [activeTab, setActiveTab] = useState<'pending' | 'waitlist' | 'calendar' | 'tables' | 'shifts' | 'capacity'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'waitlist' | 'calendar' | 'tables' | 'shifts'>('pending');
   const [calendarView, setCalendarView] = useState<'day' | 'week'>('day');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [reservations, setReservations] = useState<any[]>([]);
@@ -92,7 +92,6 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
   const [loading, setLoading] = useState(true);
   const [editingReservation, setEditingReservation] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
-  const [savingCapacity, setSavingCapacity] = useState<Zone | null>(null);
   const { formError, setFormError, submit } = useServerForm();
 
   const handleToggleReservations = () => {
@@ -182,9 +181,10 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
     return confirmedToday.reduce((sum, r) => sum + (r.party_size || 0), 0);
   }, [confirmedToday]);
 
+  // Aforo total calculado dinámicamente desde las mesas físicas activas
   const totalCapacity = useMemo(() => {
-    return Object.values(zoneCapacities).reduce((a, b) => a + b, 0);
-  }, [zoneCapacities]);
+    return tables.filter((t) => t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0);
+  }, [tables]);
 
   // Acciones sobre reservas pendientes
   const handleAccept = async (id: string) => {
@@ -202,23 +202,6 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
       toast({ title: 'Reserva rechazada', description: 'La solicitud se marcó como cancelada.' });
     });
     if (ok) await loadData();
-  };
-
-  // Guardar cambio de aforo por zona
-  const handleSaveCapacity = async (zone: Zone, cap: number) => {
-    setSavingCapacity(zone);
-    try {
-      await upsertZoneCapacity(zone, cap);
-      toast({ 
-        title: 'Aforo actualizado', 
-        description: `Se actualizó la capacidad de ${zone.toLowerCase()} a ${cap} comensales.` 
-      });
-      await loadData();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message || 'No se pudo guardar el aforo.', variant: 'destructive' });
-    } finally {
-      setSavingCapacity(null);
-    }
   };
 
   // Apertura de modal de reserva manual
@@ -378,12 +361,12 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
           <p className="text-xs text-zinc-500 mt-1">Personas esperadas hoy</p>
         </div>
 
-        {/* Card 4: Aforo Total */}
+        {/* Card 4: Aforo Total Mesas (Calculado de mesas físicas) */}
         <button
           type="button"
-          onClick={() => setActiveTab('capacity')}
+          onClick={() => setActiveTab('tables')}
           className={`p-5 rounded-2xl border text-left transition-all cursor-pointer ${
-            activeTab === 'capacity'
+            activeTab === 'tables'
               ? 'bg-blue-50/70 border-blue-300 ring-2 ring-blue-400'
               : 'bg-white border-zinc-200/80 hover:border-blue-300'
           }`}
@@ -397,7 +380,7 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
           <div className="text-2xl font-extrabold text-zinc-900 mt-2">
             {totalCapacity} <span className="text-sm font-normal text-zinc-500">lugares</span>
           </div>
-          <p className="text-xs text-zinc-500 mt-1">Configuración del local</p>
+          <p className="text-xs text-zinc-500 mt-1">Calculado de mesas activas</p>
         </button>
       </div>
 
@@ -478,19 +461,6 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
             >
               <Clock className="w-4 h-4 shrink-0 text-orange-500" />
               <span>Turnos y Horarios</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('capacity')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
-                activeTab === 'capacity'
-                  ? 'bg-zinc-900 text-white shadow-md'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-              }`}
-            >
-              <Sliders className="w-4 h-4 shrink-0" />
-              <span>Aforo Global</span>
             </button>
           </nav>
         </div>
@@ -730,99 +700,11 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
         <AdminShiftsEditor />
       )}
 
-      {/* PESTAÑA: GESTIÓN DE AFORO GLOBAL */}
-      {activeTab === 'capacity' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-zinc-200/80 shadow-sm space-y-6">
-            <div className="border-b border-zinc-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
-                  <Sliders className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-zinc-900">
-                    Aforo de Mesas por Zona (Sucursal Actual)
-                  </h2>
-                  <p className="text-xs text-zinc-500">
-                    Define la capacidad máxima de comensales en simultáneo para cada ambiente de este restaurante.
-                    El frontend del cliente validará estas cifras automáticamente en cada reservación.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {ZONES_CONFIG.map(({ zone, label, hint, icon: Icon }) => {
-                const currentCap = zoneCapacities[zone] || 0;
-                const isSaving = savingCapacity === zone;
-
-                return (
-                  <div
-                    key={zone}
-                    className="p-5 rounded-2xl border border-zinc-200/80 bg-zinc-50/50 space-y-4 hover:border-orange-300 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white border border-zinc-200 text-zinc-800 flex items-center justify-center shadow-sm">
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-extrabold text-sm text-zinc-900">{label}</h3>
-                        <p className="text-[11px] text-zinc-500">{hint}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                        Aforo comensales (0 = inactivo)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max="500"
-                          value={currentCap}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10) || 0;
-                            setZoneCapacities((prev) => ({ ...prev, [zone]: val }));
-                          }}
-                          className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-2 text-sm font-bold text-zinc-900 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          disabled={isSaving}
-                          onClick={() => handleSaveCapacity(zone, currentCap)}
-                          className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition disabled:opacity-50 cursor-pointer shrink-0"
-                        >
-                          {isSaving ? 'Guardando…' : 'Guardar'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 text-[11px] text-zinc-500 flex items-center justify-between border-t border-zinc-200/60">
-                      <span>Estado:</span>
-                      <strong className={currentCap > 0 ? 'text-emerald-600' : 'text-zinc-400'}>
-                        {currentCap > 0 ? `${currentCap} lugares disponibles` : 'Zona Desactivada'}
-                      </strong>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="p-4 bg-orange-50/60 rounded-2xl border border-orange-200/60 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-orange-900 leading-relaxed">
-                <strong>¿Cómo funciona el aforo en las reservas?</strong> Cuando un comensal solicita una mesa desde la web, el sistema suma las reservas activas (pendientes y confirmadas) para esa fecha y hora. Si la suma supera la capacidad que configuraste aquí, esa franja horaria se bloquea automáticamente al cliente, evitando cualquier sobreventa.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Formulario de Reserva Manual */}
       {showForm && (
         <ReservationForm
           reservation={editingReservation}
+          tables={tables}
           onSuccess={handleSubmitSuccess}
           onCancel={() => setShowForm(false)}
         />

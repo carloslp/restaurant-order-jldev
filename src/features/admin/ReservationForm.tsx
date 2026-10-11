@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { createReservation, updateReservation } from '@/lib/server/reservations';
-import type { ReservationStatus, Zone } from '@/lib/types';
+import type { ReservationStatus, RestaurantTable, Zone } from '@/lib/types';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 
 interface ReservationFormProps {
   reservation?: any | null;
+  tables?: RestaurantTable[];
   initialData?: any;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function ReservationForm({ reservation, initialData, onSuccess, onCancel }: ReservationFormProps) {
+export function ReservationForm({ reservation, tables = [], initialData, onSuccess, onCancel }: ReservationFormProps) {
   const [formData, setFormData] = useState<any>(null);
   const { saving, formError, fieldErrors, clearFieldError, submit } = useServerForm();
 
@@ -24,6 +25,7 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
         reservation_time: reservation.reservation_time,
         party_size: reservation.party_size,
         preferred_zone: reservation.preferred_zone,
+        table_id: reservation.table_id || null,
         status: reservation.status,
         deposit_status: reservation.deposit_status,
         notes: reservation.notes || '',
@@ -38,6 +40,7 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
         reservation_time: '14:00',
         party_size: 2,
         preferred_zone: 'INTERIOR',
+        table_id: null,
         status: 'CONFIRMADA',
         deposit_status: 'SIN_DEPOSITO',
         notes: '',
@@ -137,6 +140,23 @@ export function ReservationForm({ reservation, initialData, onSuccess, onCancel 
                 <option value="INTERIOR">Interior</option>
                 <option value="TERRAZA">Terraza</option>
                 <option value="BARRA">Barra</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mesa asignada</label>
+              <select
+                value={formData.table_id || ''}
+                onChange={(e) => setFormData({ ...formData, table_id: e.target.value || null })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary text-sm"
+              >
+                <option value="">(Asignación automática óptima)</option>
+                {(tables || [])
+                  .filter((t) => t.is_active && (!formData.preferred_zone || t.zone === formData.preferred_zone))
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      Mesa {t.table_number} ({t.zone}) - {t.min_capacity} a {t.max_capacity} pers.
+                    </option>
+                  ))}
               </select>
             </div>
             <div>

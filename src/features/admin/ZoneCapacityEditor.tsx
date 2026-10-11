@@ -1,14 +1,11 @@
 // src/features/admin/ZoneCapacityEditor.tsx
-// Editor del aforo por zona (INTERIOR / TERRAZA / BARRA) para el local actual.
-// Cierra la tarea 25-26 del TODO: settings de aforo del local.
+// Componente informativo de solo lectura: Aforo derivado automáticamente de restaurant_tables.
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getZoneCapacities, upsertZoneCapacity } from '@/lib/server/reservations';
-import { useToast } from '@/components/ui/use-toast';
-import { FormAlert } from '@/components/ui/form-error';
-import { useServerForm } from '@/lib/forms';
+import { getZoneCapacities } from '@/lib/server/reservations';
 import type { Zone } from '@/lib/types';
+import { CheckCircle2, Info } from 'lucide-react';
 
 const ZONES: { zone: Zone; label: string; hint: string }[] = [
   { zone: 'INTERIOR', label: 'Interior', hint: 'Mesas y salón principal' },
@@ -17,10 +14,8 @@ const ZONES: { zone: Zone; label: string; hint: string }[] = [
 ];
 
 export function ZoneCapacityEditor() {
-  const { toast } = useToast();
   const [capacities, setCapacities] = useState<Record<Zone, number>>({ INTERIOR: 0, TERRAZA: 0, BARRA: 0 });
   const [loading, setLoading] = useState(true);
-  const { saving, formError, submit } = useServerForm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,7 +27,6 @@ export function ZoneCapacityEditor() {
       });
       setCapacities(map);
     } catch {
-      // El form muestra el error; no silenciar en consola.
       console.error('ZoneCapacityEditor/load');
     } finally {
       setLoading(false);
@@ -43,27 +37,30 @@ export function ZoneCapacityEditor() {
     load();
   }, [load]);
 
-  const handleSave = async (zone: Zone) => {
-    const ok = await submit(async () => {
-      await upsertZoneCapacity(zone, capacities[zone]);
-      toast({ title: 'Éxito', description: `Aforo de ${zone.toLowerCase()} actualizado` });
-    });
-    if (ok) await load();
-  };
-
   if (loading) {
-    return <p className="text-sm text-gray-500 py-4">Cargando aforo…</p>;
+    return <p className="text-sm text-gray-500 py-4">Cargando aforo de mesas…</p>;
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
       <div className="bg-gray-50 border-b border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-800">Aforo por zona (reservas)</h3>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Comensales máximos por franja. Usa <strong>0</strong> para desactivar la zona del calendario de reservas.
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <h3 className="font-semibold text-gray-800">Aforo por zona (Mesas Físicas)</h3>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Métrica calculada en tiempo real como la suma de comensales máximos de las mesas activas. 
+          Para ajustar el aforo, gestiona las mesas en <strong>Sala y Mesas</strong>.
         </p>
       </div>
-      <FormAlert message={formError} />
+
+      <div className="p-4 bg-blue-50/60 border-b border-blue-100 flex items-start gap-2 text-xs text-blue-900">
+        <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+        <span>
+          El sistema valida la existencia física de una mesa adecuada para el tamaño de cada grupo, protegiendo contra sobreventas.
+        </span>
+      </div>
+
       <table className="w-full">
         <tbody className="divide-y divide-gray-100">
           {ZONES.map(({ zone, label, hint }) => (
@@ -72,26 +69,10 @@ export function ZoneCapacityEditor() {
                 <div className="font-medium text-gray-800">{label}</div>
                 <div className="text-xs text-gray-500">{hint}</div>
               </td>
-              <td className="p-4 w-32">
-                <input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={capacities[zone]}
-                  onChange={(e) => setCapacities((prev) => ({ ...prev, [zone]: Number(e.target.value) || 0 }))}
-                  disabled={saving}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary disabled:bg-gray-50"
-                  aria-label={`Aforo ${label}`}
-                />
-              </td>
               <td className="p-4 text-right">
-                <button
-                  onClick={() => handleSave(zone)}
-                  disabled={saving}
-                  className="text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
-                >
-                  Guardar
-                </button>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-zinc-100 text-zinc-900">
+                  {capacities[zone] > 0 ? `${capacities[zone]} plazas` : 'Sin mesas activas'}
+                </span>
               </td>
             </tr>
           ))}

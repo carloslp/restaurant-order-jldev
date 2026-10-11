@@ -25,28 +25,10 @@ async function getStaffContext() {
 }
 
 /**
- * Sincroniza la capacidad acumulada de la zona en `local_zone_capacity`
- * sumando las capacidades máximas de las mesas activas de dicha zona.
+ * @deprecated El aforo de la zona se deriva directamente de restaurant_tables en tiempo real.
  */
-export async function syncZoneCapacityFromTables(locationId: string, zone: Zone) {
-  const supabase = createServerClient();
-  const { data: tables, error } = await supabase
-    .from('restaurant_tables')
-    .select('max_capacity')
-    .eq('location_id', locationId)
-    .eq('zone', zone)
-    .eq('is_active', true);
-
-  if (error) return; // Si la tabla aún no existe, no bloquear
-
-  const totalCapacity = (tables || []).reduce((acc, t) => acc + (t.max_capacity || 0), 0);
-
-  if (totalCapacity > 0) {
-    await supabase.from('local_zone_capacity').upsert(
-      { location_id: locationId, zone, capacity: totalCapacity },
-      { onConflict: 'location_id,zone' }
-    );
-  }
+export async function syncZoneCapacityFromTables(_locationId: string, _zone: Zone) {
+  // No-op: La capacidad es calculada al vuelo en tiempo de ejecución
 }
 
 /**
@@ -100,9 +82,6 @@ export async function upsertTable(payload: z.infer<typeof TableSchema>) {
     { action: 'upsertTable', fallback: 'No se pudo guardar la mesa' }
   );
 
-  // Sincronizar automáticamente el aforo total de la zona
-  await syncZoneCapacityFromTables(staff.location_id, validated.zone);
-
   revalidatePath('/staff/admin');
   return data as RestaurantTable;
 }
@@ -114,14 +93,6 @@ export async function deleteTable(id: string) {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
-  // Obtener la zona antes de borrar para recalcular aforo
-  const { data: current } = await supabase
-    .from('restaurant_tables')
-    .select('zone')
-    .eq('id', id)
-    .eq('location_id', staff.location_id)
-    .maybeSingle();
-
   const { error } = await supabase
     .from('restaurant_tables')
     .delete()
@@ -131,10 +102,6 @@ export async function deleteTable(id: string) {
   if (error) {
     console.error('deleteTable error:', error);
     throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la mesa'));
-  }
-
-  if (current?.zone) {
-    await syncZoneCapacityFromTables(staff.location_id, current.zone as Zone);
   }
 
   revalidatePath('/staff/admin');

@@ -234,11 +234,31 @@ export function AdminTableManager({ localSlug }: AdminTableManagerProps) {
     ? tables
     : tables.filter((t) => t.zone === selectedZone);
 
-  // Estadísticas rápidas de sala
-  const freeCount = tables.filter((t) => t.status === 'LIBRE').length;
-  const occupiedCount = tables.filter((t) => t.status === 'OCUPADA').length;
-  const reservedCount = tables.filter((t) => t.status === 'RESERVADA').length;
-  const qrActiveCount = tables.filter((t) => t.qr_status === 'ABIERTO').length;
+  // Resumen dinámico de aforo calculado por zona
+  const zoneSummary = useMemo(() => {
+    const summary: Record<Zone, { count: number; capacity: number; minCap: number; maxCap: number }> = {
+      INTERIOR: { count: 0, capacity: 0, minCap: Infinity, maxCap: 0 },
+      TERRAZA: { count: 0, capacity: 0, minCap: Infinity, maxCap: 0 },
+      BARRA: { count: 0, capacity: 0, minCap: Infinity, maxCap: 0 },
+    };
+
+    tables.forEach((t) => {
+      if (!t.is_active) return;
+      const z = t.zone as Zone;
+      if (summary[z]) {
+        summary[z].count += 1;
+        summary[z].capacity += t.max_capacity;
+        summary[z].minCap = Math.min(summary[z].minCap, t.min_capacity);
+        summary[z].maxCap = Math.max(summary[z].maxCap, t.max_capacity);
+      }
+    });
+
+    return summary;
+  }, [tables]);
+
+  const totalCalculatedCapacity = useMemo(() => {
+    return tables.filter((t) => t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0);
+  }, [tables]);
 
   if (loading) {
     return (
@@ -251,6 +271,48 @@ export function AdminTableManager({ localSlug }: AdminTableManagerProps) {
 
   return (
     <div className="space-y-6">
+      {/* Banner de Aforo Derivado del Salón */}
+      <div className="bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 text-white rounded-3xl p-6 shadow-md border border-zinc-700 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-700/60 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              <h2 className="text-base font-extrabold tracking-tight">Capacidad Total del Salón (Fuente Única)</h2>
+            </div>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              El aforo para reservas y ocupación se calcula automáticamente sumando las mesas físicas activas.
+            </p>
+          </div>
+          <div className="text-right sm:text-right">
+            <span className="text-2xl font-black text-white">{totalCalculatedCapacity}</span>
+            <span className="text-xs text-zinc-400 ml-1">lugares totales</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {(['INTERIOR', 'TERRAZA', 'BARRA'] as Zone[]).map((zone) => {
+            const data = zoneSummary[zone];
+            const hasTables = data.count > 0;
+            return (
+              <div key={zone} className="bg-white/5 border border-white/10 rounded-2xl p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-zinc-300">
+                    {zone === 'INTERIOR' ? 'Interior' : zone === 'TERRAZA' ? 'Terraza' : 'Barra'}
+                  </span>
+                  <span className="text-xs font-extrabold text-orange-400">
+                    {data.capacity} plazas
+                  </span>
+                </div>
+                <div className="text-[11px] text-zinc-400 flex items-center justify-between">
+                  <span>{data.count} {data.count === 1 ? 'mesa activa' : 'mesas activas'}</span>
+                  <span>{hasTables ? `${data.minCap} a ${data.maxCap} pers/mesa` : 'Sin mesas'}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Barra de Estadísticas y Acciones de Sala */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4">

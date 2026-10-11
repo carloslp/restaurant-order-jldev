@@ -80,11 +80,132 @@ function isTimeOverlapping(timeA: string, timeB: string, durationMinutes = AVERA
 }
 
 // ---------------------------------------------------------------------------
+// MOTOR DE DISPONIBILIDAD Y ASIGNACIÓN DE MESAS FÍSICAS
+// ---------------------------------------------------------------------------
+
+export interface SlotAvailabilityParams {
+  locationId: string;
+  date: string;
+  time: string;
+  partySize: number;
+  zone?: Zone;
+  turnDurationMinutes?: number;
+}
+
+export interface SlotAvailabilityResult {
+  available: boolean;
+  bestTable: RestaurantTable | null;
+  availableTables: RestaurantTable[];
+  totalTablesAvailable: number;
+}
+
+/**
+ * Valida la disponibilidad física para un horario y tamaño de grupo.
+ * Prioriza la función RPC get_available_tables de Supabase con fallback seguro a TypeScript.
+ */
+export async function checkSlotAvailability({
+  locationId,
+  date,
+  time,
+  partySize,
+  zone,
+  turnDurationMinutes = AVERAGE_DINING_DURATION_MINUTES,
+}: SlotAvailabilityParams): Promise<SlotAvailabilityResult> {
+  const supabase = createServerClient();
+
+  const [hours, minutes] = time.split(':').map(Number);
+  const startMinutes = (hours || 0) * 60 + (minutes || 0);
+  const endMinutes = startMinutes + turnDurationMinutes;
+  const endHoursVal = Math.floor(endMinutes / 60) % 24;
+  const endMinutesVal = endMinutes % 60;
+  const endTime = `${String(endHoursVal).padStart(2, '0')}:${String(endMinutesVal).padStart(2, '0')}:00`;
+
+  // 1. Intentar invocar función optimizada de PostgreSQL get_available_tables
+  try {
+    const { data: rpcTables, error: rpcError } = await supabase.rpc('get_available_tables', {
+      p_location_id: locationId,
+      p_date: date,
+      p_start_time: `${time}:00`,
+      p_end_time: endTime,
+      p_party_size: partySize,
+      p_zone: zone || null,
+    });
+
+    if (!rpcError && Array.isArray(rpcTables)) {
+      const formatted: RestaurantTable[] = rpcTables.map((t: any) => ({
+        id: t.table_id || t.id,
+        location_id: locationId,
+        table_number: t.table_number,
+        min_capacity: t.min_capacity,
+        max_capacity: t.max_capacity,
+        zone: t.zone as Zone,
+        is_active: true,
+        status: 'LIBRE',
+        qr_status: 'INACTIVO',
+        qr_token: '',
+        created_at: '',
+        updated_at: '',
+      }));
+
+      return {
+        available: formatted.length > 0,
+        bestTable: formatted[0] || null,
+        availableTables: formatted,
+        totalTablesAvailable: formatted.length,
+      };
+    }
+  } catch {
+    // Si la RPC no está instalada, continuar al fallback en TypeScript
+  }
+
+  // 2. Fallback de seguridad en TypeScript: consulta física directa a restaurant_tables y reservations
+  const [{ data: rawTables }, { data: dayReservations }] = await Promise.all([
+    supabase
+      .from('restaurant_tables')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('is_active', true),
+    supabase
+      .from('reservations')
+      .select('id, table_id, reservation_time, status')
+      .eq('location_id', locationId)
+      .eq('reservation_date', date)
+      .in('status', ['PENDIENTE', 'CONFIRMADA']),
+  ]);
+
+  const activeTables = (rawTables || []) as RestaurantTable[];
+  const activeReservations = dayReservations || [];
+
+  const occupiedTableIds = new Set(
+    activeReservations
+      .filter((r) => r.table_id && isTimeOverlapping(r.reservation_time, time, turnDurationMinutes))
+      .map((r) => r.table_id)
+  );
+
+  const availableTables = activeTables
+    .filter((t) => {
+      if (zone && t.zone !== zone) return false;
+      if (partySize < (t.min_capacity || 1) || partySize > t.max_capacity) return false;
+      if (occupiedTableIds.has(t.id)) return false;
+      return true;
+    })
+    .sort((a, b) => a.max_capacity - b.max_capacity || a.table_number.localeCompare(b.table_number));
+
+  return {
+    available: availableTables.length > 0,
+    bestTable: availableTables[0] || null,
+    availableTables,
+    totalTablesAvailable: availableTables.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // FUNCIONES PÚBLICAS (CLIENTE FRONTEND)
 // ---------------------------------------------------------------------------
 
 /**
- * Obtiene los datos de la sucursal y la capacidad de sus zonas activas.
+ * Obtiene los datos de la sucursal y el aforo por zona calculado dinámicamente
+ * a partir de las mesas físicas activas.
  */
 export async function getPublicLocalReservationConfig(slug: string) {
   const local = await getLocalBySlug(slug);
@@ -93,25 +214,41 @@ export async function getPublicLocalReservationConfig(slug: string) {
   }
 
   const supabase = createServerClient();
-  const { data: capacities, error } = await supabase
-    .from('local_zone_capacity')
-    .select('zone, capacity')
+  const { data: tables, error } = await supabase
+    .from('restaurant_tables')
+    .select('zone, max_capacity')
     .eq('location_id', local.id)
-    .gt('capacity', 0);
+    .eq('is_active', true);
 
   if (error) {
     console.error('getPublicLocalReservationConfig error:', error);
   }
 
-  const activeZones = (capacities || []).map((c) => ({
-    zone: c.zone as Zone,
-    capacity: c.capacity,
-    label: c.zone === 'INTERIOR' ? 'Interior' : c.zone === 'TERRAZA' ? 'Terraza' : 'Barra',
-    description: 
-      c.zone === 'INTERIOR' ? 'Salón principal climatizado' : 
-      c.zone === 'TERRAZA' ? 'Área al aire libre' : 
-      'Asientos en barra principal'
-  }));
+  const zoneCapMap: Record<Zone, number> = {
+    INTERIOR: 0,
+    TERRAZA: 0,
+    BARRA: 0,
+  };
+
+  (tables || []).forEach((t) => {
+    const z = t.zone as Zone;
+    if (zoneCapMap[z] !== undefined) {
+      zoneCapMap[z] += t.max_capacity || 0;
+    }
+  });
+
+  const zonesList: Zone[] = ['INTERIOR', 'TERRAZA', 'BARRA'];
+  const activeZones = zonesList
+    .filter((z) => zoneCapMap[z] > 0)
+    .map((zone) => ({
+      zone,
+      capacity: zoneCapMap[zone],
+      label: zone === 'INTERIOR' ? 'Interior' : zone === 'TERRAZA' ? 'Terraza' : 'Barra',
+      description: 
+        zone === 'INTERIOR' ? 'Salón principal climatizado' : 
+        zone === 'TERRAZA' ? 'Área al aire libre' : 
+        'Asientos en barra principal'
+    }));
 
   return {
     ok: true,
@@ -127,10 +264,8 @@ export async function getPublicLocalReservationConfig(slug: string) {
 }
 
 /**
- * Calcula la disponibilidad de horarios y zonas para una fecha y número de comensales.
- */
-/**
- * Calcula la disponibilidad de horarios, zonas y mesas para una fecha y número de comensales.
+ * Calcula la disponibilidad de horarios, zonas y mesas físicas para una fecha y número de comensales.
+ * La disponibilidad se determina estrictamente por la presencia de mesas físicas aptas no ocupadas.
  */
 export async function getPublicAvailability(
   slug: string, 
@@ -152,22 +287,7 @@ export async function getPublicAvailability(
 
   const supabase = createServerClient();
 
-  // 1. Obtener capacidades agregadas por zona
-  const { data: capacities } = await supabase
-    .from('local_zone_capacity')
-    .select('zone, capacity')
-    .eq('location_id', local.id);
-
-  const zoneCapMap: Record<Zone, number> = {
-    INTERIOR: 0,
-    TERRAZA: 0,
-    BARRA: 0,
-  };
-  (capacities || []).forEach((c) => {
-    zoneCapMap[c.zone as Zone] = c.capacity;
-  });
-
-  // 2. Obtener mesas físicas configuradas en el local
+  // 1. Obtener mesas físicas configuradas en el local
   const { data: rawTables } = await supabase
     .from('restaurant_tables')
     .select('*')
@@ -175,7 +295,7 @@ export async function getPublicAvailability(
     .eq('is_active', true);
   const tables = (rawTables || []) as RestaurantTable[];
 
-  // 3. Obtener reservas activas para ese día
+  // 2. Obtener reservas activas para ese día
   const { data: dayReservations } = await supabase
     .from('reservations')
     .select('id, reservation_time, preferred_zone, party_size, status, table_id')
@@ -185,10 +305,10 @@ export async function getPublicAvailability(
 
   const activeReservations = dayReservations || [];
 
-  // 4. Generar franjas horarias según los turnos configurados del local
+  // 3. Generar franjas horarias según los turnos configurados del local
   const { slots: generatedSlots } = await getGeneratedSlotsForDate(local.id, date);
 
-  // 5. Comprobar fecha actual
+  // 4. Comprobar fecha actual para anticipación
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   const isToday = date === todayStr;
@@ -207,10 +327,7 @@ export async function getPublicAvailability(
 
     zones.forEach((zone) => {
       const zoneTables = tables.filter((t) => t.zone === zone);
-      const hasPhysicalTables = zoneTables.length > 0;
-      const maxCap = hasPhysicalTables 
-        ? zoneTables.reduce((acc, t) => acc + t.max_capacity, 0)
-        : (zoneCapMap[zone] || 0);
+      const maxCap = zoneTables.reduce((acc, t) => acc + t.max_capacity, 0);
 
       if (maxCap === 0 || isPast) {
         zonesInfo[zone] = {
@@ -232,34 +349,29 @@ export async function getPublicAvailability(
       const reservedPax = overlappingReservations.reduce((sum, r) => sum + (r.party_size || 0), 0);
       const availablePax = Math.max(0, maxCap - reservedPax);
 
-      let canBook = false;
-      let availableTablesForParty: RestaurantTable[] = [];
+      // Encontrar mesas que físicamente tengan capacidad para el grupo solicitado
+      const suitableTables = zoneTables.filter(
+        (t) => t.max_capacity >= partySize && partySize >= (t.min_capacity || 1)
+      );
 
-      if (hasPhysicalTables) {
-        // Encontrar mesas que tengan capacidad para el grupo
-        const suitableTables = zoneTables.filter(
-          (t) => t.max_capacity >= partySize && partySize >= (t.min_capacity || 1)
-        );
+      // Mesas ya ocupadas por reservas concurrentes
+      const occupiedTableIds = new Set(
+        overlappingReservations.map((r) => r.table_id).filter(Boolean)
+      );
 
-        // Identificar qué mesas ya están ocupadas por reservas concurrentes
-        const occupiedTableIds = new Set(
-          overlappingReservations.map((r) => r.table_id).filter(Boolean)
-        );
-
-        availableTablesForParty = suitableTables.filter((t) => {
+      const availableTablesForParty = suitableTables
+        .filter((t) => {
           if (occupiedTableIds.has(t.id)) return false;
           // Si es hoy y la mesa está ocupada presencialmente en este momento
           if (isToday && t.status === 'OCUPADA' && Math.abs(slotMinutes - currentMinutes) < turnDurationMinutes) {
             return false;
           }
           return true;
-        });
+        })
+        .sort((a, b) => a.max_capacity - b.max_capacity || a.table_number.localeCompare(b.table_number));
 
-        canBook = availableTablesForParty.length > 0 && availablePax >= partySize;
-      } else {
-        canBook = availablePax >= partySize;
-      }
-
+      // La disponibilidad real exige que exista al menos una mesa física disponible
+      const canBook = availableTablesForParty.length > 0;
       if (canBook) anyZoneAvailable = true;
 
       zonesInfo[zone] = {
@@ -284,7 +396,7 @@ export async function getPublicAvailability(
 
 /**
  * Crea una reserva pública desde el frontend del cliente.
- * Se crea en estado 'PENDIENTE' para que el staff/admin la acepte o gestione.
+ * Asigna de forma obligatoria la mesa óptima (o valida la mesa elegida) y evita sobreventa física.
  */
 export async function createPublicReservation(payload: PublicReservationInput) {
   const validated = parseOrThrow(PublicReservationSchema, payload);
@@ -307,32 +419,39 @@ export async function createPublicReservation(payload: PublicReservationInput) {
     return { ok: false, error: 'La fecha y hora de la reserva deben ser en el futuro.' };
   }
 
-  const supabase = createServerClient();
+  // Validar disponibilidad física real de mesas para este grupo
+  const { available, bestTable, availableTables } = await checkSlotAvailability({
+    locationId: local.id,
+    date: validated.reservation_date,
+    time: validated.reservation_time,
+    partySize: validated.party_size,
+    zone: validated.preferred_zone,
+  });
 
-  // Verificar reservas existentes concurrentes para prevenir sobreventa
-  const { data: existingReservations } = await supabase
-    .from('reservations')
-    .select('id, party_size, reservation_time, table_id')
-    .eq('location_id', local.id)
-    .eq('reservation_date', validated.reservation_date)
-    .eq('preferred_zone', validated.preferred_zone)
-    .in('status', ['PENDIENTE', 'CONFIRMADA']);
-
-  // Si se eligió una mesa específica, comprobar que no esté tomada
-  let assignedTableId = validated.table_id || null;
-  if (assignedTableId) {
-    const tableConflict = (existingReservations || []).some(
-      (r) => r.table_id === assignedTableId && isTimeOverlapping(r.reservation_time, validated.reservation_time)
-    );
-    if (tableConflict) {
-      return {
-        ok: false,
-        error: 'La mesa seleccionada acaba de ser ocupada para este horario. Por favor selecciona otra mesa o elige cualquiera disponible.',
-      };
-    }
+  if (!available || !bestTable) {
+    return {
+      ok: false,
+      error: 'No hay mesas disponibles con la capacidad requerida para este horario y zona.',
+    };
   }
 
-  // Insertar reserva
+  let assignedTableId = validated.table_id || null;
+  if (assignedTableId) {
+    const isChosenTableFree = availableTables.some((t) => t.id === assignedTableId);
+    if (!isChosenTableFree) {
+      return {
+        ok: false,
+        error: 'La mesa seleccionada acaba de ser ocupada para este horario. Por favor selecciona otra mesa o continúa para asignarte la mejor disponible.',
+      };
+    }
+  } else {
+    // Asignación automática óptima (Best-Fit)
+    assignedTableId = bestTable.id;
+  }
+
+  const supabase = createServerClient();
+
+  // Insertar reserva vinculando la mesa física asignada
   const { data: reservation, error } = await supabase
     .from('reservations')
     .insert({
@@ -549,11 +668,27 @@ export async function createReservation(payload: z.infer<typeof ReservationSchem
   const validated = parseOrThrow(ReservationSchema, payload);
   const supabase = createServerClient();
 
+  // Validar y auto-asignar mesa física si no se especificó manualmente
+  let assignedTableId = validated.table_id || null;
+  if (!assignedTableId) {
+    const { available, bestTable } = await checkSlotAvailability({
+      locationId: staff.location_id,
+      date: validated.reservation_date,
+      time: validated.reservation_time,
+      partySize: validated.party_size,
+      zone: validated.preferred_zone,
+    });
+    if (available && bestTable) {
+      assignedTableId = bestTable.id;
+    }
+  }
+
   const data = await queryOrThrow(
     supabase
       .from('reservations')
       .insert({
         ...validated,
+        table_id: assignedTableId,
         location_id: staff.location_id,
         created_by: staff.id,
       })
@@ -621,81 +756,63 @@ export async function changeReservationStatus(id: string, status: ReservationSta
   return updateReservation(id, { status });
 }
 
-// --- Zone Capacity Management (Mesas y Aforo por Local) ---
+// --- Zone Capacity Management (Calculado en tiempo real desde restaurant_tables) ---
 
-export async function getZoneCapacities() {
+/**
+ * Obtiene el aforo de cada zona calculado dinámicamente sumando
+ * las capacidades máximas de las mesas físicas activas.
+ */
+export async function getZoneCapacities(): Promise<Array<{ zone: Zone; capacity: number }>> {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
-  const { data, error } = await supabase
-    .from('local_zone_capacity')
-    .select('zone, capacity')
-    .eq('location_id', staff.location_id);
+  const { data: tables, error } = await supabase
+    .from('restaurant_tables')
+    .select('zone, max_capacity')
+    .eq('location_id', staff.location_id)
+    .eq('is_active', true);
 
   if (error) {
     console.error('getZoneCapacities:', error);
     throw new AppError(parsePostgrestError(error, 'No se pudo cargar el aforo por zona.'));
   }
-  return data || [];
+
+  const map: Record<Zone, number> = { INTERIOR: 0, TERRAZA: 0, BARRA: 0 };
+  (tables || []).forEach((t) => {
+    const z = t.zone as Zone;
+    if (map[z] !== undefined) map[z] += t.max_capacity || 0;
+  });
+
+  return (Object.entries(map) as [Zone, number][]).map(([zone, capacity]) => ({
+    zone,
+    capacity,
+  }));
 }
 
-export async function upsertZoneCapacity(zone: Zone, capacity: number) {
-  const staff = await getStaffContext();
-  const cap = parseOrThrow(
-    z.object({
-      zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Zona inválida.' }),
-      capacity: zNumberES('La capacidad debe ser un número')
-        .int('La capacidad debe ser entera')
-        .min(0, 'La capacidad no puede ser negativa')
-        .max(1000, 'Máximo 1000 comensales por zona'),
-    }),
-    { zone, capacity }
-  );
-  const supabase = createServerClient();
-
-  if (cap.capacity === 0) {
-    const { error } = await supabase
-      .from('local_zone_capacity')
-      .delete()
-      .eq('location_id', staff.location_id)
-      .eq('zone', cap.zone);
-
-    if (error) {
-      console.error('upsertZoneCapacity/delete:', error);
-      throw new AppError(parsePostgrestError(error, 'No se pudo actualizar el aforo.'));
-    }
-    revalidatePath('/staff/admin');
-    return { zone: cap.zone, capacity: 0 };
-  }
-
-  const data = await queryOrThrow(
-    supabase
-      .from('local_zone_capacity')
-      .upsert(
-        { location_id: staff.location_id, zone: cap.zone, capacity: cap.capacity },
-        { onConflict: 'location_id,zone' }
-      )
-      .select('zone, capacity')
-      .single(),
-    { action: 'upsertZoneCapacity', fallback: 'No se pudo actualizar el aforo.' }
-  );
-
-  revalidatePath('/staff/admin');
-  return data;
+/**
+ * @deprecated El aforo manual ha sido sustituido por la suma de capacidades de mesas activas en AdminTableManager.
+ * Esta función se mantiene por compatibilidad y devuelve el aforo calculado actual.
+ */
+export async function upsertZoneCapacity(zone: Zone, _capacity: number) {
+  const caps = await getZoneCapacities();
+  const current = caps.find((c) => c.zone === zone);
+  return { zone, capacity: current ? current.capacity : 0 };
 }
 
 /**
  * Obtiene el resumen de ocupación del día por zona para la vista de estadísticas del admin.
+ * La capacidad total se deriva directamente de las mesas activas en restaurant_tables.
  */
 export async function getDailyOccupancyStats(date: string) {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
-  const [{ data: capacities }, { data: reservations }] = await Promise.all([
+  const [{ data: tables }, { data: reservations }] = await Promise.all([
     supabase
-      .from('local_zone_capacity')
-      .select('zone, capacity')
-      .eq('location_id', staff.location_id),
+      .from('restaurant_tables')
+      .select('zone, max_capacity')
+      .eq('location_id', staff.location_id)
+      .eq('is_active', true),
     supabase
       .from('reservations')
       .select('preferred_zone, party_size, status')
@@ -710,9 +827,9 @@ export async function getDailyOccupancyStats(date: string) {
     BARRA: { capacity: 0, booked: 0, pendingCount: 0, confirmedCount: 0 },
   };
 
-  (capacities || []).forEach((c) => {
-    const z = c.zone as Zone;
-    if (zoneStats[z]) zoneStats[z].capacity = c.capacity;
+  (tables || []).forEach((t) => {
+    const z = t.zone as Zone;
+    if (zoneStats[z]) zoneStats[z].capacity += t.max_capacity || 0;
   });
 
   (reservations || []).forEach((r) => {
