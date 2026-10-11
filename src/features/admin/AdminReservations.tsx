@@ -67,13 +67,18 @@ const ZONES_CONFIG: { zone: Zone; label: string; hint: string; icon: any }[] = [
   { zone: 'BARRA', label: 'Barra', hint: 'Asientos y periqueras en barra', icon: Coffee },
 ];
 
+import { AdminWaitlistManager } from './AdminWaitlistManager';
+import { listActiveWaitlist } from '@/lib/server/waitlist';
+import type { WaitlistParty } from '@/lib/types';
+
 export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'pending' | 'calendar' | 'tables' | 'shifts' | 'capacity'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'waitlist' | 'calendar' | 'tables' | 'shifts' | 'capacity'>('pending');
   const [calendarView, setCalendarView] = useState<'day' | 'week'>('day');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [reservations, setReservations] = useState<any[]>([]);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistParty[]>([]);
   const [zoneCapacities, setZoneCapacities] = useState<Record<Zone, number>>({ INTERIOR: 0, TERRAZA: 0, BARRA: 0 });
   const [loading, setLoading] = useState(true);
   const [editingReservation, setEditingReservation] = useState<any>(null);
@@ -85,13 +90,14 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [caps, res, tbls] = await Promise.all([
+      const [caps, res, tbls, wl] = await Promise.all([
         getZoneCapacities(),
         listReservations(
           format(addDays(selectedDate, -15), 'yyyy-MM-dd'),
           format(addDays(selectedDate, 30), 'yyyy-MM-dd')
         ),
         getStaffTables().catch(() => [] as RestaurantTable[]),
+        listActiveWaitlist().catch(() => [] as WaitlistParty[]),
       ]);
 
       const capacities: Record<Zone, number> = { INTERIOR: 0, TERRAZA: 0, BARRA: 0 };
@@ -102,6 +108,7 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
       setZoneCapacities(capacities);
       setReservations(res || []);
       setTables(tbls || []);
+      setWaitlist(wl || []);
     } catch (err: any) {
       console.error('AdminReservations/loadData:', err);
       setFormError(toUserMessage(err, 'No se pudieron cargar las reservas del local.'));
@@ -326,10 +333,28 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
               }`}
             >
               <Inbox className="w-4 h-4 shrink-0" />
-              <span>Pendientes</span>
+              <span>Pendientes Web</span>
               {pendingReservations.length > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-amber-500 text-white font-extrabold animate-pulse">
                   {pendingReservations.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('waitlist')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs sm:text-sm font-bold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer active:scale-95 ${
+                activeTab === 'waitlist'
+                  ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0 text-orange-400" />
+              <span>Fila en Puerta (Waitlist)</span>
+              {waitlist.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-orange-500 text-white font-extrabold animate-pulse">
+                  {waitlist.length}
                 </span>
               )}
             </button>
@@ -540,6 +565,16 @@ export function AdminReservations({ localSlug }: { localSlug?: string } = {}) {
             </div>
           )}
         </div>
+      )}
+
+      {/* PESTAÑA: FILA DE ESPERA VIRTUAL (WAITLIST) */}
+      {activeTab === 'waitlist' && (
+        <AdminWaitlistManager
+          waitlist={waitlist}
+          tables={tables}
+          localSlug={localSlug}
+          onRefresh={loadData}
+        />
       )}
 
       {/* PESTAÑA 2: AGENDA Y CALENDARIO */}

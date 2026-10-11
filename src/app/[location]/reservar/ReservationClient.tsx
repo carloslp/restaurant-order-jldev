@@ -543,6 +543,26 @@ export default function ReservationClient({ local, zones }: Props) {
                   </div>
                   <FieldError id="res-time-error" message={fieldErrors.selectedTime} />
 
+                  {/* Banner de alternativa Fila de Espera si los horarios están llenos */}
+                  <div className="bg-orange-50/70 border border-orange-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-orange-950 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-orange-600" />
+                        <span>¿No encuentras el horario que buscas o vienes en camino?</span>
+                      </div>
+                      <p className="text-[11px] text-orange-800/80">
+                        También puedes unirte a nuestra fila de espera virtual y ver tu lugar en vivo.
+                      </p>
+                    </div>
+                    <Link
+                      href={`/${local.slug}/fila`}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-xs transition-all shrink-0 select-none"
+                    >
+                      <span>Ir a la Fila de Espera</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+
                   {/* Selector de Mesas Disponibles */}
                   {selectedTime && (() => {
                     const selectedSlotObj = slots.find((s) => s.time === selectedTime);

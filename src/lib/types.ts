@@ -322,3 +322,58 @@ export interface SlotAvailability {
   zones: Record<Zone, ZoneAvailabilityInfo>;
   isAvailable: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Fila de Espera Virtual (Waitlist / Walk-in)
+// ---------------------------------------------------------------------------
+
+export type WaitlistStatus = 'EN_ESPERA' | 'LLAMADO' | 'SENTADO' | 'CANCELADO' | 'NO_SHOW';
+export type WaitlistZonePreference = Zone | 'CUALQUIERA';
+
+export interface WaitlistParty {
+  id: string;
+  location_id: string;
+  table_id?: string | null;
+  table_number?: string | null;
+  customer_name: string;
+  customer_phone: string;
+  party_size: number;
+  preferred_zone: WaitlistZonePreference;
+  status: WaitlistStatus;
+  tracking_token: string;
+  estimated_wait_minutes?: number | null;
+  called_at?: string | null;
+  seated_at?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JoinWaitlistInput {
+  location_slug: string;
+  customer_name: string;
+  customer_phone: string;
+  party_size: number;
+  preferred_zone: WaitlistZonePreference;
+  notes?: string | null;
+}
+
+export interface PublicWaitlistStatusResponse {
+  ok: boolean;
+  party?: {
+    id: string;
+    customer_name: string;
+    party_size: number;
+    preferred_zone: WaitlistZonePreference;
+    status: WaitlistStatus;
+    position: number;
+    totalWaiting: number;
+    estimatedMinutes: number;
+    called_at?: string | null;
+    seated_at?: string | null;
+    table_number?: string | null;
+    created_at: string;
+  };
+  localName?: string;
+  error?: string;
+}
