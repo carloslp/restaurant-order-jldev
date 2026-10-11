@@ -126,29 +126,62 @@ export function toggleGroupOption(
 }
 
 /**
- * Genera el badge descriptivo para el grupo según las especificaciones del feature:
- * Badges claros de "Obligatorio: elige 1" vs "Opcional"
+ * Tokens de accesibilidad de selección táctil y contraste de foco WCAG 2.2 AA (ENABLER E-01).
+ */
+export const ACCESSIBLE_TOUCH_TARGET = 'min-w-[44px] min-h-[44px]';
+export const ACCESSIBLE_FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2';
+
+/**
+ * Genera el badge descriptivo para el grupo según las especificaciones de US-01:
+ * "Obligatorio (elige 1)" vs "Opcional"
  */
 export function getModifierGroupBadge(group: ModifierGroup): {
   label: string;
   isRequired: boolean;
 } {
   if (group.is_required) {
-    if (group.max_selections === 1) {
-      return { label: 'Obligatorio: elige 1', isRequired: true };
+    if (group.max_selections === 1 || (!group.max_selections && (group.min_selections ?? 1) === 1)) {
+      return { label: 'Obligatorio (elige 1)', isRequired: true };
     }
     const min = group.min_selections > 0 ? group.min_selections : 1;
     if (group.max_selections === min) {
-      return { label: `Obligatorio: elige ${min}`, isRequired: true };
+      return { label: `Obligatorio (elige ${min})`, isRequired: true };
     }
-    return { label: `Obligatorio: elige al menos ${min}`, isRequired: true };
+    return { label: `Obligatorio (elige al menos ${min})`, isRequired: true };
   }
 
   return { label: 'Opcional', isRequired: false };
 }
 
 /**
- * Estado y copy del botón de acción según los Criterios de Aceptación CA-1 y CA-2.
+ * Genera el microcopy contextual guiado para grupos obligatorios incompletos (US-01).
+ * Convierte el nombre del grupo a una indicación clara y accesible.
+ * Ej: "Tipo de Salsa" -> "Selecciona 1 salsa"
+ *     "Término de la carne" -> "Selecciona 1 término de la carne"
+ *     "Salsas" -> "Selecciona 1 salsa"
+ */
+export function formatPendingGroupPrompt(group: ModifierGroup, remaining = 1): string {
+  let name = group.name.trim();
+
+  // Quitar prefijo "Tipo de " / "Tipos de " / "Selección de "
+  name = name.replace(/^(tipos?|selecci[oó]n)\s+de\s+/i, '').trim();
+
+  // Singularizar si solo falta 1 y termina en s plural en español
+  if (remaining === 1) {
+    if (/ciones$/i.test(name)) {
+      name = name.replace(/ciones$/i, 'ción');
+    } else if (/s$/i.test(name) && !/tres|dos|mes|país|carne|base/i.test(name)) {
+      name = name.slice(0, -1);
+    }
+  }
+
+  const lowerName = name.charAt(0).toLowerCase() + name.slice(1);
+  return `Selecciona ${remaining} ${lowerName}`;
+}
+
+/**
+ * Estado y copy del botón de acción según los Criterios de Aceptación de US-01.
  */
 export function getActionButtonState(
   groups: ModifierGroup[],
@@ -164,10 +197,16 @@ export function getActionButtonState(
   const formattedPrice = formatMXN(totalPrice);
 
   if (pendingGroup) {
+    const selectedIds = selections[pendingGroup.id] || new Set();
+    const minRequired = pendingGroup.is_required
+      ? Math.max(1, pendingGroup.min_selections || 0)
+      : (pendingGroup.min_selections || 0);
+    const remaining = Math.max(1, minRequired - selectedIds.size);
+
     return {
       isValid: false,
       pendingGroup,
-      buttonText: `Selecciona ${pendingGroup.name}`,
+      buttonText: formatPendingGroupPrompt(pendingGroup, remaining),
       formattedPrice,
     };
   }
@@ -175,7 +214,7 @@ export function getActionButtonState(
   return {
     isValid: true,
     pendingGroup: null,
-    buttonText: `Agregar al carrito · ${formattedPrice}`,
+    buttonText: `Agregar al pedido • ${formattedPrice}`,
     formattedPrice,
   };
 }

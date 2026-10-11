@@ -148,7 +148,7 @@ export default function ModifierSelector({
           <button
             onClick={onCancel}
             type="button"
-            className="min-w-[48px] min-h-[48px] w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-900 flex items-center justify-center transition-colors shrink-0 active:scale-95 cursor-pointer"
+            className="min-w-[48px] min-h-[48px] w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-900 flex items-center justify-center transition-colors shrink-0 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
@@ -207,7 +207,7 @@ export default function ModifierSelector({
                   </div>
                 )}
 
-                {/* Lista de opciones con controles táctiles ≥ 48px y contraste WCAG AA */}
+                {/* Lista de opciones con controles táctiles ≥ 44px y foco accesible emerald-500 */}
                 <div className="grid grid-cols-1 gap-2.5">
                   {group.options.map((opt) => {
                     const isSelected = currentSelected.has(opt.id);
@@ -220,7 +220,7 @@ export default function ModifierSelector({
                         aria-checked={isSelected}
                         aria-describedby={warning ? `limit-warning-${group.id}` : undefined}
                         onClick={() => handleToggleOption(group.id, opt.id)}
-                        className={`min-h-[48px] w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all select-none active:scale-[0.99] cursor-pointer ${
+                        className={`min-h-[48px] min-w-[44px] w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all select-none active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                           isSelected
                             ? 'border-orange-600 bg-orange-50/70 shadow-xs ring-1 ring-orange-600/40'
                             : 'border-zinc-300 hover:border-zinc-400 bg-white'
@@ -229,7 +229,7 @@ export default function ModifierSelector({
                         <div className="flex items-center gap-3">
                           {/* Contenedor del radio o checkbox */}
                           <div
-                            className={`w-6 h-6 rounded-${
+                            className={`min-w-[24px] min-h-[24px] w-6 h-6 rounded-${
                               isSingle ? 'full' : 'md'
                             } flex items-center justify-center border-2 transition-colors shrink-0 ${
                               isSelected
@@ -310,7 +310,7 @@ export default function ModifierSelector({
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   disabled={quantity <= 1}
-                  className="min-w-[48px] min-h-[48px] rounded-l-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-100 transition-colors"
+                  className="min-w-[48px] min-h-[48px] rounded-l-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
                   aria-label="Disminuir cantidad"
                 >
                   <Minus className="w-4 h-4" />
@@ -321,7 +321,7 @@ export default function ModifierSelector({
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => q + 1)}
-                  className="min-w-[48px] min-h-[48px] rounded-r-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 active:bg-zinc-100 transition-colors"
+                  className="min-w-[48px] min-h-[48px] rounded-r-xl flex items-center justify-center text-zinc-700 hover:text-zinc-900 active:bg-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
                   aria-label="Aumentar cantidad"
                 >
                   <Plus className="w-4 h-4" />
@@ -343,24 +343,24 @@ export default function ModifierSelector({
             <button
               type="button"
               onClick={onCancel}
-              className="min-h-[48px] px-4 py-3 rounded-xl text-sm font-bold text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 active:scale-95 transition-all cursor-pointer"
+              className="min-h-[48px] min-w-[44px] px-4 py-3 rounded-xl text-sm font-bold text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 active:scale-95 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             >
               Cancelar
             </button>
 
-            {/* CA-1 & CA-2: Botón de acción con texto contextual y precio dinámico */}
+            {/* US-01: Botón de acción con texto contextual y precio dinámico */}
             <button
               type="button"
               onClick={handleConfirm}
               disabled={!actionButtonState.isValid}
-              className={`min-h-[48px] flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center justify-center text-center ${
+              className={`min-h-[48px] min-w-[44px] flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center justify-center text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                 actionButtonState.isValid
                   ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/25 cursor-pointer'
                   : 'bg-zinc-200 text-zinc-700 shadow-none cursor-not-allowed border border-zinc-300'
               }`}
               aria-label={
                 actionButtonState.isValid
-                  ? `Agregar al carrito por ${actionButtonState.formattedPrice}`
+                  ? `Agregar al pedido por ${actionButtonState.formattedPrice}`
                   : actionButtonState.buttonText
               }
             >

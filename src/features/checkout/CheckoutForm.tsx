@@ -574,7 +574,7 @@ export function CheckoutForm({
                     role="radio"
                     aria-checked={orderType === 'DOMICILIO'}
                     onClick={() => onOrderTypeChange?.('DOMICILIO')}
-                    className={`min-h-[52px] p-3.5 rounded-2xl border text-left transition-all select-none active:scale-[0.98] flex items-center justify-between cursor-pointer ${
+                    className={`min-h-[52px] min-w-[44px] p-3.5 rounded-2xl border text-left transition-all select-none active:scale-[0.98] flex items-center justify-between cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                       orderType === 'DOMICILIO'
                         ? 'border-orange-600 bg-orange-50/70 ring-2 ring-orange-600/30 text-zinc-900 shadow-2xs'
                         : 'border-zinc-200 hover:border-zinc-300 bg-white text-zinc-700'
@@ -607,7 +607,7 @@ export function CheckoutForm({
                     role="radio"
                     aria-checked={orderType === 'RECOGER'}
                     onClick={() => onOrderTypeChange?.('RECOGER')}
-                    className={`min-h-[52px] p-3.5 rounded-2xl border text-left transition-all select-none active:scale-[0.98] flex items-center justify-between cursor-pointer ${
+                    className={`min-h-[52px] min-w-[44px] p-3.5 rounded-2xl border text-left transition-all select-none active:scale-[0.98] flex items-center justify-between cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                       orderType === 'RECOGER'
                         ? 'border-orange-600 bg-orange-50/70 ring-2 ring-orange-600/30 text-zinc-900 shadow-2xs'
                         : 'border-zinc-200 hover:border-zinc-300 bg-white text-zinc-700'

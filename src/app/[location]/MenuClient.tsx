@@ -502,14 +502,14 @@ export default function MenuClient({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {/* Stepper táctil ergonómico */}
+                            {/* Stepper táctil ergonómico (≥ 44×44 px y foco accesible) */}
                             {available && (
                               <div className="flex items-center bg-zinc-100 rounded-xl p-0.5 border border-zinc-200">
                                 <button
                                   type="button"
                                   onClick={() => updateQuantity(p.id, -1)}
                                   disabled={qty <= 1}
-                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-200 transition-colors"
+                                  className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
                                   aria-label="Disminuir cantidad"
                                 >
                                   <Minus className="w-3.5 h-3.5" />
@@ -520,7 +520,7 @@ export default function MenuClient({
                                 <button
                                   type="button"
                                   onClick={() => updateQuantity(p.id, 1)}
-                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors"
+                                  className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-900 active:bg-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
                                   aria-label="Aumentar cantidad"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
