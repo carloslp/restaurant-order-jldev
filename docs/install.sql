@@ -1,14 +1,14 @@
 -- ============================================================================
--- restaurant-order-jldev â€” InstalaciÃ³n limpia en un solo archivo
+-- restaurant-order-jldev - Instalación limpia en un solo archivo
 -- ============================================================================
 -- Ejecutar en el SQL Editor de Supabase (rol postgres) sobre un proyecto nuevo.
--- Orden: extensiones â†’ tipos â†’ tablas â†’ triggers updated_at â†’ auth sync â†’
---        RLS + policies â†’ Ã­ndices â†’ vistas â†’ pg_cron.
+-- Orden: extensiones -> tipos -> tablas -> triggers updated_at -> auth sync ->
+--        RLS + policies -> índices -> vistas -> realtime -> storage -> pg_cron.
 --
--- âš ï¸ NO incluye seed: la base queda VACÃA. Al abrir la app por primera vez,
---    `/setup` detecta que no hay locales y arranca el onboarding (crea el
---    primer local + admin). Para datos demo en desarrollo, ejecuta despuÃ©s
---    `docs/seed.sql` (separado, a propÃ³sito).
+-- NOTA: NO incluye seed: la base queda VACÍA. Al abrir la app por primera vez,
+--    /setup detecta que no hay locales y arranca el onboarding (crea el
+--    primer local + admin). Para datos demo en desarrollo, ejecuta después
+--    docs/seed.sql (separado, a propósito).
 -- ============================================================================
 
 -- ============================================================================
@@ -59,6 +59,15 @@ CREATE TYPE deposit_status AS ENUM (
 );
 
 CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
+
+CREATE TYPE waitlist_status AS ENUM (
+    'EN_ESPERA',
+    'LLAMADO',
+    'SENTADO',
+    'CANCELADO',
+    'NO_SHOW'
+);
+
 
 -- ============================================================================
 -- 3. TABLAS
@@ -346,6 +355,28 @@ INSERT INTO diet_labels (name, description) VALUES
     ('SIN_LACTOSA', NULL),
     ('PICANTE', NULL) ON CONFLICT (name) DO NOTHING;
 
+-- 3.11 Fila de Espera Virtual (Waitlist / Walk-ins)
+CREATE TABLE waitlist (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    customer_name TEXT NOT NULL,
+    customer_phone TEXT NOT NULL,
+    party_size INTEGER NOT NULL CHECK (party_size > 0),
+    preferred_zone TEXT NOT NULL DEFAULT 'CUALQUIERA' CHECK (preferred_zone IN ('INTERIOR', 'TERRAZA', 'BARRA', 'CUALQUIERA')),
+    status waitlist_status NOT NULL DEFAULT 'EN_ESPERA',
+    tracking_token UUID NOT NULL DEFAULT gen_random_uuid(),
+    estimated_wait_minutes INTEGER NULL,
+    called_at TIMESTAMPTZ NULL,
+    seated_at TIMESTAMPTZ NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
+    updated_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL
+);
+
+
 -- ============================================================================
 -- 4. TRIGGER updated_at
 -- ============================================================================
@@ -363,7 +394,7 @@ DECLARE
 BEGIN
     FOREACH tbl IN ARRAY ARRAY[
         'locals','categories','products','modifier_groups','modifier_options',
-        'orders','reservations','staff','discounts','restaurant_tables'
+        'orders','reservations','staff','discounts','restaurant_tables','waitlist'
     ]
     LOOP
         EXECUTE format('
@@ -471,6 +502,7 @@ ALTER TABLE product_allergens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_diet_labels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurant_tables ENABLE ROW LEVEL SECURITY;
 ALTER TABLE local_shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE waitlist ENABLE ROW LEVEL SECURITY;
 
 -- PatrÃ³n GUC: el backend setea 'app.local_id' (y 'app.token_plain' si aplica)
 -- antes de cada consulta. current_setting(..., true) devuelve NULL si no existe.
@@ -590,6 +622,39 @@ WITH CHECK (
         SELECT 1 FROM staff 
         WHERE staff.auth_user_id = auth.uid() 
           AND staff.location_id = local_shifts.location_id
+    )
+);
+
+-- Fila de espera virtual (Waitlist)
+CREATE POLICY waitlist_public_read ON waitlist
+FOR SELECT
+USING (true);
+
+CREATE POLICY waitlist_public_insert ON waitlist
+FOR INSERT
+WITH CHECK (true);
+
+CREATE POLICY waitlist_update ON waitlist
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY waitlist_staff_access ON waitlist
+FOR ALL
+USING (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = waitlist.location_id
+    )
+)
+WITH CHECK (
+    location_id = current_setting('app.local_id', true)::uuid
+    OR EXISTS (
+        SELECT 1 FROM staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = waitlist.location_id
     )
 );
 
@@ -733,6 +798,9 @@ GRANT SELECT ON TABLE locals TO anon, authenticated;
 
 -- orders: solo authenticated (JWT de staff) para Realtime (orders_staff_live).
 GRANT SELECT ON TABLE orders TO authenticated;
+-- waitlist: lectura y registro para clientes (anon) y control total para staff (authenticated)
+GRANT SELECT, INSERT, UPDATE ON TABLE waitlist TO anon;
+GRANT ALL ON TABLE waitlist TO authenticated;
 
 -- ============================================================================
 -- 7. ÃNDICES
@@ -741,6 +809,14 @@ CREATE INDEX idx_orders_location_status ON orders(location_id, status);
 CREATE INDEX idx_orders_eta ON orders(eta);
 CREATE INDEX idx_orders_created_at ON orders(created_at);
 CREATE INDEX idx_orders_customer_phone ON orders(customer_phone);
+CREATE INDEX idx_orders_driver ON orders(driver_id);
+CREATE INDEX idx_orders_table_id ON orders(table_id);
+CREATE INDEX idx_reservations_table_id ON reservations(table_id);
+CREATE INDEX idx_restaurant_tables_location ON restaurant_tables(location_id);
+CREATE INDEX idx_restaurant_tables_qr_token ON restaurant_tables(qr_token);
+CREATE INDEX idx_local_shifts_location ON local_shifts(location_id);
+CREATE INDEX idx_waitlist_location_status ON waitlist(location_id, status, created_at);
+CREATE INDEX idx_waitlist_tracking_token ON waitlist(tracking_token);
 CREATE INDEX idx_reservations_location_date ON reservations(location_id, reservation_date);
 CREATE INDEX idx_reservations_status ON reservations(status);
 CREATE INDEX idx_staff_location ON staff(location_id);
@@ -790,6 +866,9 @@ SELECT
     o.updated_at
 FROM orders o;
 
+GRANT SELECT ON staff_orders_view TO anon, authenticated;
+GRANT SELECT ON staff_orders_view TO service_role;
+
 -- ============================================================================
 -- 9. COMENTARIOS
 -- ============================================================================
@@ -805,6 +884,8 @@ COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_i
 COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al pÃºblico.';
 COMMENT ON TABLE delivery_tokens IS 'Token Ãºnico de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
 COMMENT ON TABLE discounts IS 'Engine de promos: cÃ³digos o automÃ¡ticas con reglas; sin apilar';
+COMMENT ON TABLE waitlist IS 'Fila de espera virtual (walk-ins) con token de seguimiento';
+COMMENT ON COLUMN waitlist.tracking_token IS 'UUID público para seguimiento de posición y cancelación en tiempo real por el comensal';
 
 -- ============================================================================
 -- Permisos para service_role (bypass RLS en operaciones server-side)
@@ -823,7 +904,60 @@ GRANT USAGE ON SCHEMA auth TO service_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;
 
 -- ============================================================================
--- 10. PG_CRON: recordatorios de reservaciones (opcional)
+-- 10. REALTIME (Publicación supabase_realtime)
+-- ============================================================================
+-- Agrega las tablas necesarias a la publicación de Realtime para eventos en vivo
+-- (Caja/KDS, disponibilidad de productos del menú y fila de espera virtual).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'orders'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'products'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'waitlist'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.waitlist;
+    END IF;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- 11. SUPABASE STORAGE (Bucket de imágenes del menú)
+-- ============================================================================
+-- Configura el bucket 'menu-images' público para fotos de categorías y productos.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    VALUES (
+        'menu-images',
+        'menu-images',
+        true,                                  -- URLs públicas para el menú
+        5242880,                               -- 5MB
+        ARRAY['image/jpeg', 'image/png', 'image/webp']
+    )
+    ON CONFLICT (id) DO UPDATE
+        SET public = EXCLUDED.public,
+            file_size_limit = EXCLUDED.file_size_limit,
+            allowed_mime_types = EXCLUDED.allowed_mime_types;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- 12. PG_CRON: recordatorios de reservaciones (opcional)
 -- ============================================================================
 -- Requiere definir la GUC app.cron_secret en Supabase (Settings â†’ Database â†’
 -- Custom Configuration o vÃ­a supabase secrets).
