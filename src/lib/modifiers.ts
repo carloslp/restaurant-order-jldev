@@ -9,6 +9,44 @@ export interface GroupValidationResult {
   max: number;
 }
 
+export interface CanonicalModifierState {
+  isComplete: boolean;
+  missingGroups: string[];
+  calculatedPrice: number;
+}
+
+/**
+ * ENABLER E-01: Retorna un objeto canónico de estado de modificadores.
+ * Valida consistencia de selecciones obligatorias y calcula el precio total.
+ */
+export function getCanonicalModifierState(
+  product: Product,
+  selections: Record<string, Set<string>>,
+  quantity = 1
+): CanonicalModifierState {
+  const groups = product.modifier_groups || [];
+  const missingGroups: string[] = [];
+
+  for (const group of groups) {
+    const selected = selections[group.id] || new Set();
+    const status = validateGroupSelections(group, selected);
+    if (status.isMissing) {
+      missingGroups.push(group.name);
+    }
+  }
+
+  const calculatedPrice = calculateProductTotalPrice(product, selections, quantity);
+
+  return {
+    isComplete: missingGroups.length === 0,
+    missingGroups,
+    calculatedPrice,
+  };
+}
+
+export const validateModifierState = getCanonicalModifierState;
+
+
 /**
  * Valida si las opciones seleccionadas para un grupo cumplen con los requisitos mínimos y máximos.
  */
@@ -136,15 +174,21 @@ export const ACCESSIBLE_FOCUS_RING =
  * Genera el badge descriptivo para el grupo según las especificaciones de US-01:
  * "Obligatorio (elige 1)" vs "Opcional"
  */
-export function getModifierGroupBadge(group: ModifierGroup): {
+export function getModifierGroupBadge(
+  group: ModifierGroup,
+  currentCount?: number
+): {
   label: string;
   isRequired: boolean;
 } {
   if (group.is_required) {
+    const min = group.min_selections > 0 ? group.min_selections : 1;
+    if (currentCount !== undefined) {
+      return { label: `Obligatorio (${currentCount}/${min})`, isRequired: true };
+    }
     if (group.max_selections === 1 || (!group.max_selections && (group.min_selections ?? 1) === 1)) {
       return { label: 'Obligatorio (elige 1)', isRequired: true };
     }
-    const min = group.min_selections > 0 ? group.min_selections : 1;
     if (group.max_selections === min) {
       return { label: `Obligatorio (elige ${min})`, isRequired: true };
     }
@@ -186,7 +230,8 @@ export function formatPendingGroupPrompt(group: ModifierGroup, remaining = 1): s
 export function getActionButtonState(
   groups: ModifierGroup[],
   selections: Record<string, Set<string>>,
-  totalPrice: number
+  totalPrice: number,
+  mode: 'guided' | 'generic' = 'guided'
 ): {
   isValid: boolean;
   pendingGroup: ModifierGroup | null;
@@ -206,7 +251,10 @@ export function getActionButtonState(
     return {
       isValid: false,
       pendingGroup,
-      buttonText: formatPendingGroupPrompt(pendingGroup, remaining),
+      buttonText:
+        mode === 'generic'
+          ? 'Elige opciones obligatorias'
+          : formatPendingGroupPrompt(pendingGroup, remaining),
       formattedPrice,
     };
   }

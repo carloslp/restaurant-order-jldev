@@ -2,16 +2,17 @@
 // Feature F-03: Ergonomía Táctil y Modo Alta Demanda en Kitchen Display System (KDS)
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, useCallback, useRef } from 'react';
 import { updateOrderStatus } from '@/lib/server/order';
 import { useRealtimeOrders } from '@/features/staff/useRealtimeOrders';
 import {
   getElapsedMinutes,
   getKdsCardVisuals,
   getKdsActionConfig,
+  playNewOrderChime,
 } from '@/features/staff/kdsUtils';
 import type { Order } from '@/lib/types';
-import { Loader2, Ban, UtensilsCrossed } from 'lucide-react';
+import { Loader2, Ban, UtensilsCrossed, Volume2, VolumeX, AlertCircle } from 'lucide-react';
 import { ProductAvailabilityManager } from '@/features/staff/ProductAvailabilityManager';
 
 interface KitchenDisplayProps {
@@ -28,11 +29,30 @@ function formatTime(iso: string): string {
 const ACTIVE_STATUSES: Order['status'][] = ['CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO'];
 
 export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
+  const [isMuted, setIsMuted] = useState(false);
+  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // CA-1: Alerta sonora en nueva comanda recibida (440 Hz -> 880 Hz, 150 ms c/u) y resaltado transitorio (1.5 s)
+  const handleNewOrder = useCallback(
+    (order: Order) => {
+      void playNewOrderChime({ isMuted });
+
+      setHighlightedOrderId(order.id);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedOrderId(null);
+      }, 1500);
+    },
+    [isMuted]
+  );
+
   // Pedidos en tiempo real (Realtime + estado inicial)
   const orders = useRealtimeOrders({
     locationId,
     statuses: ACTIVE_STATUSES,
     limit: 100,
+    onNewOrder: handleNewOrder,
   });
 
   const [pending, startTransition] = useTransition();
@@ -41,12 +61,15 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
   const [now, setNow] = useState<number>(() => Date.now());
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
 
-  // Actualizador en vivo de tiempo transcurrido cada 15 segundos para alertas en KDS
+  // CA-4: Limpieza segura de timers para evitar memory leaks
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 15000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
   }, []);
 
   async function handleTransition(orderId: string, nextStatus: Order['status']) {
@@ -95,6 +118,22 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Control manual de volumen / silencio en pantalla (CA-1 & ENABLER E-02) */}
+          <button
+            type="button"
+            onClick={() => setIsMuted((m) => !m)}
+            className="min-h-[44px] min-w-[44px] px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-xs active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 cursor-pointer"
+            aria-label={isMuted ? 'Activar sonido de comandas' : 'Silenciar sonido de comandas'}
+            title={isMuted ? 'Sonido desactivado. Clic para activar' : 'Sonido activado. Clic para silenciar'}
+          >
+            {isMuted ? (
+              <VolumeX className="w-4 h-4 text-red-400" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+            )}
+            <span>{isMuted ? 'Silenciado' : 'Sonido ON'}</span>
+          </button>
+
           {/* CA-1 & CA-8: Botón contextual de disponibilidad rápida en KDS (mínimo 44x44 px) */}
           <button
             type="button"
@@ -113,6 +152,18 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
           )}
         </div>
       </div>
+
+      {/* CA-3: Banner superior persistente en amarillo ante pérdida de conexión WebSocket */}
+      {orders.isReconnecting && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-xl bg-amber-400 text-amber-950 px-4 py-3 font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm animate-pulse border border-amber-500"
+        >
+          <AlertCircle className="w-5 h-5 shrink-0 text-amber-900" />
+          <span>Conexión en pausa. Reintentando...</span>
+        </div>
+      )}
 
       {/* Modal de disponibilidad rápida */}
       <ProductAvailabilityManager
@@ -146,16 +197,20 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
             ) : (
               grouped[col.key].map((order) => {
                 const elapsedMinutes = getElapsedMinutes(order.created_at, now);
-                // CA-1: Alerta visual por tiempo de espera (>15 min ámbar, >25 min rojo parpadeante suave)
+                // CA-2: Semáforo visual en 3 niveles (Normal, Advertencia #D97706, Crítico #DC2626/#FEF2F2)
                 const visuals = getKdsCardVisuals(order.status, elapsedMinutes);
                 // CA-2: Botón de avance táctil grande (ancho completo y min-height >= 56px)
                 const actionConfig = getKdsActionConfig(col.key, order.order_type);
                 const isTransitioning = pendingOrder === order.id;
+                // CA-1: Resaltado transitorio de 1.5s
+                const isHighlighted = highlightedOrderId === order.id;
 
                 return (
                   <div
                     key={order.id}
-                    className={`rounded-2xl ${visuals.borderClass} ${visuals.bgClass} ${visuals.pulseClass} flex flex-col justify-between shadow-xs transition-all overflow-hidden animate-in fade-in zoom-in-95 duration-200`}
+                    className={`rounded-2xl ${visuals.borderClass} ${visuals.bgClass} ${visuals.pulseClass} ${
+                      isHighlighted ? 'ring-4 ring-amber-400 scale-[1.02] shadow-xl z-10' : ''
+                    } flex flex-col justify-between shadow-xs transition-all overflow-hidden animate-in fade-in zoom-in-95 duration-200`}
                   >
                     <div className="p-4 sm:p-5 flex-1">
                       {/* Cabecera del ticket */}

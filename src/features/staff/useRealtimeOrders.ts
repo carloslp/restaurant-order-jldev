@@ -32,6 +32,7 @@ export interface UseRealtimeOrdersResult extends Array<Order> {
   orders?: Order[];
   mutateOrderStatusOptimistic?: (orderId: string, nextStatus: Order['status']) => () => void;
   refresh?: () => Promise<void>;
+  isReconnecting?: boolean;
 }
 
 export function useRealtimeOrders(opts: {
@@ -40,14 +41,27 @@ export function useRealtimeOrders(opts: {
   limit?: number;
   enabled?: boolean;
   includePendingTableOrders?: boolean;
+  onNewOrder?: (order: Order) => void;
 }): Order[] & {
   mutateOrderStatusOptimistic: (orderId: string, nextStatus: Order['status']) => () => void;
   refresh: () => Promise<void>;
+  isReconnecting: boolean;
 } {
-  const { locationId, statuses, limit = 100, enabled = true, includePendingTableOrders = false } = opts;
+  const {
+    locationId,
+    statuses,
+    limit = 100,
+    enabled = true,
+    includePendingTableOrders = false,
+    onNewOrder,
+  } = opts;
   // Los callers pasan literales; key estable para las dependencias del efecto.
   const statusesKey = statuses?.join(',') ?? '';
   const [orders, setOrders] = useState<Order[]>([]);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const onNewOrderRef = useRef(onNewOrder);
+  onNewOrderRef.current = onNewOrder;
+  const lastHeartbeatRef = useRef<number>(Date.now());
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
 
   /**
@@ -203,10 +217,18 @@ export function useRealtimeOrders(opts: {
               const oldId = (payload.old as { id?: string } | undefined)?.id;
 
               if (payload.eventType === 'INSERT' && normalizedIncoming) {
+                lastHeartbeatRef.current = Date.now();
+                setIsReconnecting(false);
+                const alreadyExists = prev.some((o) => o.id === normalizedIncoming.id);
+                if (!alreadyExists) {
+                  onNewOrderRef.current?.(normalizedIncoming);
+                }
                 return [normalizedIncoming, ...prev].slice(0, limit);
               }
 
               if (payload.eventType === 'UPDATE' && normalizedIncoming) {
+                lastHeartbeatRef.current = Date.now();
+                setIsReconnecting(false);
                 const exists = prev.some((o) => o.id === normalizedIncoming.id);
                 if (!exists) {
                   const isPendingTable = includePendingTableOrders && normalizedIncoming.order_type === 'EN_MESA' && normalizedIncoming.payment_status === 'PENDIENTE';
@@ -227,6 +249,8 @@ export function useRealtimeOrders(opts: {
               }
 
               if (payload.eventType === 'DELETE') {
+                lastHeartbeatRef.current = Date.now();
+                setIsReconnecting(false);
                 return prev.filter((o) => o.id !== oldId);
               }
 
@@ -239,11 +263,16 @@ export function useRealtimeOrders(opts: {
           // Al (re)conectar el canal sincronizamos con el servidor: cubre los
           // eventos perdidos mientras el canal estuvo desconectado o sin
           // configurar (publication/policy en Supabase).
-          if (
-            status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED ||
+          if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+            lastHeartbeatRef.current = Date.now();
+            setIsReconnecting(false);
+            refreshOnce();
+          } else if (
             status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
-            status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR
+            status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+            status === REALTIME_SUBSCRIBE_STATES.CLOSED
           ) {
+            setIsReconnecting(true);
             refreshOnce();
           }
         });
@@ -260,9 +289,17 @@ export function useRealtimeOrders(opts: {
       console.error('useRealtimeOrders/setupChannel:', err);
     });
 
+    // CA-3: Verificador periódico de heartbeat (si transcurren más de 5s sin actividad, marcar reconexión)
+    const heartbeatInterval = window.setInterval(() => {
+      if (realtimeChannel && Date.now() - lastHeartbeatRef.current > 5000) {
+        setIsReconnecting(true);
+      }
+    }, 2000);
+
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      window.clearInterval(heartbeatInterval);
       window.removeEventListener('focus', refreshOnce);
       if (realtimeChannel) {
         void supabase.current!.removeChannel(realtimeChannel);
@@ -275,5 +312,6 @@ export function useRealtimeOrders(opts: {
   return Object.assign(orders, {
     mutateOrderStatusOptimistic,
     refresh,
+    isReconnecting,
   });
 }

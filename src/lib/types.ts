@@ -161,6 +161,8 @@ export interface CartItem {
 
 export interface Cart {
   items: CartItem[];
+  location_id?: string | null;
+  location_name?: string | null;
 }
 
 // ---------------------------------------------------------------------------

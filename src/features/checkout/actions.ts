@@ -57,6 +57,14 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   }
   const location_id = local.id;
 
+  // FEATURE F-03: Protección multisede: verificar que el carrito no pertenezca a otra sucursal
+  if (input.cart.location_id && input.cart.location_id !== location_id) {
+    return {
+      ok: false,
+      error: 'Los productos en tu carrito pertenecen a otra sucursal. Por favor vacía tu carrito para continuar.',
+    };
+  }
+
   const supabase = createServerClient();
 
   // 1. Validación de entrada

@@ -9,6 +9,8 @@ import {
   getModifierGroupBadge,
   getActionButtonState,
 } from '@/lib/modifiers';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
 import { X, Check, AlertCircle, Plus, Minus } from 'lucide-react';
 
 interface Props {
@@ -31,6 +33,78 @@ export default function ModifierSelector({
   const [quantity, setQuantity] = useState<number>(Math.max(1, initialQuantity));
   const [comments, setComments] = useState('');
   const [limitWarnings, setLimitWarnings] = useState<Record<string, string>>({});
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+
+  // CA-4: Modificador agotado en tiempo real (86ing)
+  const [soldOutOptionIds, setSoldOutOptionIds] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const g of groups) {
+      for (const opt of g.options) {
+        if (opt.is_active === false) {
+          initial.add(opt.id);
+        }
+      }
+    }
+    return initial;
+  });
+
+  // Suscripción Realtime a 86ing de opciones de modificadores
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.SUPABASE_URL) return;
+
+    try {
+      const supabase = createClient();
+      const topic = `modifier-options-${product.id}`;
+      const channel = supabase
+        .channel(topic)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'modifier_options',
+          },
+          (payload: RealtimePostgresChangesPayload<{ id: string; is_active: boolean }>) => {
+            const row = payload.new as { id?: string; is_active?: boolean } | undefined;
+            if (!row?.id) return;
+
+            if (row.is_active === false) {
+              setSoldOutOptionIds((prev) => new Set(prev).add(row.id!));
+              // Si estaba seleccionada, deseleccionarla inmediatamente recalculando el total
+              setSelections((prev) => {
+                let changed = false;
+                const next: Record<string, Set<string>> = {};
+                for (const [gid, set] of Object.entries(prev)) {
+                  if (set.has(row.id!)) {
+                    changed = true;
+                    const newSet = new Set(set);
+                    newSet.delete(row.id!);
+                    next[gid] = newSet;
+                  } else {
+                    next[gid] = set;
+                  }
+                }
+                return changed ? next : prev;
+              });
+              setLiveAnnouncement('Una opción se ha marcado como agotada y ha sido deseleccionada.');
+            } else if (row.is_active === true) {
+              setSoldOutOptionIds((prev) => {
+                const next = new Set(prev);
+                next.delete(row.id!);
+                return next;
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    } catch {
+      // Ignorar si no hay conexión en pruebas locales
+    }
+  }, [product.id]);
 
   // Bloquear scroll de fondo en móvil mientras el BottomSheet esté abierto
   useEffect(() => {
@@ -52,6 +126,8 @@ export default function ModifierSelector({
 
   const handleToggleOption = useCallback(
     (groupId: string, optionId: string) => {
+      if (soldOutOptionIds.has(optionId)) return;
+
       const group = groups.find((g) => g.id === groupId);
       if (!group) return;
 
@@ -75,17 +151,17 @@ export default function ModifierSelector({
         }
       }
     },
-    [groups, selections, limitWarnings]
+    [groups, selections, limitWarnings, soldOutOptionIds]
   );
 
-  // CA-2: Cálculo dinámico de precio incremental sin latencia
+  // CA-2: Cálculo dinámico de precio incremental sin latencia (< 16 ms)
   const totalPrice = useMemo(() => {
     return calculateProductTotalPrice(product, selections, quantity);
   }, [product, selections, quantity]);
 
-  // CA-1: Validación y texto del botón de acción
+  // CA-1: Validación y texto del botón de acción (CTA en modo genérico muestra "Elige opciones obligatorias" cuando incompleto)
   const actionButtonState = useMemo(() => {
-    return getActionButtonState(groups, selections, totalPrice);
+    return getActionButtonState(groups, selections, totalPrice, 'generic');
   }, [groups, selections, totalPrice]);
 
   const handleConfirm = () => {
@@ -157,11 +233,17 @@ export default function ModifierSelector({
 
         {/* Contenido scrolleable de grupos de modificadores */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 overscroll-contain">
+          {/* Región accesible aria-live para retroalimentación a lectores de pantalla */}
+          <div className="sr-only" role="status" aria-live="polite">
+            {liveAnnouncement}
+          </div>
+
           {groups.map((group) => {
             const currentSelected = selections[group.id] || new Set();
             const isSingle = group.max_selections === 1;
-            const badge = getModifierGroupBadge(group);
+            const badge = getModifierGroupBadge(group, currentSelected.size);
             const warning = limitWarnings[group.id];
+            const isMaxReached = group.max_selections > 1 && currentSelected.size >= group.max_selections;
 
             return (
               <fieldset
@@ -211,6 +293,9 @@ export default function ModifierSelector({
                 <div className="grid grid-cols-1 gap-2.5">
                   {group.options.map((opt) => {
                     const isSelected = currentSelected.has(opt.id);
+                    const isSoldOut = soldOutOptionIds.has(opt.id) || opt.is_active === false;
+                    const isBlockedByMax = isMaxReached && !isSelected;
+                    const isDisabled = isSoldOut || isBlockedByMax;
 
                     return (
                       <button
@@ -218,12 +303,16 @@ export default function ModifierSelector({
                         type="button"
                         role={isSingle ? 'radio' : 'checkbox'}
                         aria-checked={isSelected}
+                        aria-disabled={isDisabled}
+                        disabled={isDisabled}
                         aria-describedby={warning ? `limit-warning-${group.id}` : undefined}
                         onClick={() => handleToggleOption(group.id, opt.id)}
-                        className={`min-h-[48px] min-w-[44px] w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all select-none active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
-                          isSelected
-                            ? 'border-orange-600 bg-orange-50/70 shadow-xs ring-1 ring-orange-600/40'
-                            : 'border-zinc-300 hover:border-zinc-400 bg-white'
+                        className={`min-h-[48px] min-w-[44px] w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                          isSoldOut || isBlockedByMax
+                            ? 'opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200 text-zinc-400'
+                            : isSelected
+                              ? 'border-orange-600 bg-orange-50/70 shadow-xs ring-1 ring-orange-600/40 active:scale-[0.99] cursor-pointer'
+                              : 'border-zinc-300 hover:border-zinc-400 bg-white active:scale-[0.99] cursor-pointer'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -232,9 +321,11 @@ export default function ModifierSelector({
                             className={`min-w-[24px] min-h-[24px] w-6 h-6 rounded-${
                               isSingle ? 'full' : 'md'
                             } flex items-center justify-center border-2 transition-colors shrink-0 ${
-                              isSelected
-                                ? 'bg-orange-600 border-orange-600 text-white'
-                                : 'border-zinc-400 bg-white'
+                              isSoldOut
+                                ? 'border-zinc-300 bg-zinc-100 text-zinc-400'
+                                : isSelected
+                                  ? 'bg-orange-600 border-orange-600 text-white'
+                                  : 'border-zinc-400 bg-white'
                             }`}
                           >
                             {isSelected &&
@@ -246,26 +337,34 @@ export default function ModifierSelector({
                           </div>
                           <span
                             className={`text-sm ${
-                              isSelected
-                                ? 'font-bold text-zinc-900'
-                                : 'font-semibold text-zinc-800'
+                              isSoldOut
+                                ? 'font-medium text-zinc-400 line-through'
+                                : isSelected
+                                  ? 'font-bold text-zinc-900'
+                                  : 'font-semibold text-zinc-800'
                             }`}
                           >
                             {opt.name}
                           </span>
                         </div>
 
-                        <span
-                          className={`text-xs px-2.5 py-1 rounded-md font-bold transition-colors ${
-                            opt.price_impact === 0
-                              ? 'text-zinc-700 bg-zinc-100'
-                              : isSelected
-                                ? 'text-orange-950 bg-orange-200/80 border border-orange-300'
-                                : 'text-zinc-800 bg-zinc-100 border border-zinc-200'
-                          }`}
-                        >
-                          {opt.price_impact === 0 ? 'Gratis' : `+${formatMXN(opt.price_impact)}`}
-                        </span>
+                        {isSoldOut ? (
+                          <span className="text-xs px-2.5 py-1 rounded-md font-bold text-red-800 bg-red-100 border border-red-200">
+                            Agotado
+                          </span>
+                        ) : (
+                          <span
+                            className={`text-xs px-2.5 py-1 rounded-md font-bold transition-colors ${
+                              opt.price_impact === 0
+                                ? 'text-zinc-700 bg-zinc-100'
+                                : isSelected
+                                  ? 'text-orange-950 bg-orange-200/80 border border-orange-300'
+                                  : 'text-zinc-800 bg-zinc-100 border border-zinc-200'
+                            }`}
+                          >
+                            {opt.price_impact === 0 ? 'Gratis' : `+${formatMXN(opt.price_impact)}`}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

@@ -13,13 +13,22 @@ interface CartContextValue {
   cart: Cart;
   count: number;
   total: number;
-  addItem: (product: Product, quantity?: number, modifiers?: CartItemModifiers[], comments?: string) => void;
+  addItem: (
+    product: Product,
+    quantity?: number,
+    modifiers?: CartItemModifiers[],
+    comments?: string,
+    locationName?: string
+  ) => void;
   updateQuantity: (key: string, quantity: number) => void;
   updateComments: (key: string, comments: string) => void;
   removeItem: (key: string) => void;
   clearCart: () => void;
   isOpen: boolean;
   setOpen: (open: boolean) => void;
+  locationId?: string | null;
+  locationName?: string | null;
+  setLocation: (locationId: string | null, locationName?: string | null) => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -34,7 +43,7 @@ export function itemKey(item: CartItem): string {
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [cart, setCart] = useState<Cart>({ items: [] });
+  const [cart, setCart] = useState<Cart>({ items: [], location_id: null, location_name: null });
   const [isOpen, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -46,7 +55,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setCart(
         parsed && Array.isArray(parsed.items)
           ? parsed
-          : { items: [] }
+          : { items: [], location_id: null, location_name: null }
       );
     } catch {
       // carrito corrupto → empezar vacío
@@ -65,7 +74,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart, hydrated]);
 
   const addItem = useCallback<CartContextValue['addItem']>(
-    (product, quantity = 1, modifiers = [], comments = '') => {
+    (product, quantity = 1, modifiers = [], comments = '', locationName = '') => {
       const newItem: CartItem = {
         product_id: product.id,
         product_name: product.name,
@@ -77,15 +86,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setCart((prev) => {
         const key = itemKey(newItem);
         const idx = prev.items.findIndex((i) => itemKey(i) === key);
+        const nextLocId = prev.location_id || product.location_id || null;
+        const nextLocName = prev.location_name || locationName || null;
+
         if (idx >= 0) {
           const nextItems = [...prev.items];
           nextItems[idx] = {
             ...nextItems[idx],
             quantity: nextItems[idx].quantity + newItem.quantity,
           };
-          return { items: nextItems };
+          return { items: nextItems, location_id: nextLocId, location_name: nextLocName };
         }
-        return { items: [...prev.items, newItem] };
+        return { items: [...prev.items, newItem], location_id: nextLocId, location_name: nextLocName };
       });
       // No abrimos el drawer automáticamente para no incomodar en móvil/tablet.
       // El usuario puede abrirlo cuando quiera desde la barra inferior flotante.
@@ -98,7 +110,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const items = prev.items
         .map((item) => (itemKey(item) === key ? { ...item, quantity } : item))
         .filter((item) => item.quantity > 0);
-      return { items };
+      return {
+        ...prev,
+        items,
+        location_id: items.length === 0 ? null : prev.location_id,
+        location_name: items.length === 0 ? null : prev.location_name,
+      };
     });
   }, []);
 
@@ -118,26 +135,43 @@ export function CartProvider({ children }: { children: ReactNode }) {
           ...otherItems[existingSameIdx],
           quantity: otherItems[existingSameIdx].quantity + updatedItem.quantity,
         };
-        return { items: otherItems };
+        return { ...prev, items: otherItems };
       }
-      return { items: [...otherItems, updatedItem] };
+      return { ...prev, items: [...otherItems, updatedItem] };
     });
   }, []);
 
   const removeItem = useCallback<CartContextValue['removeItem']>((key) => {
-    setCart((prev) => ({
-      items: prev.items.filter((item) => itemKey(item) !== key),
-    }));
+    setCart((prev) => {
+      const items = prev.items.filter((item) => itemKey(item) !== key);
+      return {
+        ...prev,
+        items,
+        location_id: items.length === 0 ? null : prev.location_id,
+        location_name: items.length === 0 ? null : prev.location_name,
+      };
+    });
   }, []);
 
   const clearCart = useCallback(() => {
     try {
       localStorage.removeItem(CART_STORAGE_KEY);
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ items: [] }));
+      localStorage.setItem(
+        CART_STORAGE_KEY,
+        JSON.stringify({ items: [], location_id: null, location_name: null })
+      );
     } catch {
       // ignore
     }
-    setCart({ items: [] });
+    setCart({ items: [], location_id: null, location_name: null });
+  }, []);
+
+  const setLocation = useCallback((locationId: string | null, locationName?: string | null) => {
+    setCart((prev) => ({
+      ...prev,
+      location_id: locationId,
+      location_name: locationName !== undefined ? locationName : prev.location_name,
+    }));
   }, []);
 
   const { count, total } = useMemo(() => {
@@ -162,8 +196,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart]);
 
   const value = useMemo(
-    () => ({ cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen, setOpen }),
-    [cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen]
+    () => ({
+      cart,
+      count,
+      total,
+      addItem,
+      updateQuantity,
+      updateComments,
+      removeItem,
+      clearCart,
+      isOpen,
+      setOpen,
+      locationId: cart.location_id ?? null,
+      locationName: cart.location_name ?? null,
+      setLocation,
+    }),
+    [cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen, setLocation]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

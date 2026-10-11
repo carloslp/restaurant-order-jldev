@@ -12,22 +12,24 @@ export function getElapsedMinutes(createdAtIso: string, nowMs = Date.now()): num
   return Math.max(0, Math.floor((nowMs - createdMs) / 60000));
 }
 
+export * from './kdsAudio';
+
 /**
  * Determina el nivel de urgencia visual de un pedido en KDS.
- * CA-1:
+ * FEATURE F-02 CA-2:
  * - Dado un pedido en estado "En preparación" (EN_PREPARACION):
- *   - Si supera los 15 minutos -> 'warning' (ámbar)
- *   - Si supera los 25 minutos -> 'urgent' (rojo parpadeante suave)
+ *   - Si tiempo transcurrido >= 10 minutos (y < 18) -> 'warning' (ámbar #D97706)
+ *   - Si tiempo transcurrido >= 18 minutos -> 'urgent' (fondo #FEF2F2 y borde #DC2626)
  * - Otros estados permanecen en 'normal'
  */
 export function getKdsUrgencyLevel(status: string, elapsedMinutes: number): KdsUrgencyLevel {
   if (status !== 'EN_PREPARACION') {
     return 'normal';
   }
-  if (elapsedMinutes > 25) {
+  if (elapsedMinutes >= 18) {
     return 'urgent';
   }
-  if (elapsedMinutes > 15) {
+  if (elapsedMinutes >= 10) {
     return 'warning';
   }
   return 'normal';
@@ -44,7 +46,7 @@ export interface KdsCardVisuals {
 
 /**
  * Retorna las clases visuales y el indicador estático para la tarjeta en KDS.
- * Cumple con prefers-reduced-motion y accesibilidad para personas con daltonismo.
+ * Cumple con prefers-reduced-motion, CA-2 con hex codes y accesibilidad.
  */
 export function getKdsCardVisuals(status: string, elapsedMinutes: number): KdsCardVisuals {
   const urgencyLevel = getKdsUrgencyLevel(status, elapsedMinutes);
@@ -53,20 +55,20 @@ export function getKdsCardVisuals(status: string, elapsedMinutes: number): KdsCa
     case 'urgent':
       return {
         urgencyLevel: 'urgent',
-        borderClass: 'border-2 border-red-500 shadow-red-500/10',
-        bgClass: 'bg-red-50/20',
+        borderClass: 'border-2 border-[#DC2626] shadow-red-500/10',
+        bgClass: 'bg-[#FEF2F2]',
         pulseClass: 'motion-safe:animate-pulse',
-        staticIndicator: '🚨 Urgente (+25 min)',
-        badgeClass: 'bg-red-100 text-red-900 border border-red-300 font-extrabold',
+        staticIndicator: '🚨 Urgente (+18 min)',
+        badgeClass: 'bg-red-100 text-[#DC2626] border border-red-300 font-extrabold',
       };
     case 'warning':
       return {
         urgencyLevel: 'warning',
-        borderClass: 'border-2 border-amber-500 shadow-amber-500/10',
+        borderClass: 'border-2 border-[#D97706] shadow-amber-500/10',
         bgClass: 'bg-amber-50/20',
         pulseClass: '',
-        staticIndicator: '⚠️ Demora (+15 min)',
-        badgeClass: 'bg-amber-100 text-amber-900 border border-amber-300 font-bold',
+        staticIndicator: '⚠️ Demora (+10 min)',
+        badgeClass: 'bg-amber-100 text-[#D97706] border border-amber-300 font-bold',
       };
     case 'normal':
     default:

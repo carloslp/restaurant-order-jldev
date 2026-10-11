@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { Product, ModifierGroup, ModifierOption } from '@/lib/types';
 import {
-  validateGroupSelections,
   getFirstPendingRequiredGroup,
   calculateProductTotalPrice,
   toggleGroupOption,
   getModifierGroupBadge,
   getActionButtonState,
   formatPendingGroupPrompt,
+  getCanonicalModifierState,
   ACCESSIBLE_TOUCH_TARGET,
   ACCESSIBLE_FOCUS_RING,
 } from '@/lib/modifiers';
@@ -286,6 +286,156 @@ describe('FEATURE F-01: Experiencia de Configuración de Platillos sin Errores',
       const badge = getModifierGroupBadge(group);
       expect(badge.isRequired).toBe(false);
       expect(badge.label).toBe('Opcional');
+    });
+  });
+
+  describe('FEATURE F-01: Experiencia de Selección de Modificadores Guiada y Segura', () => {
+    describe('ENABLER E-01 [Arquitectura]: Objeto canónico de estado de modificadores', () => {
+      it('retorna { isComplete, missingGroups, calculatedPrice } con consistencia', () => {
+        const requiredGroup = makeGroup({
+          id: 'term-carne',
+          name: 'Término de la carne',
+          is_required: true,
+          min_selections: 1,
+          max_selections: 1,
+          options: [
+            makeOption('t-1', 'Término medio', 0),
+            makeOption('t-2', 'Bien cocido', 0),
+          ],
+        });
+        const optionalGroup = makeGroup({
+          id: 'extras',
+          name: 'Extras',
+          is_required: false,
+          min_selections: 0,
+          max_selections: 3,
+          options: [
+            makeOption('e-1', 'Extra queso', 25),
+          ],
+        });
+        const product = makeProduct({
+          base_price: 150,
+          modifier_groups: [requiredGroup, optionalGroup],
+        });
+
+        // 1. Estado incompleto inicial
+        const initial = getCanonicalModifierState(product, {});
+        expect(initial.isComplete).toBe(false);
+        expect(initial.missingGroups).toEqual(['Término de la carne']);
+        expect(initial.calculatedPrice).toBe(150);
+
+        // 2. Estado completo al seleccionar término y extra
+        const completed = getCanonicalModifierState(product, {
+          'term-carne': new Set(['t-1']),
+          extras: new Set(['e-1']),
+        });
+        expect(completed.isComplete).toBe(true);
+        expect(completed.missingGroups).toEqual([]);
+        expect(completed.calculatedPrice).toBe(175);
+      });
+    });
+
+    describe('CA-1 – Validación de grupo obligatorio incompleto', () => {
+      it('dado grupo obligatorio "Término de la carne", exhibe "Obligatorio (0/1)" y CTA "Elige opciones obligatorias" deshabilitado', () => {
+        const group = makeGroup({
+          id: 'term-carne',
+          name: 'Término de la carne',
+          is_required: true,
+          min_selections: 1,
+          max_selections: 1,
+        });
+        const product = makeProduct({ modifier_groups: [group] });
+        const selections = { [group.id]: new Set<string>() };
+
+        // Badge exhibe "Obligatorio (0/1)"
+        const badge = getModifierGroupBadge(group, 0);
+        expect(badge.isRequired).toBe(true);
+        expect(badge.label).toBe('Obligatorio (0/1)');
+
+        // CTA en modo genérico muestra "Elige opciones obligatorias" en estado deshabilitado
+        const buttonState = getActionButtonState(product.modifier_groups!, selections, product.base_price, 'generic');
+        expect(buttonState.isValid).toBe(false);
+        expect(buttonState.buttonText).toBe('Elige opciones obligatorias');
+      });
+    });
+
+    describe('CA-2 – Cumplimiento de selección y actualización de precio', () => {
+      it('base $150 + extra queso $25: botón CTA activo mostrando "Agregar al pedido • $175.00"', () => {
+        const requiredGroup = makeGroup({
+          id: 'term-carne',
+          name: 'Término de la carne',
+          is_required: true,
+          min_selections: 1,
+          max_selections: 1,
+        });
+        const optionalGroup = makeGroup({
+          id: 'extras',
+          name: 'Extras',
+          is_required: false,
+          options: [makeOption('e-1', 'Extra queso', 25)],
+        });
+        const product = makeProduct({
+          base_price: 150,
+          modifier_groups: [requiredGroup, optionalGroup],
+        });
+        const selections = {
+          'term-carne': new Set(['opt-1']),
+          extras: new Set(['e-1']),
+        };
+
+        const totalPrice = calculateProductTotalPrice(product, selections);
+        expect(totalPrice).toBe(175);
+
+        const buttonState = getActionButtonState(product.modifier_groups!, selections, totalPrice, 'generic');
+        expect(buttonState.isValid).toBe(true);
+        expect(buttonState.buttonText).toBe('Agregar al pedido • $175.00');
+      });
+    });
+
+    describe('CA-3 & CA-4 & CA-5 – Interfaz de ModifierSelector', () => {
+      it('ModifierSelector incluye soporte para atenuación opacity-50, insignia Agotado y aria-live', () => {
+        const filePath = path.resolve(__dirname, '../src/app/[location]/ModifierSelector.tsx');
+        const source = fs.readFileSync(filePath, 'utf8');
+
+        // CA-3: Atenuación visual con opacity-50 y cursor-not-allowed
+        expect(source).toContain('opacity-50 cursor-not-allowed');
+
+        // CA-4: Insignia Agotado y manejo de modificadores 86
+        expect(source).toContain('Agotado');
+        expect(source).toContain('soldOutOptionIds');
+
+        // CA-5: aria-live polite feedback
+        expect(source).toContain('aria-live="polite"');
+        expect(source).toContain('min-h-[48px] min-w-[44px]');
+      });
+    });
+
+    describe('CA-6 – Rendimiento de cálculo (< 16 ms)', () => {
+      it('calcula estado y precio en < 16 ms para productos con múltiples grupos de modificadores', () => {
+        const groups: ModifierGroup[] = Array.from({ length: 10 }, (_, i) =>
+          makeGroup({
+            id: `grp-${i}`,
+            name: `Grupo ${i}`,
+            options: Array.from({ length: 5 }, (_, j) =>
+              makeOption(`opt-${i}-${j}`, `Opción ${j}`, j * 10)
+            ),
+          })
+        );
+        const product = makeProduct({ modifier_groups: groups });
+        const selections: Record<string, Set<string>> = {};
+        for (let i = 0; i < 10; i++) {
+          selections[`grp-${i}`] = new Set([`opt-${i}-0`]);
+        }
+
+        const start = performance.now();
+        for (let k = 0; k < 100; k++) {
+          getCanonicalModifierState(product, selections);
+          getActionButtonState(groups, selections, 200, 'generic');
+        }
+        const duration = (performance.now() - start) / 100;
+
+        expect(duration).toBeLessThan(16);
+      });
     });
   });
 });
