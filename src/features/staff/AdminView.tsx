@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { AdminMenuCategories } from '@/features/admin/AdminMenuCategories';
 import { AdminMenuProducts } from '@/features/admin/AdminMenuProducts';
+import { AdminMenuToolbar } from '@/features/admin/AdminMenuToolbar';
 import { AdminDiscounts } from '@/features/admin/AdminDiscounts';
 import { AdminReservations } from '@/features/admin/AdminReservations';
 import { AdminStaff } from '@/features/admin/AdminStaff';
@@ -37,6 +38,7 @@ interface TabItem {
 export function AdminView({ staff, local }: AdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [pendingReservationsCount, setPendingReservationsCount] = useState<number>(0);
+  const [menuRefreshKey, setMenuRefreshKey] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
@@ -171,9 +173,13 @@ export function AdminView({ staff, local }: AdminViewProps) {
 
             {activeTab === 'menu' && (
               <div className="space-y-6">
-                <AdminMenuCategories local={local} />
+                <AdminMenuToolbar 
+                  local={local} 
+                  onMenuUpdated={() => setMenuRefreshKey((k) => k + 1)} 
+                />
+                <AdminMenuCategories key={`cats-${menuRefreshKey}`} local={local} />
                 <hr className="my-8 border-gray-200" />
-                <AdminMenuProducts local={local} />
+                <AdminMenuProducts key={`prods-${menuRefreshKey}`} local={local} />
                 {/* Los modificadores se gestionan dentro de la vista de productos o en un modal dedicado */}
               </div>
             )}
