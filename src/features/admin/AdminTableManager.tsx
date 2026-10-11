@@ -1,7 +1,7 @@
 // src/features/admin/AdminTableManager.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   getStaffTables,
   upsertTable,
@@ -259,6 +259,12 @@ export function AdminTableManager({ localSlug }: AdminTableManagerProps) {
   const totalCalculatedCapacity = useMemo(() => {
     return tables.filter((t) => t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0);
   }, [tables]);
+
+  // Estadísticas rápidas de sala
+  const freeCount = tables.filter((t) => t.status === 'LIBRE').length;
+  const occupiedCount = tables.filter((t) => t.status === 'OCUPADA').length;
+  const reservedCount = tables.filter((t) => t.status === 'RESERVADA').length;
+  const qrActiveCount = tables.filter((t) => t.qr_status === 'ABIERTO').length;
 
   if (loading) {
     return (
