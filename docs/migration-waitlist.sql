@@ -59,10 +59,12 @@ BEGIN
   END IF;
 END $$;
 
--- 5. Privilegios de acceso para autenticado y anónimo
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
+-- 5. Privilegios de acceso para service_role, authenticated y anon
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT ON TABLE public.waitlist TO anon;
 GRANT ALL ON TABLE public.waitlist TO authenticated;
+GRANT ALL ON TABLE public.waitlist TO service_role;
+GRANT ALL ON TABLE public.waitlist TO postgres;
 
 -- RLS
 ALTER TABLE public.waitlist ENABLE ROW LEVEL SECURITY;
