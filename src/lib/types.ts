@@ -255,7 +255,9 @@ export interface Reservation {
   party_size: number;
   preferred_zone: Zone;
   table_id?: string | null;
+  table_ids?: string[] | null;
   table_number?: string | null;
+  table_numbers?: string[] | null;
   status: ReservationStatus;
   deposit_status: DepositStatus;
   notes?: string | null;
@@ -311,6 +313,7 @@ export interface PublicReservationInput {
   party_size: number;
   preferred_zone: Zone;
   table_id?: string | null;
+  table_ids?: string[] | null;
   notes?: string | null;
 }
 
@@ -340,7 +343,9 @@ export interface WaitlistParty {
   id: string;
   location_id: string;
   table_id?: string | null;
+  table_ids?: string[] | null;
   table_number?: string | null;
+  table_numbers?: string[] | null;
   customer_name: string;
   customer_phone: string;
   party_size: number;
@@ -378,6 +383,7 @@ export interface PublicWaitlistStatusResponse {
     called_at?: string | null;
     seated_at?: string | null;
     table_number?: string | null;
+    table_numbers?: string[] | null;
     created_at: string;
   };
   localName?: string;

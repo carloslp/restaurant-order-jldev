@@ -15,13 +15,14 @@ function isTimeOverlapping(timeA: string, timeB: string, durationMinutes = 90): 
 }
 
 interface MockReservation {
-  table_id: string;
+  table_id?: string;
+  table_ids?: string[];
   reservation_time: string;
   status: string;
   party_size: number;
 }
 
-// Motor de disponibilidad basado exclusivamente en mesas físicas discretas
+// Motor de disponibilidad basado en mesas físicas discretas (con soporte de multi-mesa table_ids)
 function getAvailableTablesForSlot({
   tables,
   reservations,
@@ -37,11 +38,15 @@ function getAvailableTablesForSlot({
   zone?: Zone;
   durationMinutes?: number;
 }) {
-  const occupiedTableIds = new Set(
-    reservations
-      .filter((r) => ['PENDIENTE', 'CONFIRMADA'].includes(r.status) && isTimeOverlapping(r.reservation_time, slotTime, durationMinutes))
-      .map((r) => r.table_id)
-  );
+  const occupiedTableIds = new Set<string>();
+  reservations
+    .filter((r) => ['PENDIENTE', 'CONFIRMADA'].includes(r.status) && isTimeOverlapping(r.reservation_time, slotTime, durationMinutes))
+    .forEach((r) => {
+      if (r.table_id) occupiedTableIds.add(r.table_id);
+      if (Array.isArray(r.table_ids)) {
+        r.table_ids.forEach((id) => occupiedTableIds.add(id));
+      }
+    });
 
   return tables
     .filter((t) => {
@@ -182,6 +187,68 @@ describe('Reservation System - Validation & Table-Centric Engine', () => {
       });
 
       expect(available.length).toBe(0);
+    });
+  });
+
+  describe('Multi-Table Grouping & Combinations (Staff Discretion)', () => {
+    const mockTables = [
+      { id: 't-1', table_number: '1', min_capacity: 1, max_capacity: 4, zone: 'INTERIOR' as Zone, is_active: true },
+      { id: 't-2', table_number: '2', min_capacity: 1, max_capacity: 4, zone: 'INTERIOR' as Zone, is_active: true },
+      { id: 't-3', table_number: '3', min_capacity: 2, max_capacity: 6, zone: 'INTERIOR' as Zone, is_active: true },
+    ];
+
+    it('bloquea todas las mesas físicas unidas cuando una reserva combina múltiples mesas (table_ids)', () => {
+      // El mesero junta Mesa 1 (4 pax) y Mesa 2 (4 pax) para un grupo de 8
+      const multiTableReservation: MockReservation = {
+        table_id: 't-1',
+        table_ids: ['t-1', 't-2'],
+        reservation_time: '14:00',
+        status: 'CONFIRMADA',
+        party_size: 8,
+      };
+
+      const available = getAvailableTablesForSlot({
+        tables: mockTables,
+        reservations: [multiTableReservation],
+        slotTime: '14:00',
+        partySize: 4,
+        zone: 'INTERIOR',
+      });
+
+      // Mesa 1 y Mesa 2 deben estar bloqueadas por estar unidas; solo Mesa 3 queda disponible
+      expect(available.length).toBe(1);
+      expect(available[0].id).toBe('t-3');
+    });
+
+    it('permite albergar grupos grandes sumando la capacidad física de las mesas unidas', () => {
+      const selectedTables = [mockTables[0], mockTables[1]]; // Mesas 1 y 2
+      const combinedCapacity = selectedTables.reduce((acc, t) => acc + t.max_capacity, 0);
+      const largeGroupPartySize = 7;
+
+      expect(combinedCapacity).toBe(8);
+      expect(combinedCapacity >= largeGroupPartySize).toBe(true);
+    });
+
+    it('libera todas las mesas unidas una vez transcurridos los 90 minutos de estancia', () => {
+      const multiTableReservation: MockReservation = {
+        table_id: 't-1',
+        table_ids: ['t-1', 't-2'],
+        reservation_time: '14:00',
+        status: 'CONFIRMADA',
+        party_size: 8,
+      };
+
+      // A las 15:30 (después de 90 min) ambas mesas deben estar libres
+      const available = getAvailableTablesForSlot({
+        tables: mockTables,
+        reservations: [multiTableReservation],
+        slotTime: '15:30',
+        partySize: 4,
+        zone: 'INTERIOR',
+      });
+
+      expect(available.map((t) => t.id)).toContain('t-1');
+      expect(available.map((t) => t.id)).toContain('t-2');
     });
   });
 });

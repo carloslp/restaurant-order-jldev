@@ -152,6 +152,22 @@ export async function getWaitlistStatusByToken(token: string): Promise<PublicWai
 
     const estimatedMinutes = Math.max(5, position * 10);
 
+    let displayTableNumber = (party.restaurant_tables as any)?.table_number || party.table_number || null;
+    let tableNumbersList: string[] = [];
+
+    if (Array.isArray(party.table_ids) && party.table_ids.length > 0) {
+      const { data: linkedTables } = await supabase
+        .from('restaurant_tables')
+        .select('table_number')
+        .in('id', party.table_ids);
+      if (linkedTables && linkedTables.length > 0) {
+        tableNumbersList = linkedTables.map((t: any) => t.table_number);
+        displayTableNumber = tableNumbersList.join(', ');
+      }
+    } else if (displayTableNumber) {
+      tableNumbersList = [displayTableNumber];
+    }
+
     return {
       ok: true,
       localName: (party.locals as any)?.name || 'Restaurante',
@@ -166,7 +182,8 @@ export async function getWaitlistStatusByToken(token: string): Promise<PublicWai
         estimatedMinutes,
         called_at: party.called_at,
         seated_at: party.seated_at,
-        table_number: (party.restaurant_tables as any)?.table_number || party.table_number || null,
+        table_number: displayTableNumber,
+        table_numbers: tableNumbersList,
         created_at: party.created_at,
       },
     };
@@ -211,22 +228,44 @@ export async function listActiveWaitlist(): Promise<WaitlistParty[]> {
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
-  const { data, error } = await supabase
-    .from('waitlist')
-    .select('*, restaurant_tables(table_number)')
-    .eq('location_id', staff.location_id)
-    .in('status', ['EN_ESPERA', 'LLAMADO'])
-    .order('created_at', { ascending: true });
+  const [{ data: waitlistData, error }, { data: tablesData }] = await Promise.all([
+    supabase
+      .from('waitlist')
+      .select('*')
+      .eq('location_id', staff.location_id)
+      .in('status', ['EN_ESPERA', 'LLAMADO'])
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('restaurant_tables')
+      .select('id, table_number')
+      .eq('location_id', staff.location_id),
+  ]);
 
   if (error) {
     console.error('listActiveWaitlist error:', error);
     throw new AppError(parsePostgrestError(error, 'No se pudo cargar la fila de espera.'));
   }
 
-  return (data || []).map((p: any) => ({
-    ...p,
-    table_number: p.restaurant_tables?.table_number || null,
-  })) as WaitlistParty[];
+  const tableMap = new Map<string, string>();
+  (tablesData || []).forEach((t: any) => tableMap.set(t.id, t.table_number));
+
+  return (waitlistData || []).map((p: any) => {
+    const rawIds: string[] = Array.isArray(p.table_ids) && p.table_ids.length > 0 
+      ? p.table_ids 
+      : p.table_id ? [p.table_id] : [];
+    
+    const tableNumbers = rawIds.map((id) => tableMap.get(id)).filter(Boolean) as string[];
+    const displayTableNumber = tableNumbers.length > 0 
+      ? tableNumbers.join(', ') 
+      : null;
+
+    return {
+      ...p,
+      table_ids: rawIds,
+      table_number: displayTableNumber,
+      table_numbers: tableNumbers,
+    };
+  }) as WaitlistParty[];
 }
 
 /**
@@ -257,15 +296,21 @@ export async function callWaitlistParty(id: string): Promise<{ ok: boolean; erro
 }
 
 /**
- * Sienta al comensal de la fila en una mesa física del restaurante.
- * Marca la mesa como OCUPADA y el turno en la fila como SENTADO.
+ * Sienta al comensal de la fila en una o múltiples mesas físicas del restaurante.
+ * El mesero/hostess escoge las mesas contiguas.
+ * Marca todas las mesas seleccionadas como OCUPADA y el turno en la fila como SENTADO.
  */
 export async function seatWaitlistParty(
   waitlistId: string, 
-  tableId: string
+  tableIds: string | string[]
 ): Promise<{ ok: boolean; error?: string }> {
   const staff = await getStaffContext();
   const supabase = createServerClient();
+
+  const ids = (Array.isArray(tableIds) ? tableIds : [tableIds]).filter(Boolean);
+  if (ids.length === 0) {
+    throw new AppError('Debes seleccionar al menos una mesa física para sentar al grupo.');
+  }
 
   // 1. Obtener la entrada de fila
   const { data: party, error: pErr } = await supabase
@@ -279,28 +324,30 @@ export async function seatWaitlistParty(
     throw new AppError('Comensal en fila no encontrado.');
   }
 
-  // 2. Ocupar la mesa física
+  // 2. Ocupar todas las mesas físicas seleccionadas por el mesero
+  const perTableGuests = Math.ceil(party.party_size / ids.length);
   const { error: tErr } = await supabase
     .from('restaurant_tables')
     .update({
       status: 'OCUPADA',
-      current_guests: party.party_size,
+      current_guests: perTableGuests,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', tableId)
+    .in('id', ids)
     .eq('location_id', staff.location_id);
 
   if (tErr) {
     console.error('seatWaitlistParty/table error:', tErr);
-    throw new AppError(parsePostgrestError(tErr, 'No se pudo ocupar la mesa seleccionada.'));
+    throw new AppError(parsePostgrestError(tErr, 'No se pudieron ocupar las mesas seleccionadas.'));
   }
 
-  // 3. Actualizar la entrada de fila a SENTADO
+  // 3. Actualizar la entrada de fila a SENTADO con table_id (principal) y table_ids (todas)
   const { error: wErr } = await supabase
     .from('waitlist')
     .update({
       status: 'SENTADO',
-      table_id: tableId,
+      table_id: ids[0],
+      table_ids: ids,
       seated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       updated_by: staff.id,

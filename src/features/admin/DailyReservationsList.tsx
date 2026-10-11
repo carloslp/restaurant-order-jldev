@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { changeReservationStatus, updateReservation } from '@/lib/server/reservations';
-import type { ReservationStatus, Zone } from '@/lib/types';
+import type { ReservationStatus, Zone, RestaurantTable } from '@/lib/types';
 import { format } from 'date-fns';
 import { 
   Phone, 
@@ -23,9 +23,10 @@ interface DailyReservationsListProps {
   reservations: any[];
   selectedDate: Date;
   onUpdate: () => Promise<void>;
+  tables?: RestaurantTable[];
 }
 
-export function DailyReservationsList({ reservations, selectedDate, onUpdate }: DailyReservationsListProps) {
+export function DailyReservationsList({ reservations, selectedDate, onUpdate, tables = [] }: DailyReservationsListProps) {
   const { toast } = useToast();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -128,6 +129,34 @@ export function DailyReservationsList({ reservations, selectedDate, onUpdate }: 
                     {res.party_size} {res.party_size === 1 ? 'persona' : 'personas'}
                   </span>
                 </div>
+
+                {/* Mesa física asignada o mesas unidas */}
+                {(() => {
+                  const linkedTableIds: string[] = Array.isArray(res.table_ids) && res.table_ids.length > 0
+                    ? res.table_ids
+                    : res.table_id
+                    ? [res.table_id]
+                    : [];
+                  const assignedTables = tables.filter((t) => linkedTableIds.includes(t.id));
+                  if (assignedTables.length === 0) return null;
+
+                  return (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-extrabold bg-orange-50 border border-orange-200/90 text-orange-950">
+                        <span>
+                          {assignedTables.length > 1
+                            ? `Mesas ${assignedTables.map((t) => t.table_number).join(' + ')}`
+                            : `Mesa ${assignedTables[0].table_number}`}
+                        </span>
+                        {assignedTables.length > 1 && (
+                          <span className="text-[10px] bg-orange-600 text-white px-1.5 py-0.2 rounded-full font-black">
+                            Unidas
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Teléfono y WhatsApp */}
                 <div className="flex items-center gap-3 text-xs text-zinc-500">

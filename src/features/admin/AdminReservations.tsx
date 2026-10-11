@@ -548,20 +548,26 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
 
                         <div className="flex items-center justify-between gap-2 pt-1">
                           <span className="text-zinc-500 font-semibold">Mesa asignada:</span>
-                          <select
-                            value={res.table_id || ''}
-                            onChange={(e) => handleReassignTable(res.id, e.target.value || null)}
-                            className="rounded-lg border border-zinc-300 text-[11px] font-bold text-zinc-800 p-1 bg-zinc-50"
-                          >
-                            <option value="">(Sin mesa asignada)</option>
-                            {tables
-                              .filter((t) => t.zone === res.preferred_zone)
-                              .map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.table_number} ({t.min_capacity}–{t.max_capacity} pax)
-                                </option>
-                              ))}
-                          </select>
+                          {Array.isArray(res.table_ids) && res.table_ids.length > 1 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-black bg-orange-100 text-orange-900 border border-orange-200">
+                              {tables.filter((t) => res.table_ids.includes(t.id)).map((t) => t.table_number).join(' + ')} (Unidas)
+                            </span>
+                          ) : (
+                            <select
+                              value={res.table_id || ''}
+                              onChange={(e) => handleReassignTable(res.id, e.target.value || null)}
+                              className="rounded-lg border border-zinc-300 text-[11px] font-bold text-zinc-800 p-1 bg-zinc-50"
+                            >
+                              <option value="">(Sin mesa asignada)</option>
+                              {tables
+                                .filter((t) => t.zone === res.preferred_zone)
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.table_number} ({t.min_capacity}–{t.max_capacity} pax)
+                                  </option>
+                                ))}
+                            </select>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-3 pt-1">
@@ -686,6 +692,7 @@ export function AdminReservations({ localSlug, local }: AdminReservationsProps =
             reservations={reservations}
             selectedDate={selectedDate}
             onUpdate={loadData}
+            tables={tables}
           />
         </div>
       )}

@@ -18,6 +18,11 @@ export function ReservationForm({ reservation, tables = [], initialData, onSucce
 
   useEffect(() => {
     if (reservation) {
+      const initTableIds = Array.isArray(reservation.table_ids) && reservation.table_ids.length > 0
+        ? reservation.table_ids
+        : reservation.table_id
+        ? [reservation.table_id]
+        : [];
       setFormData({
         holder_name: reservation.holder_name,
         holder_phone: reservation.holder_phone,
@@ -25,13 +30,23 @@ export function ReservationForm({ reservation, tables = [], initialData, onSucce
         reservation_time: reservation.reservation_time,
         party_size: reservation.party_size,
         preferred_zone: reservation.preferred_zone,
-        table_id: reservation.table_id || null,
+        table_id: initTableIds[0] || null,
+        table_ids: initTableIds,
         status: reservation.status,
         deposit_status: reservation.deposit_status,
         notes: reservation.notes || '',
       });
     } else if (initialData) {
-      setFormData(initialData);
+      const initTableIds = Array.isArray(initialData.table_ids) && initialData.table_ids.length > 0
+        ? initialData.table_ids
+        : initialData.table_id
+        ? [initialData.table_id]
+        : [];
+      setFormData({
+        ...initialData,
+        table_id: initTableIds[0] || null,
+        table_ids: initTableIds,
+      });
     } else {
       setFormData({
         holder_name: '',
@@ -41,6 +56,7 @@ export function ReservationForm({ reservation, tables = [], initialData, onSucce
         party_size: 2,
         preferred_zone: 'INTERIOR',
         table_id: null,
+        table_ids: [],
         status: 'CONFIRMADA',
         deposit_status: 'SIN_DEPOSITO',
         notes: '',
@@ -142,22 +158,96 @@ export function ReservationForm({ reservation, tables = [], initialData, onSucce
                 <option value="BARRA">Barra</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mesa asignada</label>
-              <select
-                value={formData.table_id || ''}
-                onChange={(e) => setFormData({ ...formData, table_id: e.target.value || null })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary text-sm"
-              >
-                <option value="">(Asignación automática óptima)</option>
+            <div className="md:col-span-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">
+                  Mesas asignadas (Permite unir varias mesas)
+                </label>
+                {(formData.table_ids?.length || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, table_id: null, table_ids: [] })}
+                    className="text-[11px] text-orange-600 hover:underline cursor-pointer"
+                  >
+                    Restablecer a auto-asignación
+                  </button>
+                )}
+              </div>
+
+              {/* Lista de mesas seleccionables para combinar */}
+              <div className="border border-gray-200 rounded-lg p-2 max-h-36 overflow-y-auto space-y-1 bg-gray-50/50">
                 {(tables || [])
                   .filter((t) => t.is_active && (!formData.preferred_zone || t.zone === formData.preferred_zone))
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      Mesa {t.table_number} ({t.zone}) - {t.min_capacity} a {t.max_capacity} pers.
-                    </option>
-                  ))}
-              </select>
+                  .map((t) => {
+                    const isSelected = (formData.table_ids || []).includes(t.id);
+                    return (
+                      <label
+                        key={t.id}
+                        className={`flex items-center justify-between p-2 rounded-md border text-xs cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-orange-50 border-orange-400 text-orange-950 font-bold'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const currentIds: string[] = formData.table_ids || [];
+                              const nextIds = e.target.checked
+                                ? [...currentIds, t.id]
+                                : currentIds.filter((id) => id !== t.id);
+                              setFormData({
+                                ...formData,
+                                table_ids: nextIds,
+                                table_id: nextIds[0] || null,
+                              });
+                            }}
+                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                          />
+                          <span>Mesa {t.table_number} ({t.zone})</span>
+                        </div>
+                        <span className="text-[11px] text-gray-500 font-normal">
+                          {t.min_capacity} a {t.max_capacity} pers.
+                        </span>
+                      </label>
+                    );
+                  })}
+                {(tables || []).filter((t) => t.is_active && (!formData.preferred_zone || t.zone === formData.preferred_zone)).length === 0 && (
+                  <p className="text-xs text-gray-500 text-center py-2">
+                    No hay mesas activas en la zona seleccionada.
+                  </p>
+                )}
+              </div>
+
+              {/* Indicador de capacidad acumulada */}
+              {(() => {
+                const selected = (tables || []).filter((t) => (formData.table_ids || []).includes(t.id));
+                const totalCap = selected.reduce((sum, t) => sum + t.max_capacity, 0);
+                const isSufficient = totalCap >= formData.party_size;
+
+                if (selected.length === 0) {
+                  return (
+                    <p className="text-[11px] text-gray-500 italic">
+                      Sin mesas seleccionadas: el sistema asignará automáticamente la mesa física óptima.
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className={`text-xs px-2.5 py-1.5 rounded-md flex items-center justify-between ${
+                    isSufficient ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
+                    <span>
+                      {selected.length === 1 ? '1 mesa' : `${selected.length} mesas unidas`} • Capacidad total: <strong>{totalCap} personas</strong>
+                    </span>
+                    <span className="font-bold text-[11px]">
+                      {isSufficient ? '✓ Suficiente' : `⚠️ Faltan ${formData.party_size - totalCap} pax`}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>

@@ -33,6 +33,7 @@ const ReservationSchema = z.object({
     .max(50, 'Para grupos de más de 50 personas, por favor contáctanos directamente'),
   preferred_zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Elige una zona válida' }),
   table_id: z.string().uuid().nullish(),
+  table_ids: z.array(z.string().uuid()).nullish(),
   status: z.enum(['PENDIENTE', 'CONFIRMADA', 'CANCELADA', 'NO_SHOW']).default('PENDIENTE'),
   deposit_status: z.enum(['SIN_DEPOSITO', 'DEPOSITO_PENDIENTE', 'DEPOSITADO']).default('SIN_DEPOSITO'),
   notes: z.string().max(500, 'Las notas no pueden exceder 500 caracteres').nullish(),
@@ -50,6 +51,7 @@ const PublicReservationSchema = z.object({
     .max(30, 'Para reservas de más de 30 personas, por favor contacta al restaurante directamente'),
   preferred_zone: z.enum(['INTERIOR', 'TERRAZA', 'BARRA'], { message: 'Elige una zona válida' }),
   table_id: z.string().uuid().nullish(),
+  table_ids: z.array(z.string().uuid()).nullish(),
   notes: z.string().max(500, 'Las notas no pueden exceder 500 caracteres').nullish(),
 });
 
@@ -167,7 +169,7 @@ export async function checkSlotAvailability({
       .eq('is_active', true),
     supabase
       .from('reservations')
-      .select('id, table_id, reservation_time, status')
+      .select('id, table_id, table_ids, reservation_time, status')
       .eq('location_id', locationId)
       .eq('reservation_date', date)
       .in('status', ['PENDIENTE', 'CONFIRMADA']),
@@ -176,11 +178,15 @@ export async function checkSlotAvailability({
   const activeTables = (rawTables || []) as RestaurantTable[];
   const activeReservations = dayReservations || [];
 
-  const occupiedTableIds = new Set(
-    activeReservations
-      .filter((r) => r.table_id && isTimeOverlapping(r.reservation_time, time, turnDurationMinutes))
-      .map((r) => r.table_id)
-  );
+  const occupiedTableIds = new Set<string>();
+  activeReservations
+    .filter((r) => isTimeOverlapping(r.reservation_time, time, turnDurationMinutes))
+    .forEach((r) => {
+      if (r.table_id) occupiedTableIds.add(r.table_id);
+      if (Array.isArray(r.table_ids)) {
+        r.table_ids.forEach((id: string) => occupiedTableIds.add(id));
+      }
+    });
 
   const availableTables = activeTables
     .filter((t) => {
@@ -586,16 +592,23 @@ export async function rejectReservation(id: string, reason?: string) {
 }
 
 /**
- * Reasigna o cambia la mesa física asignada a una reserva.
+ * Reasigna o cambia la mesa física (o conjunto de mesas unidas) asignada a una reserva.
  */
-export async function reassignReservationTable(reservationId: string, tableId: string | null) {
+export async function reassignReservationTable(reservationId: string, tableIds: string | string[] | null) {
   const staff = await getStaffContext();
   const supabase = createServerClient();
+
+  const ids = tableIds
+    ? (Array.isArray(tableIds) ? tableIds : [tableIds]).filter(Boolean)
+    : [];
+
+  const primaryTableId = ids.length > 0 ? ids[0] : null;
 
   const { data, error } = await supabase
     .from('reservations')
     .update({
-      table_id: tableId,
+      table_id: primaryTableId,
+      table_ids: ids.length > 0 ? ids : null,
       updated_by: staff.id,
       updated_at: new Date().toISOString(),
     })
@@ -668,9 +681,15 @@ export async function createReservation(payload: z.infer<typeof ReservationSchem
   const validated = parseOrThrow(ReservationSchema, payload);
   const supabase = createServerClient();
 
-  // Validar y auto-asignar mesa física si no se especificó manualmente
-  let assignedTableId = validated.table_id || null;
-  if (!assignedTableId) {
+  // Validar y auto-asignar mesa(s) física(s) si no se especificaron manualmente
+  let tableIds: string[] = [];
+  if (validated.table_ids && validated.table_ids.length > 0) {
+    tableIds = validated.table_ids;
+  } else if (validated.table_id) {
+    tableIds = [validated.table_id];
+  }
+
+  if (tableIds.length === 0) {
     const { available, bestTable } = await checkSlotAvailability({
       locationId: staff.location_id,
       date: validated.reservation_date,
@@ -679,9 +698,11 @@ export async function createReservation(payload: z.infer<typeof ReservationSchem
       zone: validated.preferred_zone,
     });
     if (available && bestTable) {
-      assignedTableId = bestTable.id;
+      tableIds = [bestTable.id];
     }
   }
+
+  const assignedTableId = tableIds.length > 0 ? tableIds[0] : null;
 
   const data = await queryOrThrow(
     supabase
@@ -689,6 +710,7 @@ export async function createReservation(payload: z.infer<typeof ReservationSchem
       .insert({
         ...validated,
         table_id: assignedTableId,
+        table_ids: tableIds.length > 0 ? tableIds : null,
         location_id: staff.location_id,
         created_by: staff.id,
       })
@@ -716,11 +738,21 @@ export async function updateReservation(id: string, payload: Partial<z.infer<typ
 
   const partial = parseOrThrow(ReservationSchema.partial(), payload);
 
+  // Mantener consistencia entre table_id y table_ids si alguno es proporcionado
+  const updatePayload: any = { ...partial };
+  if (partial.table_ids !== undefined) {
+    const ids = (partial.table_ids || []).filter(Boolean);
+    updatePayload.table_ids = ids.length > 0 ? ids : null;
+    updatePayload.table_id = ids.length > 0 ? ids[0] : null;
+  } else if (partial.table_id !== undefined) {
+    updatePayload.table_ids = partial.table_id ? [partial.table_id] : null;
+  }
+
   const data = await queryOrThrow(
     supabase
       .from('reservations')
       .update({
-        ...partial,
+        ...updatePayload,
         updated_by: staff.id,
       })
       .eq('id', id)

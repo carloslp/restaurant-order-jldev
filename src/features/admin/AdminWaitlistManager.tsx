@@ -40,7 +40,7 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
   const { toast } = useToast();
 
   const [seatingParty, setSeatingParty] = useState<WaitlistParty | null>(null);
-  const [selectedTableId, setSelectedTableId] = useState<string>('');
+  const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [isSeating, setIsSeating] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -89,17 +89,20 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
 
   const handleSeatConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!seatingParty || !selectedTableId) return;
+    if (!seatingParty || selectedTableIds.length === 0) return;
 
     setIsSeating(true);
     try {
-      await seatWaitlistParty(seatingParty.id, selectedTableId);
+      await seatWaitlistParty(seatingParty.id, selectedTableIds);
+      const isMulti = selectedTableIds.length > 1;
       toast({ 
-        title: `Mesa asignada a ${seatingParty.customer_name}`, 
-        description: 'La mesa se marcó como ocupada y el comensal pasó a la sala.' 
+        title: isMulti ? `Mesas combinadas asignadas a ${seatingParty.customer_name}` : `Mesa asignada a ${seatingParty.customer_name}`, 
+        description: isMulti 
+          ? `Se ocuparon ${selectedTableIds.length} mesas contiguas para albergar al grupo de ${seatingParty.party_size} personas.` 
+          : 'La mesa se marcó como ocupada y el comensal pasó a la sala.' 
       });
       setSeatingParty(null);
-      setSelectedTableId('');
+      setSelectedTableIds([]);
       await onRefresh();
     } catch (err: any) {
       toast({ title: 'Error al sentar', description: err.message, variant: 'destructive' });
@@ -276,10 +279,10 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
                       type="button"
                       onClick={() => {
                         setSeatingParty(item);
-                        // Seleccionar por defecto la primera mesa libre con capacidad suficiente si existe
                         const match = freeTables.find((t) => t.max_capacity >= item.party_size);
-                        if (match) setSelectedTableId(match.id);
-                        else if (freeTables.length > 0) setSelectedTableId(freeTables[0].id);
+                        if (match) setSelectedTableIds([match.id]);
+                        else if (freeTables.length > 0) setSelectedTableIds([freeTables[0].id]);
+                        else setSelectedTableIds([]);
                       }}
                       className="px-3 py-2 min-h-[38px] rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all select-none cursor-pointer flex items-center justify-center gap-1 shadow-xs"
                     >
@@ -310,80 +313,148 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
         </div>
       )}
 
-      {/* MODAL 1: SENTAR EN MESA FÍSICA */}
-      {seatingParty && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5 border border-zinc-200">
-            <div>
-              <span className="text-xs font-black uppercase text-orange-600 tracking-wider">Asignación de Mesa</span>
-              <h3 className="text-xl font-black text-zinc-900 mt-0.5">
-                Sentar a {seatingParty.customer_name}
-              </h3>
-              <p className="text-xs text-zinc-500">
-                Grupo de {seatingParty.party_size} personas (Preferencia: {seatingParty.preferred_zone}).
-              </p>
-            </div>
+      {/* MODAL 1: SENTAR EN MESA FÍSICA (MULTI-MESA COMPATIBLE) */}
+      {seatingParty && (() => {
+        const selectedTables = freeTables.filter((t) => selectedTableIds.includes(t.id));
+        const totalSelectedCapacity = selectedTables.reduce((acc, t) => acc + t.max_capacity, 0);
+        const isCapacitySufficient = totalSelectedCapacity >= seatingParty.party_size;
 
-            <form onSubmit={handleSeatConfirm} className="space-y-4">
+        const toggleTable = (id: string) => {
+          setSelectedTableIds((prev) =>
+            prev.includes(id) ? prev.filter((tId) => tId !== id) : [...prev, id]
+          );
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-5 border border-zinc-200">
               <div>
-                <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">
-                  Selecciona una Mesa Disponible en Sala:
-                </label>
-                {freeTables.length === 0 ? (
-                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
-                    <p className="font-bold">⚠️ No hay mesas en estado LIBRE actualmente.</p>
-                    <p>Espera a que un comensal pague en caja o libera una mesa desde la pestaña Sala y Mesas.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
-                    {freeTables.map((t) => {
-                      const isFit = t.max_capacity >= seatingParty.party_size;
-                      const isSelected = selectedTableId === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setSelectedTableId(t.id)}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-400'
-                              : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300'
-                          }`}
-                        >
-                          <div className="text-sm font-black text-zinc-900">Mesa {t.table_number}</div>
-                          <div className="text-[11px] text-zinc-500">
-                            Capacidad: {t.min_capacity}-{t.max_capacity} pax
-                          </div>
-                          <div className={`text-[10px] font-bold mt-1 ${isFit ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {isFit ? '✓ Capacidad adecuada' : '⚠️ Cupo ajustado'}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <span className="text-xs font-black uppercase text-orange-600 tracking-wider">Asignación de Mesa</span>
+                <h3 className="text-xl font-black text-zinc-900 mt-0.5">
+                  Sentar a {seatingParty.customer_name}
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Grupo de <strong className="text-zinc-800">{seatingParty.party_size} personas</strong> (Preferencia: {seatingParty.preferred_zone}).
+                </p>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSeatingParty(null)}
-                  className="flex-1 py-3 rounded-xl border border-zinc-200 text-zinc-600 font-bold text-xs hover:bg-zinc-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={!selectedTableId || isSeating}
-                  className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-orange-600/30"
-                >
-                  {isSeating ? 'Asignando…' : 'Confirmar y Sentar'}
-                </button>
+              {/* Indicador acumulador de aforo al combinar mesas */}
+              <div className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between transition-all ${
+                selectedTableIds.length === 0
+                  ? 'bg-zinc-50 border-zinc-200 text-zinc-600'
+                  : isCapacitySufficient
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  : 'bg-amber-50 border-amber-300 text-amber-900'
+              }`}>
+                <div>
+                  <p className="font-extrabold text-sm">
+                    {selectedTableIds.length === 0
+                      ? 'Sin mesa seleccionada'
+                      : selectedTableIds.length === 1
+                      ? `Mesa ${selectedTables[0]?.table_number}`
+                      : `${selectedTableIds.length} mesas unidas: ${selectedTables.map((t) => t.table_number).join(' + ')}`}
+                  </p>
+                  <p className="text-[11px] mt-0.5 opacity-90">
+                    Capacidad total:{' '}
+                    <strong>{totalSelectedCapacity} lugares</strong> para grupo de{' '}
+                    <strong>{seatingParty.party_size} personas</strong>.
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  {selectedTableIds.length === 0 ? (
+                    <span className="text-[11px] font-bold text-zinc-500">Elige mesa(s)</span>
+                  ) : isCapacitySufficient ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-600 text-white">
+                      ✓ Suficiente
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-500 text-white animate-pulse">
+                      ⚠️ Faltan {seatingParty.party_size - totalSelectedCapacity} pax
+                    </span>
+                  )}
+                </div>
               </div>
-            </form>
+
+              <form onSubmit={handleSeatConfirm} className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold uppercase text-zinc-500">
+                      Selecciona una o varias mesas para unir:
+                    </label>
+                    <span className="text-[11px] text-zinc-400">
+                      (Toca para seleccionar o unir)
+                    </span>
+                  </div>
+
+                  {freeTables.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+                      <p className="font-bold">⚠️ No hay mesas en estado LIBRE actualmente.</p>
+                      <p>Espera a que un comensal pague en caja o libera una mesa desde la pestaña Sala y Mesas.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
+                      {freeTables.map((t) => {
+                        const isSelected = selectedTableIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => toggleTable(t.id)}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                              isSelected
+                                ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-400 shadow-sm'
+                                : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-black text-zinc-900">Mesa {t.table_number}</span>
+                              {isSelected && (
+                                <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-bold">
+                                  ✓
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 mt-1">
+                              Zona: <strong className="text-zinc-700">{t.zone}</strong>
+                            </div>
+                            <div className="text-[11px] font-bold text-zinc-700 mt-0.5">
+                              {t.min_capacity}-{t.max_capacity} pax
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSeatingParty(null);
+                      setSelectedTableIds([]);
+                    }}
+                    className="flex-1 py-3 rounded-xl border border-zinc-200 text-zinc-600 font-bold text-xs hover:bg-zinc-50 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={selectedTableIds.length === 0 || isSeating}
+                    className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-orange-600/30 transition-all cursor-pointer"
+                  >
+                    {isSeating
+                      ? 'Asignando…'
+                      : selectedTableIds.length > 1
+                      ? `Confirmar y Unir (${selectedTableIds.length} Mesas)`
+                      : 'Confirmar y Sentar'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL 2: QR PARA PUERTA */}
       {showQrModal && (
