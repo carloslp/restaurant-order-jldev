@@ -16,7 +16,18 @@
 -- ============================================================================
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- crypt() para delivery tokens
 CREATE EXTENSION IF NOT EXISTS pg_cron;      -- recordatorios programados
+CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pg_net;       -- HTTP desde pg_cron (opcional)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_extension WHERE extname = 'pg_net' AND extnamespace = 'public'::regnamespace
+  ) THEN
+    ALTER EXTENSION pg_net SET SCHEMA extensions;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
 
 -- ============================================================================
 -- 2. ENUMS
@@ -82,6 +93,8 @@ CREATE TABLE locals (
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
     is_open BOOLEAN NOT NULL DEFAULT true,
+    is_catalog_only BOOLEAN NOT NULL DEFAULT false,
+    reservations_enabled BOOLEAN NOT NULL DEFAULT true,
     address TEXT NULL,
     latitude NUMERIC(10,7) NULL,
     longitude NUMERIC(10,7) NULL,
@@ -233,6 +246,7 @@ CREATE TABLE reservations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
     table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    table_ids UUID[] NOT NULL DEFAULT '{}',
     holder_name TEXT NOT NULL,
     holder_phone TEXT NOT NULL,
     reservation_date DATE NOT NULL,
@@ -249,13 +263,6 @@ CREATE TABLE reservations (
     CONSTRAINT chk_future_datetime CHECK (
         (reservation_date || ' ' || reservation_time)::timestamptz > now()
     )
-);
-
-CREATE TABLE local_zone_capacity (
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    zone TEXT NOT NULL CHECK (zone IN ('INTERIOR', 'TERRAZA', 'BARRA')),
-    capacity INTEGER NOT NULL CHECK (capacity > 0),
-    PRIMARY KEY (location_id, zone)
 );
 
 -- 3.6 Tokens de repartidor
@@ -361,6 +368,7 @@ CREATE TABLE waitlist (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
     table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    table_ids UUID[] NOT NULL DEFAULT '{}',
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
     party_size INTEGER NOT NULL CHECK (party_size > 0),
@@ -506,7 +514,6 @@ ALTER TABLE modifier_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE modifier_options ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE local_zone_capacity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE delivery_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discounts ENABLE ROW LEVEL SECURITY;
@@ -606,15 +613,6 @@ CREATE POLICY reservations_staff_access ON reservations
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
-
-CREATE POLICY local_zone_capacity_staff_access ON local_zone_capacity
-FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
-
-CREATE POLICY local_zone_capacity_public_read ON local_zone_capacity
-FOR SELECT
-USING (true);
 
 -- Mesas físicas
 CREATE POLICY restaurant_tables_public_read ON restaurant_tables
@@ -826,7 +824,7 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT SELECT ON TABLE
     categories, products, modifier_groups, modifier_options,
     allergens, diet_labels, product_allergens, product_diet_labels,
-    discounts, local_zone_capacity
+    discounts
 TO anon, authenticated;
 
 -- locals: solo ping de /api/health (RLS oculta todas las filas al anon).
@@ -849,11 +847,15 @@ CREATE INDEX idx_orders_customer_phone ON orders(customer_phone);
 CREATE INDEX idx_orders_driver ON orders(driver_id);
 CREATE INDEX idx_orders_table_id ON orders(table_id);
 CREATE INDEX idx_reservations_table_id ON reservations(table_id);
+CREATE INDEX idx_reservations_table_ids_gin ON reservations USING GIN (table_ids);
+CREATE INDEX idx_reservations_table_date_status ON reservations (table_id, reservation_date, status);
 CREATE INDEX idx_restaurant_tables_location ON restaurant_tables(location_id);
+CREATE INDEX idx_restaurant_tables_location_zone_active ON restaurant_tables (location_id, zone, is_active);
 CREATE INDEX idx_restaurant_tables_qr_token ON restaurant_tables(qr_token);
 CREATE INDEX idx_local_shifts_location ON local_shifts(location_id);
 CREATE INDEX idx_waitlist_location_status ON waitlist(location_id, status, created_at);
 CREATE INDEX idx_waitlist_tracking_token ON waitlist(tracking_token);
+CREATE INDEX idx_waitlist_table_ids_gin ON waitlist USING GIN (table_ids);
 CREATE INDEX idx_reservations_location_date ON reservations(location_id, reservation_date);
 CREATE INDEX idx_reservations_status ON reservations(status);
 CREATE INDEX idx_staff_location ON staff(location_id);
@@ -865,11 +867,27 @@ CREATE INDEX idx_product_diet_labels_product ON product_diet_labels(product_id);
 CREATE INDEX idx_discount_usages_discount ON discount_usages(discount_id);
 
 -- ============================================================================
--- 8. VISTAS
+-- 8. VISTAS Y FUNCIONES RPC
 -- ============================================================================
 
--- Vista segura para KDS/Caja: expone solo lo necesario, sin datos sensibles.
--- security_invoker = true â†’ aplica RLS de la tabla subyacente.
+-- 8.1 Aforo dinámico por zona (calculado en tiempo real desde mesas activas)
+DROP VIEW IF EXISTS local_zone_capacity;
+
+CREATE VIEW local_zone_capacity
+WITH (security_invoker = true)
+AS
+SELECT 
+    location_id,
+    zone,
+    COALESCE(SUM(max_capacity), 0)::INTEGER AS capacity
+FROM restaurant_tables
+WHERE is_active = TRUE
+GROUP BY location_id, zone;
+
+GRANT SELECT ON local_zone_capacity TO anon, authenticated, service_role;
+
+-- 8.2 Vista segura para KDS/Caja: expone solo lo necesario, sin datos sensibles.
+-- security_invoker = true -> aplica RLS de la tabla subyacente.
 DROP VIEW IF EXISTS staff_orders_view;
 
 CREATE VIEW staff_orders_view
@@ -903,8 +921,71 @@ SELECT
     o.updated_at
 FROM orders o;
 
-GRANT SELECT ON staff_orders_view TO anon, authenticated;
-GRANT SELECT ON staff_orders_view TO service_role;
+GRANT SELECT ON staff_orders_view TO anon, authenticated, service_role;
+
+-- 8.3 Función RPC para asignación de mesas ("Best-Fit" y mesas combinadas)
+CREATE OR REPLACE FUNCTION get_available_tables(
+    p_location_id UUID,
+    p_date DATE,
+    p_start_time TIME,
+    p_end_time TIME,
+    p_party_size INT,
+    p_zone TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    table_id UUID,
+    table_number TEXT,
+    min_capacity INT,
+    max_capacity INT,
+    zone TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        t.id AS table_id,
+        t.table_number,
+        t.min_capacity,
+        t.max_capacity,
+        t.zone
+    FROM restaurant_tables t
+    WHERE t.location_id = p_location_id
+      AND t.is_active = TRUE
+      AND (p_zone IS NULL OR t.zone = p_zone)
+      AND p_party_size BETWEEN t.min_capacity AND t.max_capacity
+      AND t.id NOT IN (
+          -- Mesas bloqueadas como mesa principal
+          SELECT r.table_id
+          FROM reservations r
+          WHERE r.table_id IS NOT NULL
+            AND r.reservation_date = p_date
+            AND r.status IN ('PENDIENTE', 'CONFIRMADA')
+            AND (
+                r.reservation_time < p_end_time 
+                AND (r.reservation_time + INTERVAL '90 minutes')::TIME > p_start_time
+            )
+          UNION
+          -- Mesas bloqueadas dentro de un grupo combinado (table_ids)
+          SELECT unnest(r.table_ids)
+          FROM reservations r
+          WHERE r.table_ids IS NOT NULL 
+            AND array_length(r.table_ids, 1) > 0
+            AND r.reservation_date = p_date
+            AND r.status IN ('PENDIENTE', 'CONFIRMADA')
+            AND (
+                r.reservation_time < p_end_time 
+                AND (r.reservation_time + INTERVAL '90 minutes')::TIME > p_start_time
+            )
+      )
+    ORDER BY t.max_capacity ASC, t.table_number ASC;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) TO service_role;
 
 -- ============================================================================
 -- 9. COMENTARIOS
@@ -912,17 +993,23 @@ GRANT SELECT ON staff_orders_view TO service_role;
 COMMENT ON TABLE locals IS 'Multi-tenant root: cada local/restaurante';
 COMMENT ON COLUMN locals.iva_rate IS 'Tasa de IVA del local (0.16 = 16%). Ajustable por local.';
 COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija base de delivery del local (fallback cuando no aplica cálculo por matriz OSM).';
+COMMENT ON COLUMN locals.is_catalog_only IS 'Si es true, el menú de la sucursal es solo informativo/catálogo y no permite armar carritos ni pedidos.';
+COMMENT ON COLUMN locals.reservations_enabled IS 'Si es false, las reservas de mesa en línea están pausadas/desactivadas para esta sucursal.';
 COMMENT ON COLUMN locals.address IS 'Dirección física del local o sucursal';
 COMMENT ON COLUMN locals.latitude IS 'Latitud GPS del local para cálculo de matriz de distancias';
 COMMENT ON COLUMN locals.longitude IS 'Longitud GPS del local para cálculo de matriz de distancias';
-COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculaciÃ³n directa y consultas sin depender de email';
-COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios pÃºblicos (IVA incluido)';
+COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculación directa y consultas sin depender de email';
+COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios públicos (IVA incluido)';
 COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_id, product_name, base_price (IVA incl.), quantity, modifiers[{group, selections[]}]}';
-COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al pÃºblico.';
-COMMENT ON TABLE delivery_tokens IS 'Token Ãºnico de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
-COMMENT ON TABLE discounts IS 'Engine de promos: cÃ³digos o automÃ¡ticas con reglas; sin apilar';
+COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al público.';
+COMMENT ON COLUMN orders.driver_id IS 'Repartidor asignado (staff). NULL = sin asignar.';
+COMMENT ON COLUMN reservations.table_ids IS 'Mesas físicas secundarias unidas para grupos grandes.';
+COMMENT ON TABLE delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
+COMMENT ON TABLE discounts IS 'Engine de promos: códigos o automáticas con reglas; sin apilar';
 COMMENT ON TABLE waitlist IS 'Fila de espera virtual (walk-ins) con token de seguimiento';
 COMMENT ON COLUMN waitlist.tracking_token IS 'UUID público para seguimiento de posición y cancelación en tiempo real por el comensal';
+COMMENT ON COLUMN waitlist.table_ids IS 'Mesas físicas secundarias asignadas en combinación al sentar un grupo grande.';
+COMMENT ON FUNCTION get_available_tables IS 'Retorna mesas físicas activas sin reservas solapadas que admiten el tamaño del grupo solicitado.';
 
 -- ============================================================================
 -- Permisos para service_role (bypass RLS en operaciones server-side)
