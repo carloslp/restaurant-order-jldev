@@ -47,18 +47,20 @@ BEGIN
   END IF;
 END $$;
 
--- 3. Policy de SELECT por JWT (idéntica a docs/install.sql §6 /
---    docs/policy-realtime-staff.sql). Permite SELECT si location_id coincide
---    con el GUC app.local_id (flujo servidor) o con el claim
---    user_metadata->location_id del JWT del staff (flujo browser/Realtime).
+-- 3. Policy de SELECT por JWT para Realtime.
+--    Permite SELECT si location_id coincide con el GUC app.local_id (flujo servidor)
+--    o si el usuario autenticado pertenece a este local en public.staff (flujo browser/Realtime).
 DROP POLICY IF EXISTS orders_staff_live ON public.orders;
 CREATE POLICY orders_staff_live ON public.orders
 FOR SELECT
+TO authenticated
 USING (
-    location_id = COALESCE(
-        NULLIF(current_setting('app.local_id', true), ''),
-        (auth.jwt() -> 'user_metadata' ->> 'location_id')
-    )::uuid
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+    OR EXISTS (
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = orders.location_id
+    )
 );
 
 -- 4. Verificación:

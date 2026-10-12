@@ -48,7 +48,8 @@ BEGIN
   END IF;
 END $$;
 
-CREATE OR REPLACE VIEW local_zone_capacity AS
+CREATE OR REPLACE VIEW local_zone_capacity
+WITH (security_invoker = true) AS
 SELECT 
   location_id,
   zone,

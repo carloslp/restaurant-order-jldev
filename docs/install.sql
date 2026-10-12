@@ -589,14 +589,17 @@ FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
--- Realtime: permite SELECT al staff autenticado vÃ­a JWT (claim user_metadata.location_id)
+-- Realtime: permite SELECT al staff autenticado validando su pertenencia en staff
 CREATE POLICY orders_staff_live ON orders
 FOR SELECT
+TO authenticated
 USING (
-    location_id = COALESCE(
-        NULLIF(current_setting('app.local_id', true), ''),
-        (auth.jwt() -> 'user_metadata' ->> 'location_id')
-    )::uuid
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+    OR EXISTS (
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = orders.location_id
+    )
 );
 
 CREATE POLICY reservations_staff_access ON reservations

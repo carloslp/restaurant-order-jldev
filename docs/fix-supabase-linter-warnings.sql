@@ -108,3 +108,36 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pg_net no requiere reubicación o no tiene soporte para ALTER EXTENSION SET SCHEMA: %', SQLERRM;
 END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 5. Configurar security_invoker en vista local_zone_capacity (security_definer_view)
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_views WHERE schemaname = 'public' AND viewname = 'local_zone_capacity'
+  ) THEN
+    ALTER VIEW public.local_zone_capacity SET (security_invoker = true);
+  END IF;
+END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 6. Eliminar referencia a user_metadata en orders_staff_live (rls_references_user_metadata)
+--    user_metadata es editable por clientes. Se valida contra la relación staff de la BD.
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS orders_staff_live ON public.orders;
+
+CREATE POLICY orders_staff_live ON public.orders
+FOR SELECT
+TO authenticated
+USING (
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+    OR EXISTS (
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = auth.uid() 
+          AND staff.location_id = orders.location_id
+    )
+);
+
