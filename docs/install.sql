@@ -382,12 +382,17 @@ CREATE TABLE waitlist (
 -- 4. TRIGGER updated_at
 -- ============================================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 BEGIN
     NEW.updated_at = now();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
+
+REVOKE EXECUTE ON FUNCTION update_updated_at_column() FROM PUBLIC, anon, authenticated;
 
 DO $$
 DECLARE
@@ -408,20 +413,25 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 5. AUTH SYNC: vincular auth.users â†” staff por email
+-- 5. AUTH SYNC: vincular auth.users – staff por email
 -- ============================================================================
 
 -- 5.1 Vincular staff existente por email (uso manual tras migrar usuarios)
 CREATE OR REPLACE FUNCTION public.link_staff_to_auth()
-RETURNS void LANGUAGE plpgsql AS $$
+RETURNS void 
+LANGUAGE plpgsql
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
-  UPDATE staff s
+  UPDATE public.staff s
   SET auth_user_id = u.id
   FROM auth.users u
   WHERE s.auth_user_id IS NULL
     AND s.email = u.email;
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION public.link_staff_to_auth() FROM PUBLIC, anon, authenticated;
 
 -- 5.2 Trigger en staff: al insertar/actualizar, vincular si coincide email
 -- SECURITY DEFINER + search_path bloqueado (patron oficial Supabase para
@@ -449,6 +459,8 @@ DROP TRIGGER IF EXISTS trigger_staff_sync_auth_user ON staff;
 CREATE TRIGGER trigger_staff_sync_auth_user
 BEFORE INSERT OR UPDATE ON staff
 FOR EACH ROW EXECUTE FUNCTION public.staff_sync_auth_user();
+
+REVOKE EXECUTE ON FUNCTION public.staff_sync_auth_user() FROM PUBLIC, anon, authenticated;
 
 -- 5.3 Trigger inverso: al crear usuario auth, vincular staff pendiente
 -- CRITICO: SECURITY DEFINER + search_path bloqueado. El INSERT en auth.users
@@ -481,6 +493,8 @@ DROP TRIGGER IF EXISTS trigger_auth_user_sync_staff ON auth.users;
 CREATE TRIGGER trigger_auth_user_sync_staff
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.auth_user_sync_staff();
+
+REVOKE EXECUTE ON FUNCTION public.auth_user_sync_staff() FROM PUBLIC, anon, authenticated;
 
 -- ============================================================================
 -- 6. ROW LEVEL SECURITY
@@ -648,18 +662,11 @@ WITH CHECK (
 );
 
 -- Fila de espera virtual (Waitlist)
+-- Lectura pública para suscripciones Realtime por tracking_token.
+-- Las mutaciones (join/cancel) corren en Node vía Server Actions con service_role.
 CREATE POLICY waitlist_public_read ON waitlist
 FOR SELECT
 USING (true);
-
-CREATE POLICY waitlist_public_insert ON waitlist
-FOR INSERT
-WITH CHECK (true);
-
-CREATE POLICY waitlist_update ON waitlist
-FOR UPDATE
-USING (true)
-WITH CHECK (true);
 
 CREATE POLICY waitlist_staff_access ON waitlist
 FOR ALL
@@ -824,8 +831,8 @@ GRANT SELECT ON TABLE locals TO anon, authenticated;
 
 -- orders: solo authenticated (JWT de staff) para Realtime (orders_staff_live).
 GRANT SELECT ON TABLE orders TO authenticated;
--- waitlist: lectura y registro para clientes (anon) y control total para staff (authenticated)
-GRANT SELECT, INSERT, UPDATE ON TABLE waitlist TO anon;
+-- waitlist: solo SELECT para Realtime de clientes (anon); control total para staff (authenticated) y service_role.
+GRANT SELECT ON TABLE waitlist TO anon;
 GRANT ALL ON TABLE waitlist TO authenticated;
 
 -- ============================================================================
@@ -1042,10 +1049,7 @@ FOR SELECT USING (
     location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
 );
 
-CREATE POLICY audit_log_service_all ON public.audit_log
-FOR ALL USING (true);
-
-GRANT SELECT, INSERT ON TABLE public.audit_log TO authenticated;
+GRANT SELECT ON TABLE public.audit_log TO authenticated;
 GRANT ALL ON TABLE public.audit_log TO service_role;
 
 

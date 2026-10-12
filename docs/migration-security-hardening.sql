@@ -110,8 +110,7 @@ FOR SELECT USING (
 );
 
 DROP POLICY IF EXISTS audit_log_service_all ON public.audit_log;
-CREATE POLICY audit_log_service_all ON public.audit_log
-FOR ALL USING (true);
 
-GRANT SELECT, INSERT ON TABLE public.audit_log TO authenticated;
+GRANT SELECT ON TABLE public.audit_log TO authenticated;
 GRANT ALL ON TABLE public.audit_log TO service_role;
+
