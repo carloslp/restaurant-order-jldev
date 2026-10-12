@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 import { zNumberES } from '@/lib/validation';
 import type { Category, Product } from '@/lib/types';
+import { logAudit } from '@/lib/server/audit';
 
 // --- Schemas ---
 
@@ -142,6 +143,13 @@ export async function deleteCategory(id: string) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'DELETE_CATEGORY',
+    resourceType: 'category',
+    resourceId: id,
+  });
   return { ok: true };
 }
 
@@ -464,6 +472,13 @@ export async function deleteProduct(id: string) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'DELETE_PRODUCT',
+    resourceType: 'product',
+    resourceId: id,
+  });
   return { ok: true };
 }
 

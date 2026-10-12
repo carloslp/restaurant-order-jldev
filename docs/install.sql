@@ -212,6 +212,7 @@ CREATE TABLE orders (
     driver_id UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
     table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
     session_id UUID NULL,
+    idempotency_key UUID NULL,
     delivery_token UUID NULL,
     delivery_token_expires_at TIMESTAMPTZ NULL,
     delivery_token_rotated_at TIMESTAMPTZ NULL,
@@ -519,7 +520,13 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY categories_public_read ON categories
 FOR SELECT
-USING (is_active = true);
+USING (
+    is_active = true
+    AND (
+        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
+    )
+);
 
 CREATE POLICY products_staff_access ON products
 FOR ALL
@@ -528,7 +535,13 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY products_public_read ON products
 FOR SELECT
-USING (is_available = true);
+USING (
+    is_available = true
+    AND (
+        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
+    )
+);
 
 CREATE POLICY modifier_groups_staff_access ON modifier_groups
 FOR ALL
@@ -537,7 +550,10 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY modifier_groups_public_read ON modifier_groups
 FOR SELECT
-USING (true);
+USING (
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+    OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
+);
 
 CREATE POLICY modifier_options_staff_access ON modifier_options
 FOR ALL
@@ -546,7 +562,13 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY modifier_options_public_read ON modifier_options
 FOR SELECT
-USING (is_active = true);
+USING (
+    is_active = true
+    AND (
+        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
+    )
+);
 
 CREATE POLICY orders_staff_access ON orders
 FOR ALL
@@ -712,6 +734,10 @@ USING (
     is_active = true
     AND (starts_at IS NULL OR starts_at <= now())
     AND (ends_at IS NULL OR ends_at >= now())
+    AND (
+        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
+    )
 );
 
 CREATE POLICY discount_usages_staff_access ON discount_usages
@@ -806,6 +832,7 @@ GRANT ALL ON TABLE waitlist TO authenticated;
 -- 7. ÃNDICES
 -- ============================================================================
 CREATE INDEX idx_orders_location_status ON orders(location_id, status);
+CREATE UNIQUE INDEX idx_orders_idempotency_key ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX idx_orders_eta ON orders(eta);
 CREATE INDEX idx_orders_created_at ON orders(created_at);
 CREATE INDEX idx_orders_customer_phone ON orders(customer_phone);
@@ -989,4 +1016,36 @@ SELECT cron.schedule(
 -- Para desactivar:
 -- SELECT cron.unschedule('reservation-reminders-24h');
 -- SELECT cron.unschedule('reservation-reminders-2h');
+
+-- ============================================================================
+-- 13. AUDITORÍA (audit_log)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID REFERENCES public.locals(id) ON DELETE CASCADE,
+    staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NULL,
+    metadata JSONB NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_location_created ON public.audit_log(location_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_staff ON public.audit_log(staff_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON public.audit_log(resource_type, resource_id);
+
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY audit_log_staff_read ON public.audit_log
+FOR SELECT USING (
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+);
+
+CREATE POLICY audit_log_service_all ON public.audit_log
+FOR ALL USING (true);
+
+GRANT SELECT, INSERT ON TABLE public.audit_log TO authenticated;
+GRANT ALL ON TABLE public.audit_log TO service_role;
+
 

@@ -7,7 +7,7 @@ import { describeSupabaseError } from '@/lib/errors';
 import type { Category, Product, ModifierGroup, ModifierOption } from '@/lib/types';
 
 export async function getMenu(locationId: string): Promise<{ categories: Category[]; products: Product[] }> {
-  const supabase = createAnonServerClient();
+  const supabase = createAnonServerClient(locationId);
 
   // Cargas independientes: un fallo en modificadores no debe esconder todo el menú.
   const [catRes, prodRes, groupRes, optRes] = await Promise.allSettled([

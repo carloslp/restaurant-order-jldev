@@ -4,14 +4,9 @@ import { createServerClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 import { locationSlugSchema } from '@/lib/slugs';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow, describeSupabaseError } from '@/lib/errors';
-import { zNumberES } from '@/lib/validation';
+import { zNumberES, strongPasswordSchema } from '@/lib/validation';
 
 // --- Schemas ---
-
-const passwordSchema = z
-  .string()
-  .min(8, 'La contraseña debe tener al menos 8 caracteres')
-  .max(72, 'Máximo 72 caracteres');
 
 const SetupSchema = z
   .object({
@@ -19,7 +14,7 @@ const SetupSchema = z
     slug: locationSlugSchema,
     adminEmail: z.string().email('Email inválido'),
     adminName: z.string().min(1, 'El nombre es requerido'),
-    adminPassword: passwordSchema,
+    adminPassword: strongPasswordSchema,
     adminPasswordConfirm: z.string(),
     timezone: z.string().default('America/Mexico_City'),
     iva_rate: zNumberES('El IVA debe ser un número').min(0, 'El IVA no puede ser negativo').max(1, 'El IVA no puede ser mayor a 1').default(0.16),

@@ -5,6 +5,8 @@ import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow, describeSupabaseError } from '@/lib/errors';
+import { strongPasswordSchema } from '@/lib/validation';
+import { logAudit } from '@/lib/server/audit';
 
 // --- Schemas ---
 
@@ -17,10 +19,10 @@ const StaffSchema = z.object({
 const InviteStaffSchema = z.object({
   email: z.string().email('Email inválido'),
   full_name: z.string().min(1, 'El nombre es requerido'),
-  // Opcional: si se provee (mín. 8), el usuario se crea activo con esa contraseña;
+  // Opcional: si se provee, debe cumplir política robusta de contraseñas;
   // si viene vacío/undefined, se envía magic link por email.
   password: z
-    .union([z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'Máximo 72 caracteres'), z.literal('')])
+    .union([strongPasswordSchema, z.literal('')])
     .optional(),
 });
 
@@ -173,6 +175,13 @@ export async function deleteStaff(id: string) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'DELETE_STAFF',
+    resourceType: 'staff',
+    resourceId: id,
+  });
 }
 
 export async function toggleStaffActive(id: string, isActive: boolean) {
@@ -273,6 +282,14 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
     }
 
     revalidatePath('/staff/admin');
+    logAudit({
+      locationId: staff.location_id,
+      staffId: staff.id,
+      action: 'INVITE_STAFF_PASSWORD',
+      resourceType: 'staff',
+      resourceId: newStaff.id,
+      metadata: { email: validated.email },
+    });
     return { staff: newStaff, authUser: authData.user, mode: 'password' as const };
   }
 
@@ -301,5 +318,13 @@ export async function inviteStaff(payload: z.infer<typeof InviteStaffSchema>) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'INVITE_STAFF_MAGIC_LINK',
+    resourceType: 'staff',
+    resourceId: newStaff.id,
+    metadata: { email: validated.email },
+  });
   return { staff: newStaff, authUser: authData.user, mode: 'magic_link' as const };
 }

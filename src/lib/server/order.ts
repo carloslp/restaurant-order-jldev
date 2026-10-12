@@ -10,6 +10,7 @@ import { generateToken, hashToken } from '@/lib/tokens';
 import type { Order, OrderStatus } from '@/lib/types';
 import { getCurrentStaff } from '@/app/staff/page';
 import { parsePostgrestError, describeSupabaseError } from '@/lib/errors';
+import { logAudit } from '@/lib/server/audit';
 
 // ---------------------------------------------------------------------------
 // Tokens de reparto: filas del join delivery_tokens × orders que devuelven
@@ -53,7 +54,13 @@ export async function getOrderByDeliveryToken(deliveryToken: string): Promise<Or
     return null;
   }
 
-  return data as Order;
+  // Sanitizar PII para prevenir fuga de datos si el token público es compartido
+  return {
+    ...data,
+    customer_phone: '***',
+    notes: null,
+    delivery_references: null,
+  } as Order;
 }
 
 /**
@@ -410,50 +417,28 @@ export async function updateOrderStatus(
     .update(updatePayload)
     .eq('id', orderId);
 
-  // Auto-reparación resiliente: si la base de datos aún tiene el constraint chk_eta_future
-  // o chk_total_consistency activo, auto-sanitizar el registro y reintentar de inmediato
-  // para no detener la operación de cocina ni caja.
   if (updateError && (updateError as { code?: string }).code === '23514') {
-    console.warn(`[AutoHeal] updateOrderStatus check violation (23514) en orden ${orderId}. Intentando autorreparación...`);
-    const futureEta = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    
-    // Consultar subtotal y delivery_fee_amount para reconciliar consistencia si fuera necesario
-    const { data: currentOrder } = await supabase
-      .from('orders')
-      .select('subtotal, delivery_fee_amount, total')
-      .eq('id', orderId)
-      .single();
-
-    const sanitizedPayload: Record<string, unknown> = {
-      ...updatePayload,
-      eta: futureEta,
+    console.error(`[DataIntegrity] Violación de restricción en orden ${orderId}:`, updateError);
+    return {
+      ok: false,
+      error: 'La orden contiene inconsistencias de datos. Contacta a soporte técnico.',
     };
-
-    if (currentOrder) {
-      const computedTotal = Number(
-        (Number(currentOrder.subtotal || 0) + Number(currentOrder.delivery_fee_amount || 0)).toFixed(2)
-      );
-      if (Math.abs(Number(currentOrder.total) - computedTotal) >= 0.01) {
-        sanitizedPayload.total = computedTotal;
-      }
-    }
-
-    const retry = await supabase
-      .from('orders')
-      .update(sanitizedPayload)
-      .eq('id', orderId);
-
-    if (!retry.error) {
-      console.warn(`[AutoHeal] Orden ${orderId} autorreparada y actualizada a ${nextStatus} exitosamente.`);
-      return { ok: true };
-    }
-    updateError = retry.error;
   }
 
   if (updateError) {
     console.error('updateOrderStatus/update:', updateError);
     return { ok: false, error: parsePostgrestError(updateError, 'No se pudo actualizar la orden. Inténtalo de nuevo.') };
   }
+
+  // Registrar auditoría de la acción
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'UPDATE_ORDER_STATUS',
+    resourceType: 'order',
+    resourceId: orderId,
+    metadata: { previousStatus: current.status, newStatus: nextStatus },
+  });
 
   return { ok: true };
 }

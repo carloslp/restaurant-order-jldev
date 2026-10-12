@@ -3,8 +3,8 @@ import { updateOrderStatus } from '@/lib/server/order';
 import * as authStaff from '@/app/staff/page';
 import * as supabaseServer from '@/lib/supabase/server';
 
-describe('Resiliencia de Check Constraints en Órdenes (AutoHeal 23514)', () => {
-  it('debe autorreparar y reintentar si la base de datos devuelve error 23514 en updateOrderStatus', async () => {
+describe('Integridad de Check Constraints en Órdenes (Rechazo Explícito 23514)', () => {
+  it('debe fallar explícitamente y reportar error si la base de datos devuelve error 23514 en updateOrderStatus', async () => {
     // Mock staff
     vi.spyOn(authStaff, 'getCurrentStaff').mockResolvedValue({
       user: { id: 'user-1' } as any,
@@ -28,22 +28,16 @@ describe('Resiliencia de Check Constraints en Órdenes (AutoHeal 23514)', () => 
       }),
     });
 
-    const mockUpdate = vi.fn().mockImplementation((payload) => {
+    const mockUpdate = vi.fn().mockImplementation(() => {
       updateAttempts++;
       return {
         eq: vi.fn().mockImplementation(() => {
-          if (updateAttempts === 1) {
-            // Primer intento falla por check constraint (23514)
-            return Promise.resolve({
-              error: {
-                code: '23514',
-                message: 'new row violates check constraint "chk_eta_future"',
-              },
-            });
-          }
-          // Segundo intento (auto-sanitizado) tiene éxito
-          expect(payload.eta).toBeDefined();
-          return Promise.resolve({ error: null });
+          return Promise.resolve({
+            error: {
+              code: '23514',
+              message: 'new row violates check constraint "chk_total_consistency"',
+            },
+          });
         }),
       };
     });
@@ -56,7 +50,9 @@ describe('Resiliencia de Check Constraints en Órdenes (AutoHeal 23514)', () => 
             update: mockUpdate,
           };
         }
-        return {};
+        return {
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
       }),
     };
 
@@ -64,7 +60,9 @@ describe('Resiliencia de Check Constraints en Órdenes (AutoHeal 23514)', () => 
 
     const result = await updateOrderStatus('order-1', 'EN_PREPARACION');
 
-    expect(result.ok).toBe(true);
-    expect(updateAttempts).toBe(2);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('inconsistencias de datos');
+    // No debe haber intentado un segundo update silencioso
+    expect(updateAttempts).toBe(1);
   });
 });

@@ -19,6 +19,7 @@ import type {
 } from '@/lib/types';
 
 import { getGeneratedSlotsForDate } from '@/lib/server/schedules';
+import { logAudit } from '@/lib/server/audit';
 
 // --- Schemas ---
 
@@ -588,6 +589,14 @@ export async function rejectReservation(id: string, reason?: string) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'CANCEL_RESERVATION',
+    resourceType: 'reservation',
+    resourceId: id,
+    metadata: { reason: reason || null },
+  });
   return { ok: true, reservation: data };
 }
 
@@ -781,6 +790,13 @@ export async function deleteReservation(id: string) {
   }
 
   revalidatePath('/staff/admin');
+  logAudit({
+    locationId: staff.location_id,
+    staffId: staff.id,
+    action: 'DELETE_RESERVATION',
+    resourceType: 'reservation',
+    resourceId: id,
+  });
   return { ok: true };
 }
 

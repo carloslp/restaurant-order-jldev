@@ -8,6 +8,16 @@ import { z } from 'zod';
 export const zNumberES = (msg = 'Ingresa un número válido') =>
   z.coerce.number({ error: msg });
 
+// Esquema centralizado de contraseña robusta alineado a guías NIST / seguridad de contraseñas
+export const strongPasswordSchema = z
+  .string()
+  .min(10, 'La contraseña debe tener al menos 10 caracteres')
+  .max(72, 'Máximo 72 caracteres')
+  .regex(/[A-Z]/, 'Debe incluir al menos una letra mayúscula')
+  .regex(/[a-z]/, 'Debe incluir al menos una letra minúscula')
+  .regex(/[0-9]/, 'Debe incluir al menos un número')
+  .regex(/[^A-Za-z0-9]/, 'Debe incluir al menos un símbolo o carácter especial');
+
 // Días de la semana: 0=Dom .. 6=Sáb (ISO)
 export const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 

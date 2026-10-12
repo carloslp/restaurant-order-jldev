@@ -11,6 +11,7 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createSessionServerClient } from '@/lib/supabase/session';
+import { strongPasswordSchema } from '@/lib/validation';
 
 export async function requestPasswordReset(
   _prevState: { error?: string; success?: boolean } | null,
@@ -51,11 +52,9 @@ export async function updatePasswordAction(
   const password = String(formData.get('password') ?? '');
   const confirm = String(formData.get('confirm') ?? '');
 
-  if (!password || password.length < 8) {
-    return { error: 'La contraseña debe tener al menos 8 caracteres.' };
-  }
-  if (password.length > 72) {
-    return { error: 'Máximo 72 caracteres.' };
+  const parseResult = strongPasswordSchema.safeParse(password);
+  if (!parseResult.success) {
+    return { error: parseResult.error.issues[0]?.message ?? 'La contraseña no cumple con los requisitos de seguridad.' };
   }
   if (password !== confirm) {
     return { error: 'Las contraseñas no coinciden.' };

@@ -145,4 +145,69 @@ describe('FEATURE F-02: Checkout Resiliente con Estimación de Envío en Vivo y 
       );
     });
   });
+
+  describe('CA-3 – Idempotencia Server-Side de Órdenes', () => {
+    it('actions.ts createOrder: si se provee idempotency_key existente, retorna la orden previa sin duplicar', async () => {
+      const localModule = await import('@/lib/server/local');
+      vi.spyOn(localModule, 'getLocalById').mockResolvedValueOnce({
+        id: 'loc-1',
+        name: 'Local Centro',
+        slug: 'centro',
+        timezone: 'America/Mexico_City',
+        iva_rate: 0.16,
+        delivery_fee: 0,
+        is_open: true,
+        is_catalog_only: false,
+        reservations_enabled: true,
+      });
+
+      const existingOrder = {
+        id: 'order-existing-999',
+        location_id: 'loc-1',
+        idempotency_key: 'idem-key-abc-123',
+        delivery_token: 'delivery-uuid-999',
+        status: 'CREADO',
+        total: 150,
+      };
+
+      const supabaseServer = await import('@/lib/supabase/server');
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: existingOrder, error: null }),
+          }),
+        }),
+      });
+
+      const mockSupabase = {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'orders') {
+            return {
+              select: mockSelect,
+            };
+          }
+          return {};
+        }),
+      };
+
+      vi.spyOn(supabaseServer, 'createServerClient').mockReturnValue(mockSupabase as any);
+
+      const { createOrder } = await import('@/features/checkout/actions');
+
+      const result = await createOrder({
+        location_id: 'loc-1',
+        cart: { items: [], location_id: 'loc-1' },
+        customer_name: 'Juan Perez',
+        customer_phone: '5512345678',
+        order_type: 'RECOGER',
+        payment_method: 'EFECTIVO_EXACTO',
+        eta: new Date().toISOString(),
+        idempotency_key: 'idem-key-abc-123',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.order?.id).toBe('order-existing-999');
+      expect(result.track_token).toBe('delivery-uuid-999');
+    });
+  });
 });

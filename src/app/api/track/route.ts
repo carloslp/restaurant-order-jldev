@@ -22,7 +22,19 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, order });
+  // Sanitizar respuesta pública: omitir customer_name, customer_phone, delivery_address y notas
+  const sanitizedOrder = {
+    id: order.id,
+    status: order.status,
+    order_type: order.order_type,
+    eta: order.eta,
+    total: order.total,
+    created_at: order.created_at,
+    delivered_at: order.delivered_at,
+    delivery_zone: order.delivery_zone,
+  };
+
+  return NextResponse.json({ ok: true, order: sanitizedOrder });
 }
 
 export async function POST(request: Request) {

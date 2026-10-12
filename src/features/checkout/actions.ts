@@ -103,17 +103,23 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const tokenHash = hashToken(plainToken);
   const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2 horas
 
-  // 3. Idempotencia: omitido temporalmente ya que la columna no existe en la BD
-  // const { data: existing } = await supabase
-  //   .from('orders')
-  //   .select('*')
-  //   .eq('location_id', location_id)
-  //   .eq('idempotency_key', input.idempotency_key)
-  //   .maybeSingle();
-  //
-  // if (existing) {
-  //   return { ok: true, order: existing as Order };
-  // }
+  // 3. Idempotencia: evitar duplicados por doble click o reintento de red
+  if (input.idempotency_key) {
+    const { data: existing } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('location_id', location_id)
+      .eq('idempotency_key', input.idempotency_key)
+      .maybeSingle();
+
+    if (existing) {
+      return { 
+        ok: true, 
+        order: existing as Order, 
+        track_token: (existing as Order).delivery_token ?? undefined 
+      };
+    }
+  }
 
   // 4. Cargar local y menú para validar precios contra lo que envía el cliente
   const { products } = await getMenu(location_id);
@@ -272,6 +278,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       order_type: input.order_type,
       table_id: input.table_id || null,
       session_id: input.session_id || null,
+      idempotency_key: input.idempotency_key || null,
       payment_method: input.payment_method,
       delivery_address: input.order_type === 'DOMICILIO' ? (input.delivery_address ?? '').trim() || null : null,
       delivery_references: input.order_type === 'DOMICILIO' ? (input.delivery_references ?? '').trim() || null : null,

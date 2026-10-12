@@ -28,7 +28,33 @@ export async function proxy(request: NextRequest) {
 
   // Importante: usar getUser() para revalidar el token con el servidor de auth
   // getSession() NO revalida y puede devolver sesión stale
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const pathname = request.nextUrl.pathname;
+
+  // Protección perimetral de rutas staff: interceptar antes de renderizar Server Components
+  if (pathname.startsWith('/staff') && !pathname.startsWith('/staff/auth')) {
+    if (!user) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('next', pathname);
+      const redirectRes = NextResponse.redirect(loginUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectRes.cookies.set(cookie.name, cookie.value, cookie);
+      });
+      return redirectRes;
+    }
+  }
+
+  // Si ya tiene sesión activa e intenta visitar /login, redirigir al panel
+  if (pathname === '/login' && user) {
+    const redirectRes = NextResponse.redirect(new URL('/staff', request.url));
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectRes.cookies.set(cookie.name, cookie.value, cookie);
+    });
+    return redirectRes;
+  }
 
   return supabaseResponse;
 }
