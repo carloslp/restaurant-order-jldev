@@ -31,6 +31,9 @@ export async function syncZoneCapacityFromTables(_locationId: string, _zone: Zon
   // No-op: La capacidad es calculada al vuelo en tiempo de ejecución
 }
 
+const TABLE_COLUMNS =
+  'id, location_id, table_number, min_capacity, max_capacity, zone, is_active, status, qr_status, current_session_id, current_guests, created_at, updated_at';
+
 /**
  * Obtiene todas las mesas físicas de la sucursal actual del staff.
  */
@@ -40,7 +43,7 @@ export async function getStaffTables(): Promise<RestaurantTable[]> {
 
   const { data, error } = await supabase
     .from('restaurant_tables')
-    .select('*')
+    .select(TABLE_COLUMNS)
     .eq('location_id', staff.location_id)
     .order('table_number', { ascending: true });
 
@@ -77,7 +80,7 @@ export async function upsertTable(payload: z.infer<typeof TableSchema>) {
     supabase
       .from('restaurant_tables')
       .upsert(tableRecord)
-      .select('*')
+      .select(TABLE_COLUMNS)
       .single(),
     { action: 'upsertTable', fallback: 'No se pudo guardar la mesa' }
   );
@@ -141,7 +144,7 @@ export async function updateTableStatus(
     .update(updateData)
     .eq('id', tableId)
     .eq('location_id', staff.location_id)
-    .select('*')
+    .select(TABLE_COLUMNS)
     .single();
 
   if (error) {
@@ -173,7 +176,7 @@ export async function openTableQrSession(tableId: string, guests = 2) {
     })
     .eq('id', tableId)
     .eq('location_id', staff.location_id)
-    .select('*')
+    .select(TABLE_COLUMNS)
     .single();
 
   if (error) {
@@ -200,7 +203,7 @@ export async function closeTableQrSession(tableId: string) {
     })
     .eq('id', tableId)
     .eq('location_id', staff.location_id)
-    .select('*')
+    .select(TABLE_COLUMNS)
     .single();
 
   if (error) {

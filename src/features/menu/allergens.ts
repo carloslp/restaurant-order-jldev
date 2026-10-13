@@ -4,8 +4,9 @@
 
 import { createAnonServerClient } from '@/lib/supabase/server';
 import { describeSupabaseError } from '@/lib/errors';
+import { unstable_cache } from 'next/cache';
 
-export async function getAllergensAndDietLabels(): Promise<{
+async function fetchMasterLabelsFromDb(): Promise<{
   allergens: string[];
   dietLabels: string[];
 }> {
@@ -25,3 +26,12 @@ export async function getAllergensAndDietLabels(): Promise<{
     dietLabels: (d.data ?? []).map((x) => x.name as string),
   };
 }
+
+export const getAllergensAndDietLabels = unstable_cache(
+  fetchMasterLabelsFromDb,
+  ['allergens-diet-labels'],
+  {
+    revalidate: 3600,
+    tags: ['master-labels'],
+  }
+);

@@ -44,27 +44,32 @@ export async function getProductsAvailability(
   }
 }
 
-export async function getMenu(locationId: string): Promise<{ categories: Category[]; products: Product[] }> {
+import { unstable_cache } from 'next/cache';
+
+async function fetchMenuFromDb(locationId: string): Promise<{ categories: Category[]; products: Product[] }> {
   const supabase = createAnonServerClient(locationId);
 
-  // Cargas independientes: un fallo en modificadores no debe esconder todo el menú.
+  // Cargas independientes con proyección explícita de columnas (menor egress y latencia):
   const [catRes, prodRes, groupRes, optRes] = await Promise.allSettled([
     supabase
       .from('categories')
-      .select('*')
+      .select('id, location_id, name, description, image_url, is_active, sort_order')
       .eq('location_id', locationId)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
     supabase
       .from('products')
-      .select('*')
+      .select('id, location_id, category_id, name, description, image_url, base_price, is_available')
       .eq('location_id', locationId)
       .eq('is_available', true)
       .order('name', { ascending: true }),
-    supabase.from('modifier_groups').select('*').eq('location_id', locationId),
+    supabase
+      .from('modifier_groups')
+      .select('id, location_id, product_id, name, is_required, min_selections, max_selections')
+      .eq('location_id', locationId),
     supabase
       .from('modifier_options')
-      .select('*')
+      .select('id, location_id, modifier_group_id, name, price_impact, is_active')
       .eq('location_id', locationId)
       .eq('is_active', true),
   ]);
@@ -74,8 +79,6 @@ export async function getMenu(locationId: string): Promise<{ categories: Categor
   const rawGroups = groupRes.status === 'fulfilled' && !groupRes.value.error ? (groupRes.value.data ?? []) : [];
   const rawOptions = optRes.status === 'fulfilled' && !optRes.value.error ? (optRes.value.data ?? []) : [];
 
-  // Loguear con descripción serializada: el overlay de Next muestra los
-  // errores crudos como `{}`, ocultando la causa (ej: 42501 permission denied).
   if (catRes.status === 'rejected' || (catRes.status === 'fulfilled' && catRes.value.error)) {
     console.error('getMenu: fallo cargando categories:', describeSupabaseError(catRes.status === 'rejected' ? catRes.reason : catRes.value.error));
   }
@@ -90,20 +93,35 @@ export async function getMenu(locationId: string): Promise<{ categories: Categor
   }
 
   const groupsMap = new Map<string, ModifierGroup>();
-  for (const g of rawGroups as ModifierGroup[]) {
+  for (const g of rawGroups as unknown as ModifierGroup[]) {
     groupsMap.set(g.id, { ...g, options: [] });
   }
-  for (const o of rawOptions as ModifierOption[]) {
+  for (const o of rawOptions as unknown as ModifierOption[]) {
     const g = groupsMap.get(o.modifier_group_id);
     if (g) g.options.push(o);
   }
 
   const products = rawProducts.map((p) => ({
-    ...(p as Product),
-    modifier_groups: (p.modifier_groups ?? []).length
-      ? p.modifier_groups
+    ...(p as unknown as Product),
+    modifier_groups: (p as unknown as Product).modifier_groups?.length
+      ? (p as unknown as Product).modifier_groups
       : Array.from(groupsMap.values()).filter((g) => g.product_id === p.id),
   }));
 
-  return { categories: categories as Category[], products };
+  return { categories: categories as unknown as Category[], products };
+}
+
+export async function getMenu(
+  locationId: string
+): Promise<{ categories: Category[]; products: Product[] }> {
+  if (!locationId) return { categories: [], products: [] };
+  const getCachedMenu = unstable_cache(
+    async (id: string) => fetchMenuFromDb(id),
+    ['public-menu', locationId],
+    {
+      revalidate: 300,
+      tags: [`menu-${locationId}`],
+    }
+  );
+  return getCachedMenu(locationId);
 }

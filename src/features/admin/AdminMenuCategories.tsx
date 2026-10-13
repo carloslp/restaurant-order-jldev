@@ -7,6 +7,7 @@ import type { Category, Local } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
+import { compressImageToWebP } from '@/lib/image-compression';
 
 interface CategoryFormData {
   name: string;
@@ -44,7 +45,8 @@ export function AdminMenuCategories({ local }: AdminMenuCategoriesProps) {
 
     setUploading(true);
     try {
-      const url = await uploadMenuImage(file, 'categories');
+      const optimizedFile = await compressImageToWebP(file);
+      const url = await uploadMenuImage(optimizedFile, 'categories');
       // Limpieza best-effort de la imagen anterior (si era del bucket)
       const previous = formData.image_url;
       setFormData({ ...formData, image_url: url });

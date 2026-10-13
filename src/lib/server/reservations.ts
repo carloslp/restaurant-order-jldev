@@ -165,7 +165,7 @@ export async function checkSlotAvailability({
   const [{ data: rawTables }, { data: dayReservations }] = await Promise.all([
     supabase
       .from('restaurant_tables')
-      .select('*')
+      .select('id, table_number, min_capacity, max_capacity, zone, is_active')
       .eq('location_id', locationId)
       .eq('is_active', true),
     supabase
@@ -297,7 +297,7 @@ export async function getPublicAvailability(
   // 1. Obtener mesas físicas configuradas en el local
   const { data: rawTables } = await supabase
     .from('restaurant_tables')
-    .select('*')
+    .select('id, table_number, min_capacity, max_capacity, zone, is_active')
     .eq('location_id', local.id)
     .eq('is_active', true);
   const tables = (rawTables || []) as RestaurantTable[];
@@ -642,9 +642,12 @@ export async function listReservations(startDate: string, endDate: string, statu
   const staff = await getStaffContext();
   const supabase = createServerClient();
 
+  const RESERVATION_COLUMNS =
+    'id, location_id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, preferred_zone, notes, status, table_id, table_ids, reminder_sent_at, created_at, updated_at';
+
   let query = supabase
     .from('reservations')
-    .select('*')
+    .select(RESERVATION_COLUMNS)
     .eq('location_id', staff.location_id)
     .gte('reservation_date', startDate)
     .lte('reservation_date', endDate)
@@ -672,7 +675,7 @@ export async function listPendingReservations() {
 
   const { data, error } = await supabase
     .from('reservations')
-    .select('*')
+    .select('id, location_id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, preferred_zone, notes, status, table_id, table_ids, reminder_sent_at, created_at, updated_at')
     .eq('location_id', staff.location_id)
     .eq('status', 'PENDIENTE')
     .order('reservation_date', { ascending: true })

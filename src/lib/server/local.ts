@@ -43,37 +43,68 @@ export function toLocalInfo(data: Record<string, unknown>): LocalInfo {
   };
 }
 
-/**
- * Resuelve el local a partir del slug del path (ej: `/centro` → 'centro').
- * NOTA: lee `locals` con service role porque la política RLS oculta la tabla al rol anon
- * (el público no debe enumerar locales). El slug es un identificador público del path,
- * no un dato sensible; el service role es seguro en el servidor.
- */
-export async function getLocalBySlug(slug: string | null | undefined): Promise<LocalInfo | null> {
-  const normalized = slug?.trim().toLowerCase();
-  if (!normalized) return null;
+import { unstable_cache } from 'next/cache';
 
+const LOCAL_COLUMNS = 'id, name, slug, timezone, iva_rate, delivery_fee, address, latitude, longitude, is_open, is_catalog_only, reservations_enabled';
+
+async function fetchLocalBySlugFromDb(normalizedSlug: string): Promise<LocalInfo | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from('locals')
-    .select('*')
-    .eq('slug', normalized)
+    .select(LOCAL_COLUMNS)
+    .eq('slug', normalizedSlug)
     .maybeSingle();
 
   if (error || !data) return null;
   return toLocalInfo(data);
 }
 
-/** Obtiene el local por su ID (para revalidar server-side en el checkout). */
-export async function getLocalById(id: string): Promise<LocalInfo | null> {
+/**
+ * Resuelve el local a partir del slug del path (ej: `/centro` → 'centro').
+ * Envuelta en unstable_cache con tag `local-${slug}` para eliminar consultas repetitivas a Supabase.
+ */
+export async function getLocalBySlug(slug: string | null | undefined): Promise<LocalInfo | null> {
+  const normalized = slug?.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const getCached = unstable_cache(
+    async (s: string) => fetchLocalBySlugFromDb(s),
+    ['local-by-slug', normalized],
+    {
+      revalidate: 300,
+      tags: [`local-${normalized}`],
+    }
+  );
+  return getCached(normalized);
+}
+
+async function fetchLocalByIdFromDb(id: string): Promise<LocalInfo | null> {
   const supabase = createServerClient();
-  const { data } = await supabase.from('locals').select('*').eq('id', id).maybeSingle();
+  const { data } = await supabase
+    .from('locals')
+    .select(LOCAL_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+
   if (!data) return null;
   return toLocalInfo(data);
 }
 
-/** Lista pública mínima de locales (para el índice `/`). */
-export async function listLocalSummaries(): Promise<LocalSummary[]> {
+/** Obtiene el local por su ID (para revalidar server-side en el checkout). */
+export async function getLocalById(id: string): Promise<LocalInfo | null> {
+  if (!id) return null;
+  const getCached = unstable_cache(
+    async (localId: string) => fetchLocalByIdFromDb(localId),
+    ['local-by-id', id],
+    {
+      revalidate: 300,
+      tags: [`local-id-${id}`],
+    }
+  );
+  return getCached(id);
+}
+
+async function fetchLocalSummariesFromDb(): Promise<LocalSummary[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from('locals')
@@ -83,3 +114,13 @@ export async function listLocalSummaries(): Promise<LocalSummary[]> {
   if (error || !data) return [];
   return data as LocalSummary[];
 }
+
+/** Lista pública mínima de locales (para el índice `/`). */
+export const listLocalSummaries = unstable_cache(
+  fetchLocalSummariesFromDb,
+  ['local-summaries'],
+  {
+    revalidate: 300,
+    tags: ['locals-list'],
+  }
+);

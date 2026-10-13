@@ -148,6 +148,18 @@ export function useRealtimeOrders(opts: {
     }
   }, [locationId, statusesKey, limit]);
 
+  // Debounce para ráfagas de refresco (evita tormentas de consultas ante reconexión o múltiples eventos)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedRefresh = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      void refresh();
+    }, 400);
+  }, [refresh]);
+
   useEffect(() => {
     if (!enabled || !locationId) return;
 
@@ -156,25 +168,30 @@ export function useRealtimeOrders(opts: {
     }
 
     let cancelled = false;
-    const refreshOnce = () => {
-      if (!cancelled) void refresh();
+    const triggerRefreshIfVisible = () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return; // Pausar re-fetch cuando la pestaña está en segundo plano para ahorrar egress
+      }
+      debouncedRefresh();
     };
 
     // 1) Carga inicial desde el servidor.
-    refreshOnce();
+    void refresh();
 
-    // 2) Polling periódico (red de seguridad si Realtime no entrega eventos).
-    const intervalId = window.setInterval(refreshOnce, REFRESH_INTERVAL_MS);
+    // 2) Polling periódico (red de seguridad solo cuando la pestaña está visible).
+    const intervalId = window.setInterval(triggerRefreshIfVisible, REFRESH_INTERVAL_MS);
 
-    // 3) Al recuperar el foco de la pestaña (mientras duerme se pierden eventos).
-    window.addEventListener('focus', refreshOnce);
+    // 3) Al recuperar el foco de la pestaña o volver a estar visible.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerRefreshIfVisible();
+      }
+    };
+    window.addEventListener('focus', triggerRefreshIfVisible);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // 4) Realtime: eventos INSERT/UPDATE/DELETE de orders del local.
-    //    Setup async: supabase-js reutiliza el canal si el topic sigue
-    //    registrado y removeChannel es async. En dev, StrictMode corre
-    //    effect → cleanup → effect en el mismo tick: sin esta limpieza el
-    //    .channel(topic) devolvería el canal viejo ya suscrito y el .on()
-    //    lanzaría "cannot add postgres_changes callbacks ... after subscribe()".
     const realtimeStatuses = statusesKey
       ? (statusesKey.split(',') as Order['status'][])
       : undefined;
@@ -204,8 +221,6 @@ export function useRealtimeOrders(opts: {
           (payload: RealtimePostgresChangesPayload<{ [key: string]: never }>) => {
             setOrders((prev) => {
               const incoming = payload.new as Partial<Order> | undefined;
-              // El payload del Realtime incluye TODO el row de orders (columnas
-              // reales). Lo normalizamos para la UI.
               const normalizedIncoming = incoming
                 ? ({
                     ...incoming,
@@ -260,25 +275,20 @@ export function useRealtimeOrders(opts: {
         )
         .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
           if (cancelled) return;
-          // Al (re)conectar el canal sincronizamos con el servidor: cubre los
-          // eventos perdidos mientras el canal estuvo desconectado o sin
-          // configurar (publication/policy en Supabase).
           if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
             lastHeartbeatRef.current = Date.now();
             setIsReconnecting(false);
-            refreshOnce();
           } else if (
             status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
             status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
             status === REALTIME_SUBSCRIBE_STATES.CLOSED
           ) {
             setIsReconnecting(true);
-            refreshOnce();
+            debouncedRefresh();
           }
         });
 
       if (cancelled) {
-        // Desmontado durante el setup: no dejar el canal huérfano.
         void client.removeChannel(ch);
         return;
       }
@@ -289,24 +299,20 @@ export function useRealtimeOrders(opts: {
       console.error('useRealtimeOrders/setupChannel:', err);
     });
 
-    // CA-3: Verificador periódico de heartbeat (si transcurren más de 5s sin actividad, marcar reconexión)
-    const heartbeatInterval = window.setInterval(() => {
-      if (realtimeChannel && Date.now() - lastHeartbeatRef.current > 5000) {
-        setIsReconnecting(true);
-      }
-    }, 2000);
-
     return () => {
       cancelled = true;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       window.clearInterval(intervalId);
-      window.clearInterval(heartbeatInterval);
-      window.removeEventListener('focus', refreshOnce);
+      window.removeEventListener('focus', triggerRefreshIfVisible);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (realtimeChannel) {
         void supabase.current!.removeChannel(realtimeChannel);
         realtimeChannel = null;
       }
     };
-  }, [locationId, statusesKey, limit, enabled, refresh]);
+  }, [locationId, statusesKey, limit, enabled, refresh, debouncedRefresh]);
 
   // Retornar el array extendido con los helpers para evitar breaking changes
   return Object.assign(orders, {

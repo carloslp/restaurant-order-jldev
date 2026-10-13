@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { FormAlert, FieldError, fieldAria } from '@/components/ui/form-error';
 import { useServerForm } from '@/lib/forms';
 import { AdminModifierGroups } from '@/features/admin/AdminModifierGroups';
+import { compressImageToWebP } from '@/lib/image-compression';
 
 const STANDARD_ALLERGENS = [
   'GLUTEN', 'LACTEOS', 'HUEVO', 'PESCADO', 'SOJA', 'FRUTOS_SECOS', 'CACAHUATE', 'MARISCOS'
@@ -135,7 +136,8 @@ export function AdminMenuProducts({ local }: AdminMenuProductsProps) {
 
     setUploading(true);
     try {
-      const url = await uploadMenuImage(file, 'products');
+      const optimizedFile = await compressImageToWebP(file);
+      const url = await uploadMenuImage(optimizedFile, 'products');
       // Limpieza best-effort de la imagen anterior (si era del bucket)
       const previous = formData.image_url;
       setFormData({ ...formData, image_url: url });

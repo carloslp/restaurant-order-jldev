@@ -112,29 +112,37 @@ export default function TrackPage() {
         return;
       }
 
-      // Polling inteligente cada 5 segundos mientras esté activo
+      // Polling inteligente cada 10 segundos mientras esté activo y visible
       timerId = setInterval(async () => {
         if (isCancelled) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return; // Pausar llamadas mientras la pestaña está en segundo plano
+        }
         const updated = await fetchClientOrder(token, false);
         if (updated && ['COMPLETADO', 'CANCELADO'].includes(updated.status)) {
-          if (timerId) clearInterval(timerId);
+          if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+          }
         }
-      }, 5000);
+      }, 10_000);
     }
 
     load();
 
-    const onFocus = () => {
-      if (!isCancelled) {
+    const onVisible = () => {
+      if (!isCancelled && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchClientOrder(token, false);
       }
     };
-    window.addEventListener('focus', onFocus);
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       isCancelled = true;
       if (timerId) clearInterval(timerId);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [token, fetchClientOrder]);
 

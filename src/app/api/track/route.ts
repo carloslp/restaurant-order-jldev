@@ -34,7 +34,14 @@ export async function GET(request: Request) {
     delivery_zone: order.delivery_zone,
   };
 
-  return NextResponse.json({ ok: true, order: sanitizedOrder });
+  return NextResponse.json(
+    { ok: true, order: sanitizedOrder },
+    {
+      headers: {
+        'Cache-Control': 'public, max-age=10, stale-while-revalidate=15',
+      },
+    }
+  );
 }
 
 export async function POST(request: Request) {

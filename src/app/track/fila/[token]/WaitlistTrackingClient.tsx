@@ -58,8 +58,13 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
     }
   }, [token]);
 
-  // Suscripción Realtime para actualizar al instante cuando Hostess cambie a LLAMADO o SENTADO
+  // Suscripción Realtime y polling de respaldo (solo activo si el turno no es terminal)
   useEffect(() => {
+    const isTerminal = ['SENTADO', 'NO_SHOW', 'CANCELADO'].includes(party.status);
+    if (isTerminal) {
+      return; // No abrir WebSockets ni timers si ya concluyó el turno
+    }
+
     const supabase = createClient();
     const channel = supabase
       .channel(`waitlist-${token}`)
@@ -71,19 +76,32 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
           table: 'waitlist',
           filter: `id=eq.${party.id}`,
         },
-        () => {
+        (payload) => {
+          const updated = payload.new as { status?: WaitlistStatus } | undefined;
+          if (updated?.status && ['SENTADO', 'NO_SHOW', 'CANCELADO'].includes(updated.status)) {
+            // Desconectar canal inmediatamente ante estado terminal
+            void supabase.removeChannel(channel);
+          }
           refreshStatus();
         }
       )
       .subscribe();
 
-    const interval = setInterval(refreshStatus, 20000); // Polling de respaldo cada 20s
+    const triggerRefreshIfVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshStatus();
+      }
+    };
+
+    const interval = setInterval(triggerRefreshIfVisible, 25000); // Polling de respaldo inteligente cada 25s
+    document.addEventListener('visibilitychange', triggerRefreshIfVisible);
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', triggerRefreshIfVisible);
     };
-  }, [party.id, refreshStatus, token]);
+  }, [party.id, party.status, refreshStatus, token]);
 
   const handleCancel = async () => {
     if (!confirm('¿Seguro que deseas salir de la fila de espera? Perderás tu lugar actual.')) return;

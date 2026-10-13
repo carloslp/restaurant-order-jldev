@@ -13,6 +13,7 @@ interface UseProductAvailabilityOptions {
   locationId: string;
   productIds: string[];
   enabled?: boolean;
+  realtime?: boolean;
 }
 
 interface ProductAvailabilityRow {
@@ -21,17 +22,20 @@ interface ProductAvailabilityRow {
 }
 
 /**
- * Hook para suscribirse a cambios de disponibilidad de productos en tiempo real.
- * Usa Realtime postgres_changes en la tabla `products` filtrando por location_id.
+ * Hook para consultar disponibilidad de productos.
+ * Por defecto (realtime = false), realiza una consulta server-side ligera sin abrir WebSockets,
+ * protegiendo los límites de conexiones concurrentes en Supabase para comensales públicos.
+ * Si realtime = true (ej. paneles staff), se suscribe a postgres_changes en la tabla `products`.
  * 
  * Uso:
  *   const { isAvailable, checkAvailability } = useProductAvailability({ 
  *     locationId, 
- *     productIds: cart.items.map(i => i.product_id) 
+ *     productIds: cart.items.map(i => i.product_id),
+ *     realtime: false
  *   });
  */
 export function useProductAvailability(opts: UseProductAvailabilityOptions) {
-  const { locationId, productIds, enabled = true } = opts;
+  const { locationId, productIds, enabled = true, realtime = false } = opts;
   const [availability, setAvailability] = useState<ProductAvailabilityState>({});
   const [loaded, setLoaded] = useState(false);
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
@@ -72,24 +76,21 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         return;
       }
 
+      // Carga inicial de disponibilidad (vía server action / cache)
+      await loadInitialAvailability();
+
+      // Si no se requiere WebSocket en vivo (vistas públicas de comensal), terminamos aquí
+      if (!realtime || !mounted) {
+        return;
+      }
+
       if (!supabase.current) {
         supabase.current = createClient();
       }
       const client = supabase.current;
 
       try {
-        // Carga inicial (antes del canal: si tarda, no bloquea la UI).
-        await loadInitialAvailability();
-
-        // El cleanup pudo correr (StrictMode en dev / deps cambiadas) durante
-        // el await: no tocar el canal si el effect ya se desmontó.
-        if (!mounted) return;
-
         const topic = `products-availability-${locationId}`;
-        // Remover (y esperar) cualquier canal stale con el mismo topic:
-        // supabase-js REUTILIZA el canal registrado con ese topic, y llamar
-        // .on() sobre un canal ya suscrito lanza "cannot add postgres_changes
-        // callbacks ... after subscribe()".
         const stale = client
           .getChannels()
           .find((c: RealtimeChannel) => c.topic === `realtime:${topic}`);
@@ -98,7 +99,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
           if (!mounted) return;
         }
 
-        // Suscribirse a cambios de disponibilidad (canal fresco).
+        // Suscribirse a cambios de disponibilidad (solo si realtime = true)
         const trackedIds = productIdsKey.split(',');
         const channel = client
           .channel(topic)
@@ -113,7 +114,6 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
             (payload: RealtimePostgresChangesPayload<ProductAvailabilityRow>) => {
               if (!mounted) return;
               const newProduct = payload.new as ProductAvailabilityRow | undefined;
-              // Reaccionar cuando se actualiza is_available y es un producto que nos interesa
               if (
                 newProduct &&
                 typeof newProduct.is_available === 'boolean' &&
@@ -131,12 +131,9 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
         if (mounted) {
           channelRef.current = channel;
         } else {
-          // Desmontado justo tras el subscribe: no dejar el canal huérfano.
           void client.removeChannel(channel);
         }
       } catch (err) {
-        // Antes este fallo era un "Uncaught (in promise)" que dejaba el canal
-        // roto en silencio (StrictMode re-monta los effects en dev).
         console.error('useProductAvailability/init:', err);
       }
     }
@@ -149,7 +146,7 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
       channelRef.current = null;
       if (ch) void supabase.current?.removeChannel(ch);
     };
-  }, [enabled, locationId, productIdsKey, loadInitialAvailability]);
+  }, [enabled, locationId, productIdsKey, realtime, loadInitialAvailability]);
 
   // Función para verificar disponibilidad actual (útil antes de confirmar pedido).
   // getProductsAvailability registra explícitamente false para productos agotados o eliminados.

@@ -41,7 +41,7 @@ async function fetchReservationsForReminder(
   // We'll filter by time window in the application layer for precision
   const { data, error } = await supabase
     .from('reservations')
-    .select('*')
+    .select('id, location_id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, reminder_sent_at')
     .eq('reservation_date', targetDateStr)
     .in('status', ['PENDIENTE', 'CONFIRMADA']);
   
@@ -70,10 +70,11 @@ export async function runReminderJob(hoursBefore: 24 | 2) {
   
   const supabase = createServerClient();
   
-  // Get all locations
+  // Get all active locations with reservations enabled
   const { data: locations, error: locError } = await supabase
     .from('locals')
-    .select('id, name, timezone');
+    .select('id, name, timezone')
+    .eq('reservations_enabled', true);
   
   if (locError) {
     console.error(`[Reminder Job] Error fetching locations:`, locError);

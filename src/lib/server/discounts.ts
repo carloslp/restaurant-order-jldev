@@ -29,7 +29,7 @@ export async function listDiscounts() {
 
   const { data, error } = await supabase
     .from('discounts')
-    .select('*')
+    .select('id, location_id, code, description, type, value, is_active, starts_at, ends_at, max_uses, current_uses, min_order_amount, created_at, updated_at')
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Error listing discounts: ${error.message}`);
@@ -137,7 +137,7 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
   // 1. Get order to find location_id and current total
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, location_id, subtotal, iva_amount, delivery_fee, discount_amount, total')
     .eq('id', orderId)
     .eq('location_id', staff.location_id)
     .single();

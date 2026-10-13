@@ -3,6 +3,17 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Optimización de costos: No ejecutar auth.getUser() en rutas públicas ni estáticas.
+  // Solo verificar sesión en rutas de staff protegidas o en la página de login.
+  const isProtectedStaffRoute = pathname.startsWith('/staff') && !pathname.startsWith('/staff/auth');
+  const isLoginPage = pathname === '/login';
+
+  if (!isProtectedStaffRoute && !isLoginPage) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -32,10 +43,8 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
-
   // Protección perimetral de rutas staff: interceptar antes de renderizar Server Components
-  if (pathname.startsWith('/staff') && !pathname.startsWith('/staff/auth')) {
+  if (isProtectedStaffRoute) {
     if (!user) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('next', pathname);
@@ -48,7 +57,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Si ya tiene sesión activa e intenta visitar /login, redirigir al panel
-  if (pathname === '/login' && user) {
+  if (isLoginPage && user) {
     const redirectRes = NextResponse.redirect(new URL('/staff', request.url));
     supabaseResponse.cookies.getAll().forEach((cookie) => {
       redirectRes.cookies.set(cookie.name, cookie.value, cookie);

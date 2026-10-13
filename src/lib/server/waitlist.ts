@@ -221,6 +221,9 @@ export async function cancelPublicWaitlistByToken(token: string): Promise<{ ok: 
 // 2. FUNCIONES DE ADMINISTRACIÓN (STAFF / HOSTESS)
 // ---------------------------------------------------------------------------
 
+const WAITLIST_PARTY_COLUMNS =
+  'id, location_id, customer_name, customer_phone, party_size, preferred_zone, status, tracking_token, notes, called_at, seated_at, table_id, created_at, updated_at';
+
 /**
  * Lista las personas actualmente activas en la fila de espera del local.
  */
@@ -231,7 +234,7 @@ export async function listActiveWaitlist(): Promise<WaitlistParty[]> {
   const [{ data: waitlistData, error }, { data: tablesData }] = await Promise.all([
     supabase
       .from('waitlist')
-      .select('*')
+      .select(WAITLIST_PARTY_COLUMNS)
       .eq('location_id', staff.location_id)
       .in('status', ['EN_ESPERA', 'LLAMADO'])
       .order('created_at', { ascending: true }),
@@ -418,7 +421,7 @@ export async function addManualWaitlist(input: {
       notes: input.notes?.trim() || null,
       created_by: staff.id,
     })
-    .select('*')
+    .select(WAITLIST_PARTY_COLUMNS)
     .single();
 
   if (error) {

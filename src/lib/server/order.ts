@@ -46,7 +46,7 @@ export async function getOrderByDeliveryToken(deliveryToken: string): Promise<Or
 
   const { data, error } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, location_id, status, order_type, customer_name, delivery_address, delivery_zone, eta, total, created_at, delivered_at')
     .eq('delivery_token', deliveryToken)
     .single();
 
@@ -75,7 +75,7 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
   // 1. Find all valid (unused, unrevoked, unexpired) delivery token candidates
   const { data: candidates, error: tokenError } = await supabase
     .from('delivery_tokens')
-    .select('*, orders!inner(id, status, delivery_token_expires_at)')
+    .select('id, token_hash, orders!inner(id, status, delivery_token_expires_at)')
     .is('used_at', null)
     .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString());
@@ -107,7 +107,7 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
       delivered_at: new Date().toISOString(),
     })
     .eq('id', order.id)
-    .select()
+    .select('id')
     .single();
 
   if (orderError || !updatedOrder) {
@@ -143,7 +143,7 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
   // 1. Find all valid (unused, unrevoked, unexpired) delivery token candidates
   const { data: candidates, error: tokenError } = await supabase
     .from('delivery_tokens')
-    .select('*, orders!inner(*)')
+    .select('id, token_hash, orders!inner(id, status, order_type, customer_name, customer_phone, delivery_address, delivery_references, delivery_zone, payment_method, eta, total, cart_snapshot, delivered_at)')
     .is('used_at', null)
     .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString());
@@ -319,7 +319,7 @@ export async function listOrdersForLocation(opts?: {
 
   let query = supabase
     .from('orders')
-    .select('*')
+    .select('id, location_id, order_type, status, payment_status, payment_method, customer_name, customer_phone, delivery_address, delivery_references, delivery_zone, notes, subtotal, iva_amount, delivery_fee, discount_amount, discount_code, total, cart_snapshot, table_id, eta, created_at, updated_at, delivered_at, driver_id')
     .eq('location_id', staff.location_id) // filtro explícito: service role salta RLS
     .order('created_at', { ascending: false })
     .limit(opts?.limit ?? 100);

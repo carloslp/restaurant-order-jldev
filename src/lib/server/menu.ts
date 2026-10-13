@@ -4,7 +4,7 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentStaff } from '@/app/staff/page';
 import { z } from 'zod';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
 import { zNumberES } from '@/lib/validation';
 import type { Category, Product } from '@/lib/types';
@@ -46,6 +46,11 @@ async function getStaffContext() {
   return staff;
 }
 
+function invalidateMenu(locationId: string) {
+  revalidateTag(`menu-${locationId}`);
+  revalidatePath('/staff/admin');
+}
+
 // --- Categories ---
 
 export async function listCategories(): Promise<Category[]> {
@@ -60,7 +65,7 @@ export async function listCategories(): Promise<Category[]> {
 
   const { data, error } = await supabase
     .from('categories')
-    .select('*')
+    .select('id, location_id, name, description, image_url, is_active, sort_order, created_at, updated_at')
     .order('sort_order', { ascending: true });
 
   if (error) throw error;
@@ -84,7 +89,7 @@ export async function createCategory(payload: z.infer<typeof CategorySchema>) {
     { action: 'createCategory', fallback: 'No se pudo crear la categoría. Inténtalo de nuevo.' }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data as Category;
 }
 
@@ -107,7 +112,7 @@ export async function updateCategory(id: string, payload: z.infer<typeof Categor
     }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data as Category;
 }
 
@@ -142,7 +147,7 @@ export async function deleteCategory(id: string) {
     }
   }
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   logAudit({
     locationId: staff.location_id,
     staffId: staff.id,
@@ -343,7 +348,7 @@ export async function createProduct(payload: z.infer<typeof ProductSchema>) {
 
   await syncProductLabels(supabase, data.id, allergens, diet_labels);
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return { ...data, allergens: allergens ?? [], diet_labels: diet_labels ?? [] } as Product;
 }
 
@@ -381,7 +386,7 @@ export async function updateProduct(id: string, payload: z.infer<typeof ProductS
 
   await syncProductLabels(supabase, id, allergens, diet_labels);
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data as Product;
 }
 
@@ -414,6 +419,9 @@ export async function toggleProductAvailability(
         error: 'No se pudo actualizar el estado del platillo',
       };
     }
+
+    // Invalidar caché Next.js del menú público
+    revalidateTag(`menu-${staff.location_id}`);
 
     // Obtener slug del local para revalidar el menú público y staff
     const { data: local } = await supabase
@@ -471,7 +479,7 @@ export async function deleteProduct(id: string) {
     }
   }
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   logAudit({
     locationId: staff.location_id,
     staffId: staff.id,
@@ -560,7 +568,7 @@ export async function createModifierGroup(payload: z.infer<typeof ModifierGroupS
     { action: 'createModifierGroup', fallback: 'No se pudo crear el grupo de modificadores.' }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data;
 }
 
@@ -590,7 +598,7 @@ export async function updateModifierGroup(id: string, payload: z.infer<typeof Mo
     { action: 'updateModifierGroup', fallback: 'No se pudo actualizar el grupo de modificadores.' }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data;
 }
 
@@ -619,7 +627,7 @@ export async function deleteModifierGroup(id: string) {
     throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el grupo de modificadores.'));
   }
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return { ok: true };
 }
 
@@ -650,7 +658,7 @@ export async function createModifierOption(payload: z.infer<typeof ModifierOptio
     { action: 'createModifierOption', fallback: 'No se pudo crear la opción.' }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data;
 }
 
@@ -680,7 +688,7 @@ export async function updateModifierOption(id: string, payload: z.infer<typeof M
     { action: 'updateModifierOption', fallback: 'No se pudo actualizar la opción.' }
   );
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return data;
 }
 
@@ -709,7 +717,7 @@ export async function deleteModifierOption(id: string) {
     throw new AppError(parsePostgrestError(error, 'No se pudo eliminar la opción.'));
   }
 
-  revalidatePath('/staff/admin');
+  invalidateMenu(staff.location_id);
   return { ok: true };
 }
 
@@ -737,7 +745,7 @@ export async function uploadMenuImage(file: File, folder: 'categories' | 'produc
   const { error } = await supabase.storage
     .from('menu-images')
     .upload(filePath, file, {
-      cacheControl: '3600',
+      cacheControl: '31536000',
       upsert: false,
     });
 

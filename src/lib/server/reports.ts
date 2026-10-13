@@ -76,10 +76,10 @@ export async function getKPIs(dateFrom: string, dateTo: string): Promise<KPIData
 
   await setLocationGUC(supabase, staff.location_id);
 
-  // Fetch orders in date range
+  // Fetch orders in date range with minimal columns (saves egress on heavy order snapshots)
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, status, order_type, payment_method, total, subtotal, delivery_fee, cart_snapshot, created_at, delivered_at')
     .gte('created_at', dateFrom)
     .lte('created_at', dateTo)
     .order('created_at', { ascending: false });
@@ -283,7 +283,7 @@ export async function exportOrdersCSV(dateFrom: string, dateTo: string): Promise
 
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, created_at, status, order_type, payment_method, customer_name, customer_phone, subtotal, iva_amount, delivery_fee_amount:delivery_fee, total, delivery_address, delivery_references, eta, delivered_at')
     .gte('created_at', dateFrom)
     .lte('created_at', dateTo)
     .order('created_at', { ascending: false });

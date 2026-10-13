@@ -36,6 +36,9 @@ function minutesToTime(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+const SHIFT_COLUMNS =
+  'id, location_id, day_of_week, name, open_time, close_time, turn_duration_minutes, buffer_minutes, is_active, created_at, updated_at';
+
 /**
  * Obtiene todos los turnos configurados para el local actual del staff.
  */
@@ -45,7 +48,7 @@ export async function getStaffLocalShifts(): Promise<LocalShift[]> {
 
   const { data, error } = await supabase
     .from('local_shifts')
-    .select('*')
+    .select(SHIFT_COLUMNS)
     .eq('location_id', staff.location_id)
     .order('day_of_week', { ascending: true })
     .order('open_time', { ascending: true });
@@ -85,7 +88,7 @@ export async function upsertShift(payload: z.infer<typeof ShiftSchema>) {
     supabase
       .from('local_shifts')
       .upsert(shiftRecord)
-      .select('*')
+      .select(SHIFT_COLUMNS)
       .single(),
     { action: 'upsertShift', fallback: 'No se pudo guardar el turno' }
   );
@@ -133,7 +136,7 @@ export async function getGeneratedSlotsForDate(locationId: string, dateStr: stri
   const supabase = createServerClient();
   const { data: shiftsData, error } = await supabase
     .from('local_shifts')
-    .select('*')
+    .select(SHIFT_COLUMNS)
     .eq('location_id', locationId)
     .eq('day_of_week', dayOfWeek)
     .eq('is_active', true)

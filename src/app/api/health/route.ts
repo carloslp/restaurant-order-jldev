@@ -30,5 +30,12 @@ export async function GET() {
   }
 
   checks.env = 'ok';
-  return NextResponse.json({ status: 'ok', checks, timestamp: new Date().toISOString() });
+  return NextResponse.json(
+    { status: 'ok', checks, timestamp: new Date().toISOString() },
+    {
+      headers: {
+        'Cache-Control': 'public, max-age=15, stale-while-revalidate=30',
+      },
+    }
+  );
 }
