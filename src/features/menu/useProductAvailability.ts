@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getProductsAvailability } from '@/features/menu/queries';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface ProductAvailabilityState {
@@ -32,11 +33,6 @@ interface ProductAvailabilityRow {
 export function useProductAvailability(opts: UseProductAvailabilityOptions) {
   const { locationId, productIds, enabled = true } = opts;
   const [availability, setAvailability] = useState<ProductAvailabilityState>({});
-  // loaded=true solo cuando ya recibimos la respuesta inicial de la DB.
-  // Importante: la policy pública products_public_read solo deja leer
-  // is_available=true, así que un producto agotado puede no venir en la
-  // respuesta; tratar "sin dato pero ya cargado" como NO disponible
-  // evita mostrar como disponible algo agotado.
   const [loaded, setLoaded] = useState(false);
   const supabase = useRef<ReturnType<typeof createClient> | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null);
@@ -46,7 +42,8 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
   // para no re-suscribirse (y recrear el canal) en cada render.
   const productIdsKey = productIds.join(',');
 
-  // Cargar estado inicial
+  // Cargar estado inicial vía Server Action (evita falsos "Agotado" cuando RLS
+  // filtra consultas directas del navegador sin headers de sucursal).
   const loadInitialAvailability = useCallback(async () => {
     const ids = productIdsKey ? productIdsKey.split(',') : [];
     if (!enabled || !locationId || ids.length === 0) {
@@ -54,28 +51,10 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
       return;
     }
 
-    if (!supabase.current) {
-      supabase.current = createClient();
-    }
-
     try {
-      const { data, error } = await supabase.current
-        .from('products')
-        .select('id, is_available')
-        .eq('location_id', locationId)
-        .in('id', ids);
-
-      if (!error && data) {
-        const initialState: ProductAvailabilityState = {};
-        for (const product of data as ProductAvailabilityRow[]) {
-          initialState[product.id] = product.is_available;
-        }
-        // Productos pedidos pero ausentes en la respuesta (RLS los oculta
-        // por is_available=false) se marcan explícitamente no disponibles.
-        for (const id of ids) {
-          if (!(id in initialState)) initialState[id] = false;
-        }
-        setAvailability(initialState);
+      const res = await getProductsAvailability(locationId, ids);
+      if (res.ok) {
+        setAvailability(res.availability);
       }
     } catch (error) {
       console.error('Error loading initial product availability:', error);
@@ -172,23 +151,21 @@ export function useProductAvailability(opts: UseProductAvailabilityOptions) {
     };
   }, [enabled, locationId, productIdsKey, loadInitialAvailability]);
 
-  // Función para verificar disponibilidad actual (útil antes de confirmar pedido)
-  // Sin dato y aún sin cargar → true (no bloquear el menú en el primer render).
-  // Sin dato pero ya cargado → false (RLS oculta los agotados al anónimo).
+  // Función para verificar disponibilidad actual (útil antes de confirmar pedido).
+  // getProductsAvailability registra explícitamente false para productos agotados o eliminados.
   const checkAvailability = useCallback(
     (productId: string): boolean => {
-      if (productId in availability) return availability[productId];
-      return !loaded;
+      return availability[productId] ?? true;
     },
-    [availability, loaded]
+    [availability]
   );
 
   // Verificar si todos los productos de un array están disponibles
   const areAllAvailable = useCallback(
     (ids: string[]): boolean => {
-      return ids.every((id) => (id in availability ? availability[id] : !loaded));
+      return ids.every((id) => availability[id] ?? true);
     },
-    [availability, loaded]
+    [availability]
   );
 
   // Obtener lista de productos no disponibles

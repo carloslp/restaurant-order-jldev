@@ -362,6 +362,31 @@ BEGIN
   END IF;
 END $$;
 
+-- 8.3 Políticas de lectura pública del catálogo y Realtime 86ing
+DROP POLICY IF EXISTS categories_public_read ON public.categories;
+CREATE POLICY categories_public_read ON public.categories
+FOR SELECT USING (is_active = true);
+
+DROP POLICY IF EXISTS products_public_read ON public.products;
+CREATE POLICY products_public_read ON public.products
+FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS modifier_groups_public_read ON public.modifier_groups;
+CREATE POLICY modifier_groups_public_read ON public.modifier_groups
+FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS modifier_options_public_read ON public.modifier_options;
+CREATE POLICY modifier_options_public_read ON public.modifier_options
+FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS discounts_public_read ON public.discounts;
+CREATE POLICY discounts_public_read ON public.discounts
+FOR SELECT USING (
+    is_active = true
+    AND (starts_at IS NULL OR starts_at <= now())
+    AND (ends_at IS NULL OR ends_at >= now())
+);
+
 
 -- ----------------------------------------------------------------------------
 -- 9. PRIVILEGIOS Y GRANTS BASE (fix-grants-public-read.sql)

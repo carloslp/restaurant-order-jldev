@@ -27,43 +27,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key
 -- Categorías
 DROP POLICY IF EXISTS categories_public_read ON public.categories;
 CREATE POLICY categories_public_read ON public.categories
-FOR SELECT USING (
-    is_active = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+FOR SELECT USING (is_active = true);
 
--- Productos
+-- Productos (permite lectura y notificaciones Realtime de agotado 86ing)
 DROP POLICY IF EXISTS products_public_read ON public.products;
 CREATE POLICY products_public_read ON public.products
-FOR SELECT USING (
-    is_available = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+FOR SELECT USING (true);
 
 -- Grupos de modificadores
 DROP POLICY IF EXISTS modifier_groups_public_read ON public.modifier_groups;
 CREATE POLICY modifier_groups_public_read ON public.modifier_groups
-FOR SELECT USING (
-    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-    OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-);
+FOR SELECT USING (true);
 
--- Opciones de modificadores
+-- Opciones de modificadores (permite lectura y notificaciones Realtime de 86ing)
 DROP POLICY IF EXISTS modifier_options_public_read ON public.modifier_options;
 CREATE POLICY modifier_options_public_read ON public.modifier_options
-FOR SELECT USING (
-    is_active = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+FOR SELECT USING (true);
 
 -- Descuentos públicos
 DROP POLICY IF EXISTS discounts_public_read ON public.discounts;
@@ -72,10 +51,6 @@ FOR SELECT USING (
     is_active = true
     AND (starts_at IS NULL OR starts_at <= now())
     AND (ends_at IS NULL OR ends_at >= now())
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
 );
 
 -- ----------------------------------------------------------------------------

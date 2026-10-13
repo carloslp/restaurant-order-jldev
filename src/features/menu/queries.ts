@@ -2,9 +2,47 @@
 
 'use server';
 
-import { createAnonServerClient } from '@/lib/supabase/server';
+import { createAnonServerClient, createServerClient } from '@/lib/supabase/server';
+import { locationScoped } from '@/lib/server/scoped-query';
 import { describeSupabaseError } from '@/lib/errors';
 import type { Category, Product, ModifierGroup, ModifierOption } from '@/lib/types';
+
+export async function getProductsAvailability(
+  locationId: string,
+  productIds: string[]
+): Promise<{ ok: boolean; availability: Record<string, boolean> }> {
+  if (!locationId || productIds.length === 0) {
+    return { ok: true, availability: {} };
+  }
+
+  try {
+    const supabase = createServerClient();
+    const { data, error } = await locationScoped(supabase, 'products', locationId)
+      .select('id, is_available')
+      .in('id', productIds);
+
+    if (error || !data) {
+      console.error('getProductsAvailability:', describeSupabaseError(error));
+      return { ok: false, availability: {} };
+    }
+
+    const availability: Record<string, boolean> = {};
+    for (const row of data as unknown as { id: string; is_available: boolean }[]) {
+      availability[row.id] = Boolean(row.is_available);
+    }
+    // Si algún ID solicitado ya fue eliminado del catálogo, marcarlo no disponible
+    for (const id of productIds) {
+      if (!(id in availability)) {
+        availability[id] = false;
+      }
+    }
+
+    return { ok: true, availability };
+  } catch (err) {
+    console.error('getProductsAvailability error:', describeSupabaseError(err));
+    return { ok: false, availability: {} };
+  }
+}
 
 export async function getMenu(locationId: string): Promise<{ categories: Category[]; products: Product[] }> {
   const supabase = createAnonServerClient(locationId);

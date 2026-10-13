@@ -541,13 +541,7 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY categories_public_read ON categories
 FOR SELECT
-USING (
-    is_active = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+USING (is_active = true);
 
 CREATE POLICY products_staff_access ON products
 FOR ALL
@@ -556,13 +550,7 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY products_public_read ON products
 FOR SELECT
-USING (
-    is_available = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+USING (true);
 
 CREATE POLICY modifier_groups_staff_access ON modifier_groups
 FOR ALL
@@ -571,10 +559,7 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY modifier_groups_public_read ON modifier_groups
 FOR SELECT
-USING (
-    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-    OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-);
+USING (true);
 
 CREATE POLICY modifier_options_staff_access ON modifier_options
 FOR ALL
@@ -583,13 +568,7 @@ WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
 CREATE POLICY modifier_options_public_read ON modifier_options
 FOR SELECT
-USING (
-    is_active = true
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
-);
+USING (true);
 
 CREATE POLICY orders_staff_access ON orders
 FOR ALL
@@ -742,10 +721,6 @@ USING (
     is_active = true
     AND (starts_at IS NULL OR starts_at <= now())
     AND (ends_at IS NULL OR ends_at >= now())
-    AND (
-        location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-        OR location_id = NULLIF(current_setting('request.headers', true)::json->>'x-location-id', '')::uuid
-    )
 );
 
 CREATE POLICY discount_usages_staff_access ON discount_usages
