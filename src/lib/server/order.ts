@@ -437,7 +437,7 @@ export async function updateOrderStatus(
     action: 'UPDATE_ORDER_STATUS',
     resourceType: 'order',
     resourceId: orderId,
-    metadata: { previousStatus: current.status, newStatus: nextStatus },
+    metadata: { previousStatus: order.status, newStatus: nextStatus },
   });
 
   return { ok: true };

@@ -15,5 +15,18 @@ export function locationScoped(
   if (!locationId) {
     throw new Error(`[Security] locationScoped requiere un locationId válido para la tabla "${table}".`);
   }
-  return supabase.from(table).eq('location_id', locationId);
+  return {
+    select: (columns = '*') =>
+      supabase.from(table).select(columns).eq('location_id', locationId),
+    update: (values: Record<string, unknown>) =>
+      supabase.from(table).update(values).eq('location_id', locationId),
+    delete: () =>
+      supabase.from(table).delete().eq('location_id', locationId),
+    insert: (values: Record<string, unknown> | Record<string, unknown>[]) =>
+      supabase.from(table).insert(
+        Array.isArray(values)
+          ? values.map((v) => ({ ...v, location_id: locationId }))
+          : { ...values, location_id: locationId }
+      ),
+  };
 }
