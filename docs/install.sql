@@ -605,73 +605,85 @@ ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS locals_staff_access ON public.locals;
 CREATE POLICY locals_staff_access ON public.locals
 FOR ALL
-USING (id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 -- 6.2 categories
 DROP POLICY IF EXISTS categories_staff_access ON public.categories;
 CREATE POLICY categories_staff_access ON public.categories
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 DROP POLICY IF EXISTS categories_public_read ON public.categories;
 CREATE POLICY categories_public_read ON public.categories
 FOR SELECT
+TO anon
 USING (is_active = true);
 
 -- 6.3 products
 DROP POLICY IF EXISTS products_staff_access ON public.products;
 CREATE POLICY products_staff_access ON public.products
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 DROP POLICY IF EXISTS products_public_read ON public.products;
 CREATE POLICY products_public_read ON public.products
 FOR SELECT
+TO anon
 USING (true);
 
 -- 6.4 modifier_groups
 DROP POLICY IF EXISTS modifier_groups_staff_access ON public.modifier_groups;
 CREATE POLICY modifier_groups_staff_access ON public.modifier_groups
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 DROP POLICY IF EXISTS modifier_groups_public_read ON public.modifier_groups;
 CREATE POLICY modifier_groups_public_read ON public.modifier_groups
 FOR SELECT
+TO anon
 USING (true);
 
 -- 6.5 modifier_options
 DROP POLICY IF EXISTS modifier_options_staff_access ON public.modifier_options;
 CREATE POLICY modifier_options_staff_access ON public.modifier_options
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 DROP POLICY IF EXISTS modifier_options_public_read ON public.modifier_options;
 CREATE POLICY modifier_options_public_read ON public.modifier_options
 FOR SELECT
+TO anon
 USING (true);
 
 -- 6.6 orders
+DROP POLICY IF EXISTS orders_staff_live ON public.orders;
 DROP POLICY IF EXISTS orders_staff_access ON public.orders;
 CREATE POLICY orders_staff_access ON public.orders
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
-
-DROP POLICY IF EXISTS orders_staff_live ON public.orders;
-CREATE POLICY orders_staff_live ON public.orders
-FOR SELECT
 TO authenticated
 USING (
-    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
+          AND staff.location_id = orders.location_id
+    )
+)
+WITH CHECK (
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
+    OR EXISTS (
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = orders.location_id
     )
 );
@@ -680,65 +692,71 @@ USING (
 DROP POLICY IF EXISTS reservations_staff_access ON public.reservations;
 CREATE POLICY reservations_staff_access ON public.reservations
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 -- 6.8 restaurant_tables
-DROP POLICY IF EXISTS restaurant_tables_public_read ON public.restaurant_tables;
-CREATE POLICY restaurant_tables_public_read ON public.restaurant_tables
-FOR SELECT
-USING (true);
-
 DROP POLICY IF EXISTS restaurant_tables_staff_access ON public.restaurant_tables;
 CREATE POLICY restaurant_tables_staff_access ON public.restaurant_tables
 FOR ALL
+TO authenticated
 USING (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = restaurant_tables.location_id
     )
 )
 WITH CHECK (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = restaurant_tables.location_id
     )
 );
 
--- 6.9 local_shifts
-DROP POLICY IF EXISTS local_shifts_public_read ON public.local_shifts;
-CREATE POLICY local_shifts_public_read ON public.local_shifts
+DROP POLICY IF EXISTS restaurant_tables_public_read ON public.restaurant_tables;
+CREATE POLICY restaurant_tables_public_read ON public.restaurant_tables
 FOR SELECT
+TO anon
 USING (true);
 
+-- 6.9 local_shifts
 DROP POLICY IF EXISTS local_shifts_staff_access ON public.local_shifts;
 CREATE POLICY local_shifts_staff_access ON public.local_shifts
 FOR ALL
+TO authenticated
 USING (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = local_shifts.location_id
     )
 )
 WITH CHECK (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = local_shifts.location_id
     )
 );
+
+DROP POLICY IF EXISTS local_shifts_public_read ON public.local_shifts;
+CREATE POLICY local_shifts_public_read ON public.local_shifts
+FOR SELECT
+TO anon
+USING (true);
 
 -- 6.10 waitlist
 DROP POLICY IF EXISTS waitlist_public_read ON public.waitlist;
 CREATE POLICY waitlist_public_read ON public.waitlist
 FOR SELECT
+TO anon
 USING (true);
 
 DROP POLICY IF EXISTS waitlist_public_insert ON public.waitlist;
@@ -747,19 +765,20 @@ DROP POLICY IF EXISTS waitlist_update ON public.waitlist;
 DROP POLICY IF EXISTS waitlist_staff_access ON public.waitlist;
 CREATE POLICY waitlist_staff_access ON public.waitlist
 FOR ALL
+TO authenticated
 USING (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = waitlist.location_id
     )
 )
 WITH CHECK (
-    location_id = current_setting('app.local_id', true)::uuid
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = (select auth.uid())
+        WHERE staff.auth_user_id = (SELECT auth.uid())
           AND staff.location_id = waitlist.location_id
     )
 );
@@ -768,15 +787,36 @@ WITH CHECK (
 DROP POLICY IF EXISTS staff_staff_access ON public.staff;
 CREATE POLICY staff_staff_access ON public.staff
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 -- 6.12 delivery_tokens
+DROP POLICY IF EXISTS delivery_tokens_staff_access ON public.delivery_tokens;
+CREATE POLICY delivery_tokens_staff_access ON public.delivery_tokens
+FOR ALL
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.orders o
+        WHERE o.id = delivery_tokens.order_id
+          AND o.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
+    )
+)
+WITH CHECK (
+    EXISTS (
+        SELECT 1 FROM public.orders o
+        WHERE o.id = delivery_tokens.order_id
+          AND o.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
+    )
+);
+
 DROP POLICY IF EXISTS delivery_tokens_anon_read ON public.delivery_tokens;
 CREATE POLICY delivery_tokens_anon_read ON public.delivery_tokens
 FOR SELECT
+TO anon
 USING (
-    crypt(NULLIF(current_setting('app.token_plain', true), ''), token_hash) = token_hash
+    crypt((SELECT NULLIF(current_setting('app.token_plain', true), '')), token_hash) = token_hash
     AND used_at IS NULL
     AND revoked_at IS NULL
     AND expires_at > now()
@@ -785,8 +825,9 @@ USING (
 DROP POLICY IF EXISTS delivery_tokens_anon_use ON public.delivery_tokens;
 CREATE POLICY delivery_tokens_anon_use ON public.delivery_tokens
 FOR UPDATE
+TO anon
 USING (
-    crypt(NULLIF(current_setting('app.token_plain', true), ''), token_hash) = token_hash
+    crypt((SELECT NULLIF(current_setting('app.token_plain', true), '')), token_hash) = token_hash
     AND used_at IS NULL
     AND revoked_at IS NULL
     AND expires_at > now()
@@ -795,34 +836,18 @@ WITH CHECK (
     used_at IS NOT NULL
 );
 
-DROP POLICY IF EXISTS delivery_tokens_staff_access ON public.delivery_tokens;
-CREATE POLICY delivery_tokens_staff_access ON public.delivery_tokens
-FOR ALL
-USING (
-    EXISTS (
-        SELECT 1 FROM public.orders o
-        WHERE o.id = delivery_tokens.order_id
-          AND o.location_id = current_setting('app.local_id', true)::uuid
-    )
-)
-WITH CHECK (
-    EXISTS (
-        SELECT 1 FROM public.orders o
-        WHERE o.id = delivery_tokens.order_id
-          AND o.location_id = current_setting('app.local_id', true)::uuid
-    )
-);
-
 -- 6.13 discounts y usages
 DROP POLICY IF EXISTS discounts_staff_access ON public.discounts;
 CREATE POLICY discounts_staff_access ON public.discounts
 FOR ALL
-USING (location_id = current_setting('app.local_id', true)::uuid)
-WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
+TO authenticated
+USING (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid))
+WITH CHECK (location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid));
 
 DROP POLICY IF EXISTS discounts_public_read ON public.discounts;
 CREATE POLICY discounts_public_read ON public.discounts
 FOR SELECT
+TO anon
 USING (
     is_active = true
     AND (starts_at IS NULL OR starts_at <= now())
@@ -832,80 +857,93 @@ USING (
 DROP POLICY IF EXISTS discount_usages_staff_access ON public.discount_usages;
 CREATE POLICY discount_usages_staff_access ON public.discount_usages
 FOR ALL
+TO authenticated
 USING (
     EXISTS (
         SELECT 1 FROM public.discounts d
         WHERE d.id = discount_usages.discount_id
-          AND d.location_id = current_setting('app.local_id', true)::uuid
+          AND d.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 )
 WITH CHECK (
     EXISTS (
         SELECT 1 FROM public.discounts d
         WHERE d.id = discount_usages.discount_id
-          AND d.location_id = current_setting('app.local_id', true)::uuid
+          AND d.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 );
 
 -- 6.14 allergens y diet_labels
 DROP POLICY IF EXISTS allergens_public_read ON public.allergens;
 CREATE POLICY allergens_public_read ON public.allergens
-FOR SELECT USING (true);
+FOR SELECT
+TO anon, authenticated
+USING (true);
 
 DROP POLICY IF EXISTS diet_labels_public_read ON public.diet_labels;
 CREATE POLICY diet_labels_public_read ON public.diet_labels
-FOR SELECT USING (true);
+FOR SELECT
+TO anon, authenticated
+USING (true);
 
 DROP POLICY IF EXISTS product_allergens_staff_access ON public.product_allergens;
 CREATE POLICY product_allergens_staff_access ON public.product_allergens
 FOR ALL
+TO authenticated
 USING (
     EXISTS (
         SELECT 1 FROM public.products p
         WHERE p.id = product_allergens.product_id
-          AND p.location_id = current_setting('app.local_id', true)::uuid
+          AND p.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 )
 WITH CHECK (
     EXISTS (
         SELECT 1 FROM public.products p
         WHERE p.id = product_allergens.product_id
-          AND p.location_id = current_setting('app.local_id', true)::uuid
+          AND p.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 );
 
 DROP POLICY IF EXISTS product_allergens_public_read ON public.product_allergens;
 CREATE POLICY product_allergens_public_read ON public.product_allergens
-FOR SELECT USING (true);
+FOR SELECT
+TO anon
+USING (true);
 
 DROP POLICY IF EXISTS product_diet_labels_staff_access ON public.product_diet_labels;
 CREATE POLICY product_diet_labels_staff_access ON public.product_diet_labels
 FOR ALL
+TO authenticated
 USING (
     EXISTS (
         SELECT 1 FROM public.products p
         WHERE p.id = product_diet_labels.product_id
-          AND p.location_id = current_setting('app.local_id', true)::uuid
+          AND p.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 )
 WITH CHECK (
     EXISTS (
         SELECT 1 FROM public.products p
         WHERE p.id = product_diet_labels.product_id
-          AND p.location_id = current_setting('app.local_id', true)::uuid
+          AND p.location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
     )
 );
 
 DROP POLICY IF EXISTS product_diet_labels_public_read ON public.product_diet_labels;
 CREATE POLICY product_diet_labels_public_read ON public.product_diet_labels
-FOR SELECT USING (true);
+FOR SELECT
+TO anon
+USING (true);
 
 -- 6.15 audit_log
 DROP POLICY IF EXISTS audit_log_service_all ON public.audit_log;
 DROP POLICY IF EXISTS audit_log_staff_read ON public.audit_log;
 CREATE POLICY audit_log_staff_read ON public.audit_log
-FOR SELECT USING (
-    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+FOR SELECT
+TO authenticated
+USING (
+    location_id = (SELECT NULLIF(current_setting('app.local_id', true), '')::uuid)
 );
 
 
