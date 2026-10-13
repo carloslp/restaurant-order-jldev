@@ -166,12 +166,11 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
 
 // ---------------------------------------------------------------------------
 // Staff: asignación de repartidor + link de reparto (Caja).
-// Requiere docs/migration-driver-id.sql para orders.driver_id.
+// Campo orders.driver_id incluido nativamente en docs/install.sql.
 // ---------------------------------------------------------------------------
 
 /**
  * Asigna un repartidor (staff del mismo local) a una orden de domicilio.
- * Requiere la migración docs/migration-driver-id.sql (orders.driver_id).
  */
 export async function assignDriver(
   orderId: string,

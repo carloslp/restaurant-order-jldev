@@ -1,94 +1,154 @@
 -- ============================================================================
--- restaurant-order-jldev - Instalación limpia en un solo archivo
+-- restaurant-order-jldev - Instalación limpia en un solo archivo maestro
 -- ============================================================================
--- Ejecutar en el SQL Editor de Supabase (rol postgres) sobre un proyecto nuevo.
--- Orden: extensiones -> tipos -> tablas -> triggers updated_at -> auth sync ->
---        RLS + policies -> índices -> vistas -> realtime -> storage -> pg_cron.
+-- Ejecutar en el SQL Editor de Supabase (rol postgres) sobre un proyecto nuevo
+-- o existente.
 --
--- NOTA: NO incluye seed: la base queda VACÍA. Al abrir la app por primera vez,
---    /setup detecta que no hay locales y arranca el onboarding (crea el
---    primer local + admin). Para datos demo en desarrollo, ejecuta después
---    docs/seed.sql (separado, a propósito).
+-- Orden de ejecución:
+--   1. Extensiones (pgcrypto, pg_cron, pg_net en extensions schema)
+--   2. Tipos y Enums personalizados
+--   3. Tablas maestras con constraints y claves foráneas consolidadas
+--   4. Triggers de actualización (updated_at)
+--   5. Sincronización Auth <-> Staff (triggers y funciones seguras)
+--   6. Row Level Security (RLS) y políticas de acceso multi-tenant
+--   7. Privilegios y permisos (GRANTs para anon, authenticated, service_role)
+--   8. Índices de rendimiento y búsqueda rápida
+--   9. Vistas seguras (local_zone_capacity, staff_orders_view) y RPCs (get_available_tables)
+--  10. Publicación Supabase Realtime (orders, products, waitlist)
+--  11. Supabase Storage (bucket menu-images)
+--  12. Auditoría y Tareas Programadas (audit_log y bloque seguro pg_cron)
+--
+-- NOTA: Este script NO contiene datos semilla (seed demo). Al abrir la app
+-- por primera vez, /setup detecta una base vacía e inicia el asistente de
+-- bienvenida para crear la primera sucursal y el administrador.
+-- Para cargar datos de prueba en desarrollo, ejecuta posteriormente `docs/seed.sql`.
+--
+-- Totalmente IDEMPOTENTE: puede ejecutarse múltiples veces sin errores.
 -- ============================================================================
 
 -- ============================================================================
--- 1. EXTENSIONES
+-- 1. EXTENSIONES Y ESQUEMAS
 -- ============================================================================
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- crypt() para delivery tokens
-CREATE EXTENSION IF NOT EXISTS pg_cron;      -- recordatorios programados
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Crear esquema dedicado para extensiones auxiliares y evitar avisos del linter
 CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS pg_net;       -- HTTP desde pg_cron (opcional)
+
+-- Habilitar pg_cron y pg_net si están disponibles en la instancia
 DO $$
 BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_cron;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron no disponible o permisos insuficientes (ignorado si no se usa): %', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_net SCHEMA extensions;
+EXCEPTION WHEN OTHERS THEN
+  -- Si ya existe en public, intentar moverla a extensions
   IF EXISTS (
     SELECT 1 FROM pg_extension WHERE extname = 'pg_net' AND extnamespace = 'public'::regnamespace
   ) THEN
-    ALTER EXTENSION pg_net SET SCHEMA extensions;
+    BEGIN
+      ALTER EXTENSION pg_net SET SCHEMA extensions;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
   END IF;
-EXCEPTION WHEN OTHERS THEN
-  NULL;
 END $$;
 
--- ============================================================================
--- 2. ENUMS
--- ============================================================================
-CREATE TYPE order_status AS ENUM (
-    'CREADO',
-    'CONFIRMADO_CAJA',
-    'EN_PREPARACION',
-    'LISTO',
-    'LISTO_PARA_ENTREGA',
-    'COMPLETADO',
-    'CANCELADO'
-);
-
-CREATE TYPE order_type AS ENUM ('RECOGER', 'DOMICILIO', 'EN_MESA');
-
-CREATE TYPE table_status AS ENUM ('LIBRE', 'RESERVADA', 'OCUPADA', 'EN_LIMPIEZA');
-
-CREATE TYPE qr_status AS ENUM ('INACTIVO', 'ABIERTO');
-
-CREATE TYPE payment_method AS ENUM (
-    'EFECTIVO_EXACTO',
-    'EFECTIVO_CON_CAMBIO',
-    'TARJETA_CONTRA_ENTREGA'
-);
-
-CREATE TYPE payment_status AS ENUM ('PENDIENTE', 'COBRADO');
-
-CREATE TYPE reservation_status AS ENUM (
-    'PENDIENTE',
-    'CONFIRMADA',
-    'CANCELADA',
-    'NO_SHOW'
-);
-
-CREATE TYPE deposit_status AS ENUM (
-    'SIN_DEPOSITO',
-    'DEPOSITO_PENDIENTE',
-    'DEPOSITADO'
-);
-
-CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
-
-CREATE TYPE waitlist_status AS ENUM (
-    'EN_ESPERA',
-    'LLAMADO',
-    'SENTADO',
-    'CANCELADO',
-    'NO_SHOW'
-);
-
 
 -- ============================================================================
--- 3. TABLAS
+-- 2. TIPOS PERSONALIZADOS Y ENUMS
+-- ============================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+    CREATE TYPE order_status AS ENUM (
+      'CREADO',
+      'CONFIRMADO_CAJA',
+      'EN_PREPARACION',
+      'LISTO',
+      'LISTO_PARA_ENTREGA',
+      'COMPLETADO',
+      'CANCELADO'
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_type') THEN
+    CREATE TYPE order_type AS ENUM ('RECOGER', 'DOMICILIO', 'EN_MESA');
+  ELSE
+    -- Asegurar valor EN_MESA si el tipo ya existía
+    BEGIN
+      ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'EN_MESA';
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'table_status') THEN
+    CREATE TYPE table_status AS ENUM ('LIBRE', 'RESERVADA', 'OCUPADA', 'EN_LIMPIEZA');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'qr_status') THEN
+    CREATE TYPE qr_status AS ENUM ('INACTIVO', 'ABIERTO');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_method') THEN
+    CREATE TYPE payment_method AS ENUM (
+      'EFECTIVO_EXACTO',
+      'EFECTIVO_CON_CAMBIO',
+      'TARJETA_CONTRA_ENTREGA'
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status') THEN
+    CREATE TYPE payment_status AS ENUM ('PENDIENTE', 'COBRADO');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'reservation_status') THEN
+    CREATE TYPE reservation_status AS ENUM (
+      'PENDIENTE',
+      'CONFIRMADA',
+      'CANCELADA',
+      'NO_SHOW'
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deposit_status') THEN
+    CREATE TYPE deposit_status AS ENUM (
+      'SIN_DEPOSITO',
+      'DEPOSITO_PENDIENTE',
+      'DEPOSITADO'
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'discount_type') THEN
+    CREATE TYPE discount_type AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'waitlist_status') THEN
+    CREATE TYPE waitlist_status AS ENUM (
+      'EN_ESPERA',
+      'LLAMADO',
+      'SENTADO',
+      'CANCELADO',
+      'NO_SHOW'
+    );
+  END IF;
+END $$;
+
+
+-- ============================================================================
+-- 3. TABLAS BASE
 -- ============================================================================
 
--- 3.1 Multi-tenant root (locations por PATH: {dominio}/{slug})
-CREATE TABLE locals (
+-- 3.1 Multi-tenant root (sucursales por ruta pública: /{slug})
+CREATE TABLE IF NOT EXISTS public.locals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    slug TEXT UNIQUE NOT NULL,  -- ruta pÃºblica de la sucursal: /{slug} (ej: 'centro')
+    slug TEXT UNIQUE NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     iva_rate NUMERIC(5,4) NOT NULL DEFAULT 0.16,
     delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
@@ -102,10 +162,22 @@ CREATE TABLE locals (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3.2 CatÃ¡logo (4 niveles)
-CREATE TABLE categories (
+-- 3.2 Staff (personal de la sucursal vinculado a auth.users)
+CREATE TABLE IF NOT EXISTS public.staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    auth_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3.3 Catálogo: Categorías
+CREATE TABLE IF NOT EXISTS public.categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     image_url TEXT,
@@ -116,10 +188,11 @@ CREATE TABLE categories (
     UNIQUE(location_id, name)
 );
 
-CREATE TABLE products (
+-- 3.4 Catálogo: Productos
+CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    category_id UUID NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     image_url TEXT,
@@ -130,10 +203,11 @@ CREATE TABLE products (
     UNIQUE(location_id, name)
 );
 
-CREATE TABLE modifier_groups (
+-- 3.5 Catálogo: Grupos de Modificadores
+CREATE TABLE IF NOT EXISTS public.modifier_groups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     is_required BOOLEAN NOT NULL DEFAULT false,
     min_selections INTEGER NOT NULL DEFAULT 0 CHECK (min_selections >= 0),
@@ -143,10 +217,11 @@ CREATE TABLE modifier_groups (
     UNIQUE(location_id, product_id, name)
 );
 
-CREATE TABLE modifier_options (
+-- 3.6 Catálogo: Opciones de Modificadores
+CREATE TABLE IF NOT EXISTS public.modifier_options (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    modifier_group_id UUID NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    modifier_group_id UUID NOT NULL REFERENCES public.modifier_groups(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     price_impact NUMERIC(10,2) NOT NULL DEFAULT 0.00,
     is_active BOOLEAN NOT NULL DEFAULT true,
@@ -155,22 +230,61 @@ CREATE TABLE modifier_options (
     UNIQUE(location_id, modifier_group_id, name)
 );
 
--- 3.3 Staff (con vínculo directo a auth.users)
-CREATE TABLE staff (
+-- 3.7 Alérgenos (NOM-050) y Etiquetas Dietarias
+CREATE TABLE IF NOT EXISTS public.allergens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    auth_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
-    email TEXT UNIQUE NOT NULL,
-    full_name TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
 );
 
--- 3.4 Mesas Físicas del Restaurante
-CREATE TABLE restaurant_tables (
+CREATE TABLE IF NOT EXISTS public.diet_labels (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS public.product_allergens (
+    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+    allergen_id UUID NOT NULL REFERENCES public.allergens(id) ON DELETE CASCADE,
+    PRIMARY KEY (product_id, allergen_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.product_diet_labels (
+    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+    diet_label_id UUID NOT NULL REFERENCES public.diet_labels(id) ON DELETE CASCADE,
+    PRIMARY KEY (product_id, diet_label_id)
+);
+
+-- Sembrar alérgenos estándar (NOM-050) y dietas de referencia si no existen
+INSERT INTO public.allergens (name, description) VALUES
+    ('GLUTEN', 'Trigo, cebada, centeno'),
+    ('LACTEOS', 'Leche y derivados'),
+    ('HUEVO', NULL),
+    ('PESCADO', NULL),
+    ('SOJA', NULL),
+    ('FRUTOS_SECOS', 'Almendras, nueces, etc.'),
+    ('CACAHUATE', NULL),
+    ('CRUSTACEOS', NULL),
+    ('MOLUSCOS', NULL),
+    ('APIO', NULL),
+    ('MOSTAZA', NULL),
+    ('SESAMO', NULL),
+    ('SULFITOS', NULL),
+    ('ALT_TRIGO', 'Altramuces')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO public.diet_labels (name, description) VALUES
+    ('VEGETARIANO', 'Sin carne'),
+    ('VEGANO', 'Sin ingredientes de origen animal'),
+    ('SIN_GLUTEN', NULL),
+    ('SIN_LACTOSA', NULL),
+    ('PICANTE', NULL)
+ON CONFLICT (name) DO NOTHING;
+
+-- 3.8 Mesas Físicas del Restaurante
+CREATE TABLE IF NOT EXISTS public.restaurant_tables (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
     zone TEXT NOT NULL CHECK (zone IN ('INTERIOR', 'TERRAZA', 'BARRA')),
     table_number TEXT NOT NULL,
     min_capacity INTEGER NOT NULL DEFAULT 1 CHECK (min_capacity > 0),
@@ -186,10 +300,10 @@ CREATE TABLE restaurant_tables (
     UNIQUE(location_id, table_number)
 );
 
--- 3.5 Turnos y Horarios Múltiples por Local
-CREATE TABLE local_shifts (
+-- 3.9 Turnos y Horarios Múltiples por Local
+CREATE TABLE IF NOT EXISTS public.local_shifts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
     day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
     shift_name TEXT NOT NULL,
     open_time TIME NOT NULL,
@@ -202,10 +316,10 @@ CREATE TABLE local_shifts (
     CONSTRAINT chk_shift_times CHECK (open_time < close_time)
 );
 
--- 3.6 Pedidos
-CREATE TABLE orders (
+-- 3.10 Pedidos (Orders)
+CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
     order_type order_type NOT NULL,
@@ -222,8 +336,8 @@ CREATE TABLE orders (
     total NUMERIC(10,2) NOT NULL CHECK (total >= 0),
     cart_snapshot JSONB NOT NULL,
     delivery_zone TEXT NULL,
-    driver_id UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
-    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    driver_id UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
+    table_id UUID NULL REFERENCES public.restaurant_tables(id) ON DELETE SET NULL,
     session_id UUID NULL,
     idempotency_key UUID NULL,
     delivery_token UUID NULL,
@@ -232,8 +346,8 @@ CREATE TABLE orders (
     delivered_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
-    updated_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
+    created_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
+    updated_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
     CONSTRAINT chk_delivery_address CHECK (
         (order_type = 'DOMICILIO' AND delivery_address IS NOT NULL) OR
         (order_type = 'RECOGER' AND delivery_address IS NULL) OR
@@ -241,11 +355,26 @@ CREATE TABLE orders (
     )
 );
 
--- 3.7 Reservas
-CREATE TABLE reservations (
+-- Limpieza preventiva de constraints obsoletos en bases existentes
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS chk_eta_future;
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS chk_total_consistency;
+
+-- 3.11 Tokens de Repartidor
+CREATE TABLE IF NOT EXISTS public.delivery_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ NULL,
+    revoked_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3.12 Reservaciones de Mesa
+CREATE TABLE IF NOT EXISTS public.reservations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    table_id UUID NULL REFERENCES public.restaurant_tables(id) ON DELETE SET NULL,
     table_ids UUID[] NOT NULL DEFAULT '{}',
     holder_name TEXT NOT NULL,
     holder_phone TEXT NOT NULL,
@@ -258,28 +387,17 @@ CREATE TABLE reservations (
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
-    updated_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
+    created_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
+    updated_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
     CONSTRAINT chk_future_datetime CHECK (
         (reservation_date || ' ' || reservation_time)::timestamptz > now()
     )
 );
 
--- 3.6 Tokens de repartidor
-CREATE TABLE delivery_tokens (
+-- 3.13 Descuentos y Promociones
+CREATE TABLE IF NOT EXISTS public.discounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    token_hash TEXT NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    used_at TIMESTAMPTZ NULL,
-    revoked_at TIMESTAMPTZ NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- 3.7 Descuentos
-CREATE TABLE discounts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
     code TEXT UNIQUE,
     description TEXT NOT NULL,
     discount_type discount_type NOT NULL,
@@ -298,76 +416,27 @@ CREATE TABLE discounts (
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
+    created_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
     CONSTRAINT chk_value_range CHECK (
         (discount_type = 'PERCENTAGE' AND value <= 100 AND value >= 0) OR
         (discount_type = 'FIXED_AMOUNT' AND value >= 0)
     )
 );
 
-CREATE TABLE discount_usages (
+CREATE TABLE IF NOT EXISTS public.discount_usages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    discount_id UUID NOT NULL REFERENCES discounts(id) ON DELETE CASCADE,
-    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    discount_id UUID NOT NULL REFERENCES public.discounts(id) ON DELETE CASCADE,
+    order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
     customer_phone TEXT NOT NULL,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     amount_applied NUMERIC(10,2) NOT NULL CHECK (amount_applied >= 0)
 );
 
--- 3.8 AlÃ©rgenos y etiquetas dietarias
-CREATE TABLE allergens (
+-- 3.14 Fila de Espera Virtual (Waitlist)
+CREATE TABLE IF NOT EXISTS public.waitlist (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL UNIQUE,
-    description TEXT
-);
-
-CREATE TABLE diet_labels (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL UNIQUE,
-    description TEXT
-);
-
-CREATE TABLE product_allergens (
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    allergen_id UUID NOT NULL REFERENCES allergens(id) ON DELETE CASCADE,
-    PRIMARY KEY (product_id, allergen_id)
-);
-
-CREATE TABLE product_diet_labels (
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    diet_label_id UUID NOT NULL REFERENCES diet_labels(id) ON DELETE CASCADE,
-    PRIMARY KEY (product_id, diet_label_id)
-);
-
--- Sembrar alérgenos estándar (NOM-050) y etiquetas dietarias de base
-INSERT INTO allergens (name, description) VALUES
-    ('GLUTEN', 'Trigo, cebada, centeno'),
-    ('LACTEOS', 'Leche y derivados'),
-    ('HUEVO', NULL),
-    ('PESCADO', NULL),
-    ('SOJA', NULL),
-    ('FRUTOS_SECOS', 'Almendras, nueces, etc.'),
-    ('CACAHUATE', NULL),
-    ('CRUSTACEOS', NULL),
-    ('MOLUSCOS', NULL),
-    ('APIO', NULL),
-    ('MOSTAZA', NULL),
-    ('SESAMO', NULL),
-    ('SULFITOS', NULL),
-    ('ALT_TRIGO', 'Altramuces') ON CONFLICT (name) DO NOTHING;
-
-INSERT INTO diet_labels (name, description) VALUES
-    ('VEGETARIANO', 'Sin carne'),
-    ('VEGANO', 'Sin ingredientes de origen animal'),
-    ('SIN_GLUTEN', NULL),
-    ('SIN_LACTOSA', NULL),
-    ('PICANTE', NULL) ON CONFLICT (name) DO NOTHING;
-
--- 3.11 Fila de Espera Virtual (Waitlist / Walk-ins)
-CREATE TABLE waitlist (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID NOT NULL REFERENCES locals(id) ON DELETE CASCADE,
-    table_id UUID NULL REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    location_id UUID NOT NULL REFERENCES public.locals(id) ON DELETE CASCADE,
+    table_id UUID NULL REFERENCES public.restaurant_tables(id) ON DELETE SET NULL,
     table_ids UUID[] NOT NULL DEFAULT '{}',
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
@@ -381,15 +450,27 @@ CREATE TABLE waitlist (
     notes TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL,
-    updated_by UUID NULL REFERENCES staff(id) ON DELETE SET NULL
+    created_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL,
+    updated_by UUID NULL REFERENCES public.staff(id) ON DELETE SET NULL
+);
+
+-- 3.15 Auditoría de Operaciones (audit_log)
+CREATE TABLE IF NOT EXISTS public.audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    location_id UUID REFERENCES public.locals(id) ON DELETE CASCADE,
+    staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NULL,
+    metadata JSONB NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 
 -- ============================================================================
--- 4. TRIGGER updated_at
+-- 4. TRIGGERS DE UPDATED_AT
 -- ============================================================================
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER 
 LANGUAGE plpgsql
 SET search_path = public, pg_temp
@@ -400,7 +481,7 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION update_updated_at_column() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.update_updated_at_column() FROM PUBLIC, anon, authenticated;
 
 DO $$
 DECLARE
@@ -412,22 +493,24 @@ BEGIN
     ]
     LOOP
         EXECUTE format('
-            DROP TRIGGER IF EXISTS trg_%I_updated_at ON %I;
+            DROP TRIGGER IF EXISTS trg_%I_updated_at ON public.%I;
             CREATE TRIGGER trg_%I_updated_at
-            BEFORE UPDATE ON %I
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+            BEFORE UPDATE ON public.%I
+            FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
         ', tbl, tbl, tbl, tbl);
     END LOOP;
 END $$;
 
+
 -- ============================================================================
--- 5. AUTH SYNC: vincular auth.users – staff por email
+-- 5. SINCRONIZACIÓN AUTH <-> STAFF
 -- ============================================================================
 
--- 5.1 Vincular staff existente por email (uso manual tras migrar usuarios)
+-- 5.1 Función utilitaria para vincular staff existente por email
 CREATE OR REPLACE FUNCTION public.link_staff_to_auth()
 RETURNS void 
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 BEGIN
@@ -440,12 +523,9 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.link_staff_to_auth() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.link_staff_to_auth() TO service_role;
 
--- 5.2 Trigger en staff: al insertar/actualizar, vincular si coincide email
--- SECURITY DEFINER + search_path bloqueado (patron oficial Supabase para
--- triggers que cruzan schemas): la funcion corre como su dueno (postgres),
--- con acceso garantizado a auth.users sin depender de los GRANTs del rol
--- que inserta. Nombres calificados porque search_path = ''.
+-- 5.2 Trigger directo en staff: al insertar/actualizar, vincular si coincide email
 CREATE OR REPLACE FUNCTION public.staff_sync_auth_user()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -463,21 +543,14 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trigger_staff_sync_auth_user ON staff;
+DROP TRIGGER IF EXISTS trigger_staff_sync_auth_user ON public.staff;
 CREATE TRIGGER trigger_staff_sync_auth_user
-BEFORE INSERT OR UPDATE ON staff
+BEFORE INSERT OR UPDATE ON public.staff
 FOR EACH ROW EXECUTE FUNCTION public.staff_sync_auth_user();
 
 REVOKE EXECUTE ON FUNCTION public.staff_sync_auth_user() FROM PUBLIC, anon, authenticated;
 
--- 5.3 Trigger inverso: al crear usuario auth, vincular staff pendiente
--- CRITICO: SECURITY DEFINER + search_path bloqueado. El INSERT en auth.users
--- lo ejecuta el rol supabase_auth_admin (GoTrue), que NO tiene privilegios
--- sobre public.staff; en SECURITY INVOKER el UPDATE fallaba con 42501 y
--- GoTrue respondia "Database error creating new user" (HTTP 500), bloqueando
--- /setup y la invitacion de staff. Fail-soft: un fallo de vinculacion queda
--- como WARNING y no aborta la creacion del usuario (la app vincula
--- explicitamente auth_user_id tras crearlo; fallback por email).
+-- 5.3 Trigger inverso en auth.users: al crear usuario en Auth, vincular staff pendiente
 CREATE OR REPLACE FUNCTION public.auth_user_sync_staff()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -504,175 +577,203 @@ FOR EACH ROW EXECUTE FUNCTION public.auth_user_sync_staff();
 
 REVOKE EXECUTE ON FUNCTION public.auth_user_sync_staff() FROM PUBLIC, anon, authenticated;
 
--- ============================================================================
--- 6. ROW LEVEL SECURITY
--- ============================================================================
-ALTER TABLE locals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE modifier_groups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE modifier_options ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
-ALTER TABLE delivery_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE discounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE discount_usages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE allergens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE diet_labels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_allergens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_diet_labels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE restaurant_tables ENABLE ROW LEVEL SECURITY;
-ALTER TABLE local_shifts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE waitlist ENABLE ROW LEVEL SECURITY;
 
--- PatrÃ³n GUC: el backend setea 'app.local_id' (y 'app.token_plain' si aplica)
--- antes de cada consulta. current_setting(..., true) devuelve NULL si no existe.
+-- ============================================================================
+-- 6. ROW LEVEL SECURITY (RLS) Y POLÍTICAS
+-- ============================================================================
+ALTER TABLE public.locals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.modifier_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.modifier_options ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.delivery_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.discounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.discount_usages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.allergens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.diet_labels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_allergens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_diet_labels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.restaurant_tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.local_shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.waitlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY locals_staff_access ON locals
+-- 6.1 locals
+DROP POLICY IF EXISTS locals_staff_access ON public.locals;
+CREATE POLICY locals_staff_access ON public.locals
 FOR ALL
 USING (id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY categories_staff_access ON categories
+-- 6.2 categories
+DROP POLICY IF EXISTS categories_staff_access ON public.categories;
+CREATE POLICY categories_staff_access ON public.categories
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY categories_public_read ON categories
+DROP POLICY IF EXISTS categories_public_read ON public.categories;
+CREATE POLICY categories_public_read ON public.categories
 FOR SELECT
 USING (is_active = true);
 
-CREATE POLICY products_staff_access ON products
+-- 6.3 products
+DROP POLICY IF EXISTS products_staff_access ON public.products;
+CREATE POLICY products_staff_access ON public.products
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY products_public_read ON products
+DROP POLICY IF EXISTS products_public_read ON public.products;
+CREATE POLICY products_public_read ON public.products
 FOR SELECT
 USING (true);
 
-CREATE POLICY modifier_groups_staff_access ON modifier_groups
+-- 6.4 modifier_groups
+DROP POLICY IF EXISTS modifier_groups_staff_access ON public.modifier_groups;
+CREATE POLICY modifier_groups_staff_access ON public.modifier_groups
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY modifier_groups_public_read ON modifier_groups
+DROP POLICY IF EXISTS modifier_groups_public_read ON public.modifier_groups;
+CREATE POLICY modifier_groups_public_read ON public.modifier_groups
 FOR SELECT
 USING (true);
 
-CREATE POLICY modifier_options_staff_access ON modifier_options
+-- 6.5 modifier_options
+DROP POLICY IF EXISTS modifier_options_staff_access ON public.modifier_options;
+CREATE POLICY modifier_options_staff_access ON public.modifier_options
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY modifier_options_public_read ON modifier_options
+DROP POLICY IF EXISTS modifier_options_public_read ON public.modifier_options;
+CREATE POLICY modifier_options_public_read ON public.modifier_options
 FOR SELECT
 USING (true);
 
-CREATE POLICY orders_staff_access ON orders
+-- 6.6 orders
+DROP POLICY IF EXISTS orders_staff_access ON public.orders;
+CREATE POLICY orders_staff_access ON public.orders
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
--- Realtime: permite SELECT al staff autenticado validando su pertenencia en staff
-CREATE POLICY orders_staff_live ON orders
+DROP POLICY IF EXISTS orders_staff_live ON public.orders;
+CREATE POLICY orders_staff_live ON public.orders
 FOR SELECT
 TO authenticated
 USING (
     location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
     OR EXISTS (
         SELECT 1 FROM public.staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = orders.location_id
     )
 );
 
-CREATE POLICY reservations_staff_access ON reservations
+-- 6.7 reservations
+DROP POLICY IF EXISTS reservations_staff_access ON public.reservations;
+CREATE POLICY reservations_staff_access ON public.reservations
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
--- Mesas físicas
-CREATE POLICY restaurant_tables_public_read ON restaurant_tables
+-- 6.8 restaurant_tables
+DROP POLICY IF EXISTS restaurant_tables_public_read ON public.restaurant_tables;
+CREATE POLICY restaurant_tables_public_read ON public.restaurant_tables
 FOR SELECT
 USING (true);
 
-CREATE POLICY restaurant_tables_staff_access ON restaurant_tables
+DROP POLICY IF EXISTS restaurant_tables_staff_access ON public.restaurant_tables;
+CREATE POLICY restaurant_tables_staff_access ON public.restaurant_tables
 FOR ALL
 USING (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = restaurant_tables.location_id
     )
 )
 WITH CHECK (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = restaurant_tables.location_id
     )
 );
 
--- Turnos y Horarios
-CREATE POLICY local_shifts_public_read ON local_shifts
+-- 6.9 local_shifts
+DROP POLICY IF EXISTS local_shifts_public_read ON public.local_shifts;
+CREATE POLICY local_shifts_public_read ON public.local_shifts
 FOR SELECT
 USING (true);
 
-CREATE POLICY local_shifts_staff_access ON local_shifts
+DROP POLICY IF EXISTS local_shifts_staff_access ON public.local_shifts;
+CREATE POLICY local_shifts_staff_access ON public.local_shifts
 FOR ALL
 USING (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = local_shifts.location_id
     )
 )
 WITH CHECK (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = local_shifts.location_id
     )
 );
 
--- Fila de espera virtual (Waitlist)
--- Lectura pública para suscripciones Realtime por tracking_token.
--- Las mutaciones (join/cancel) corren en Node vía Server Actions con service_role.
-CREATE POLICY waitlist_public_read ON waitlist
+-- 6.10 waitlist
+DROP POLICY IF EXISTS waitlist_public_read ON public.waitlist;
+CREATE POLICY waitlist_public_read ON public.waitlist
 FOR SELECT
 USING (true);
 
-CREATE POLICY waitlist_staff_access ON waitlist
+DROP POLICY IF EXISTS waitlist_public_insert ON public.waitlist;
+DROP POLICY IF EXISTS waitlist_update ON public.waitlist;
+
+DROP POLICY IF EXISTS waitlist_staff_access ON public.waitlist;
+CREATE POLICY waitlist_staff_access ON public.waitlist
 FOR ALL
 USING (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = waitlist.location_id
     )
 )
 WITH CHECK (
     location_id = current_setting('app.local_id', true)::uuid
     OR EXISTS (
-        SELECT 1 FROM staff 
-        WHERE staff.auth_user_id = auth.uid() 
+        SELECT 1 FROM public.staff 
+        WHERE staff.auth_user_id = (select auth.uid())
           AND staff.location_id = waitlist.location_id
     )
 );
 
-CREATE POLICY staff_staff_access ON staff
+-- 6.11 staff
+DROP POLICY IF EXISTS staff_staff_access ON public.staff;
+CREATE POLICY staff_staff_access ON public.staff
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY delivery_tokens_anon_read ON delivery_tokens
+-- 6.12 delivery_tokens
+DROP POLICY IF EXISTS delivery_tokens_anon_read ON public.delivery_tokens;
+CREATE POLICY delivery_tokens_anon_read ON public.delivery_tokens
 FOR SELECT
 USING (
     crypt(NULLIF(current_setting('app.token_plain', true), ''), token_hash) = token_hash
@@ -681,7 +782,8 @@ USING (
     AND expires_at > now()
 );
 
-CREATE POLICY delivery_tokens_anon_use ON delivery_tokens
+DROP POLICY IF EXISTS delivery_tokens_anon_use ON public.delivery_tokens;
+CREATE POLICY delivery_tokens_anon_use ON public.delivery_tokens
 FOR UPDATE
 USING (
     crypt(NULLIF(current_setting('app.token_plain', true), ''), token_hash) = token_hash
@@ -693,29 +795,33 @@ WITH CHECK (
     used_at IS NOT NULL
 );
 
-CREATE POLICY delivery_tokens_staff_access ON delivery_tokens
+DROP POLICY IF EXISTS delivery_tokens_staff_access ON public.delivery_tokens;
+CREATE POLICY delivery_tokens_staff_access ON public.delivery_tokens
 FOR ALL
 USING (
     EXISTS (
-        SELECT 1 FROM orders o
+        SELECT 1 FROM public.orders o
         WHERE o.id = delivery_tokens.order_id
           AND o.location_id = current_setting('app.local_id', true)::uuid
     )
 )
 WITH CHECK (
     EXISTS (
-        SELECT 1 FROM orders o
+        SELECT 1 FROM public.orders o
         WHERE o.id = delivery_tokens.order_id
           AND o.location_id = current_setting('app.local_id', true)::uuid
     )
 );
 
-CREATE POLICY discounts_staff_access ON discounts
+-- 6.13 discounts y usages
+DROP POLICY IF EXISTS discounts_staff_access ON public.discounts;
+CREATE POLICY discounts_staff_access ON public.discounts
 FOR ALL
 USING (location_id = current_setting('app.local_id', true)::uuid)
 WITH CHECK (location_id = current_setting('app.local_id', true)::uuid);
 
-CREATE POLICY discounts_public_read ON discounts
+DROP POLICY IF EXISTS discounts_public_read ON public.discounts;
+CREATE POLICY discounts_public_read ON public.discounts
 FOR SELECT
 USING (
     is_active = true
@@ -723,149 +829,226 @@ USING (
     AND (ends_at IS NULL OR ends_at >= now())
 );
 
-CREATE POLICY discount_usages_staff_access ON discount_usages
+DROP POLICY IF EXISTS discount_usages_staff_access ON public.discount_usages;
+CREATE POLICY discount_usages_staff_access ON public.discount_usages
 FOR ALL
 USING (
     EXISTS (
-        SELECT 1 FROM discounts d
+        SELECT 1 FROM public.discounts d
         WHERE d.id = discount_usages.discount_id
           AND d.location_id = current_setting('app.local_id', true)::uuid
     )
 )
 WITH CHECK (
     EXISTS (
-        SELECT 1 FROM discounts d
+        SELECT 1 FROM public.discounts d
         WHERE d.id = discount_usages.discount_id
           AND d.location_id = current_setting('app.local_id', true)::uuid
     )
 );
 
-CREATE POLICY allergens_public_read ON allergens
+-- 6.14 allergens y diet_labels
+DROP POLICY IF EXISTS allergens_public_read ON public.allergens;
+CREATE POLICY allergens_public_read ON public.allergens
 FOR SELECT USING (true);
 
-CREATE POLICY diet_labels_public_read ON diet_labels
+DROP POLICY IF EXISTS diet_labels_public_read ON public.diet_labels;
+CREATE POLICY diet_labels_public_read ON public.diet_labels
 FOR SELECT USING (true);
 
-CREATE POLICY product_allergens_staff_access ON product_allergens
+DROP POLICY IF EXISTS product_allergens_staff_access ON public.product_allergens;
+CREATE POLICY product_allergens_staff_access ON public.product_allergens
 FOR ALL
 USING (
     EXISTS (
-        SELECT 1 FROM products p
+        SELECT 1 FROM public.products p
         WHERE p.id = product_allergens.product_id
           AND p.location_id = current_setting('app.local_id', true)::uuid
     )
 )
 WITH CHECK (
     EXISTS (
-        SELECT 1 FROM products p
+        SELECT 1 FROM public.products p
         WHERE p.id = product_allergens.product_id
           AND p.location_id = current_setting('app.local_id', true)::uuid
     )
 );
 
-CREATE POLICY product_allergens_public_read ON product_allergens
+DROP POLICY IF EXISTS product_allergens_public_read ON public.product_allergens;
+CREATE POLICY product_allergens_public_read ON public.product_allergens
 FOR SELECT USING (true);
 
-CREATE POLICY product_diet_labels_staff_access ON product_diet_labels
+DROP POLICY IF EXISTS product_diet_labels_staff_access ON public.product_diet_labels;
+CREATE POLICY product_diet_labels_staff_access ON public.product_diet_labels
 FOR ALL
 USING (
     EXISTS (
-        SELECT 1 FROM products p
+        SELECT 1 FROM public.products p
         WHERE p.id = product_diet_labels.product_id
           AND p.location_id = current_setting('app.local_id', true)::uuid
     )
 )
 WITH CHECK (
     EXISTS (
-        SELECT 1 FROM products p
+        SELECT 1 FROM public.products p
         WHERE p.id = product_diet_labels.product_id
           AND p.location_id = current_setting('app.local_id', true)::uuid
     )
 );
 
-CREATE POLICY product_diet_labels_public_read ON product_diet_labels
+DROP POLICY IF EXISTS product_diet_labels_public_read ON public.product_diet_labels;
+CREATE POLICY product_diet_labels_public_read ON public.product_diet_labels
 FOR SELECT USING (true);
 
--- ----------------------------------------------------------------------------
--- 6.1 Privilegios base (GRANT). Las policies de arriba definen QUÃ‰ FILAS ve
--- cada rol; los GRANT son el privilegio BASE de conexiÃ³n/lectura. Sin ellos
--- las policies ni siquiera se evalÃºan: PostgREST responde 401 code 42501
--- "permission denied for table X". Nota: en proyectos con API keys nuevas
--- (sb_publishable_*) las tablas creadas por SQL Editor NO heredan defaults.
--- Script equivalente para proyectos ya instalados: docs/fix-grants-public-read.sql
--- ----------------------------------------------------------------------------
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
+-- 6.15 audit_log
+DROP POLICY IF EXISTS audit_log_service_all ON public.audit_log;
+DROP POLICY IF EXISTS audit_log_staff_read ON public.audit_log;
+CREATE POLICY audit_log_staff_read ON public.audit_log
+FOR SELECT USING (
+    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
+);
 
+
+-- ============================================================================
+-- 7. PRIVILEGIOS Y PERMISOS (GRANTS)
+-- ============================================================================
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+-- Acceso público de lectura (Catálogo y datos de solo lectura)
 GRANT SELECT ON TABLE
-    categories, products, modifier_groups, modifier_options,
-    allergens, diet_labels, product_allergens, product_diet_labels,
-    discounts
+    public.categories,
+    public.products,
+    public.modifier_groups,
+    public.modifier_options,
+    public.allergens,
+    public.diet_labels,
+    public.product_allergens,
+    public.product_diet_labels,
+    public.discounts
 TO anon, authenticated;
 
--- locals: solo ping de /api/health (RLS oculta todas las filas al anon).
-GRANT SELECT ON TABLE locals TO anon, authenticated;
+-- locals: anon solo para ping de conectividad (/api/health); RLS oculta filas a anon
+GRANT SELECT ON TABLE public.locals TO anon, authenticated;
 
--- orders: solo authenticated (JWT de staff) para Realtime (orders_staff_live).
-GRANT SELECT ON TABLE orders TO authenticated;
--- waitlist: solo SELECT para Realtime de clientes (anon); control total para staff (authenticated) y service_role.
-GRANT SELECT ON TABLE waitlist TO anon;
-GRANT ALL ON TABLE waitlist TO authenticated;
+-- orders: lectura solo para staff autenticado (Realtime de órdenes)
+GRANT SELECT ON TABLE public.orders TO authenticated;
 
--- ============================================================================
--- 7. ÃNDICES
--- ============================================================================
-CREATE INDEX idx_orders_location_status ON orders(location_id, status);
-CREATE UNIQUE INDEX idx_orders_idempotency_key ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
-CREATE INDEX idx_orders_eta ON orders(eta);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
-CREATE INDEX idx_orders_customer_phone ON orders(customer_phone);
-CREATE INDEX idx_orders_driver ON orders(driver_id);
-CREATE INDEX idx_orders_table_id ON orders(table_id);
-CREATE INDEX idx_reservations_table_id ON reservations(table_id);
-CREATE INDEX idx_reservations_table_ids_gin ON reservations USING GIN (table_ids);
-CREATE INDEX idx_reservations_table_date_status ON reservations (table_id, reservation_date, status);
-CREATE INDEX idx_restaurant_tables_location ON restaurant_tables(location_id);
-CREATE INDEX idx_restaurant_tables_location_zone_active ON restaurant_tables (location_id, zone, is_active);
-CREATE INDEX idx_restaurant_tables_qr_token ON restaurant_tables(qr_token);
-CREATE INDEX idx_local_shifts_location ON local_shifts(location_id);
-CREATE INDEX idx_waitlist_location_status ON waitlist(location_id, status, created_at);
-CREATE INDEX idx_waitlist_tracking_token ON waitlist(tracking_token);
-CREATE INDEX idx_waitlist_table_ids_gin ON waitlist USING GIN (table_ids);
-CREATE INDEX idx_reservations_location_date ON reservations(location_id, reservation_date);
-CREATE INDEX idx_reservations_status ON reservations(status);
-CREATE INDEX idx_staff_location ON staff(location_id);
-CREATE INDEX idx_staff_auth_user_id ON staff(auth_user_id);
-CREATE INDEX idx_delivery_tokens_order_id ON delivery_tokens(order_id);
-CREATE INDEX idx_discounts_location_active ON discounts(location_id, is_active);
-CREATE INDEX idx_product_allergens_product ON product_allergens(product_id);
-CREATE INDEX idx_product_diet_labels_product ON product_diet_labels(product_id);
-CREATE INDEX idx_discount_usages_discount ON discount_usages(discount_id);
+-- Mesas y turnos
+GRANT SELECT ON TABLE public.restaurant_tables TO anon, authenticated;
+GRANT ALL ON TABLE public.restaurant_tables TO authenticated, service_role;
+
+GRANT SELECT ON TABLE public.local_shifts TO anon, authenticated;
+GRANT ALL ON TABLE public.local_shifts TO authenticated, service_role;
+
+-- waitlist: anon solo SELECT para suscripciones Realtime móviles
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.waitlist FROM anon;
+GRANT SELECT ON TABLE public.waitlist TO anon;
+GRANT ALL ON TABLE public.waitlist TO authenticated, service_role;
+
+-- audit_log: solo staff autenticado y backend
+GRANT SELECT ON TABLE public.audit_log TO authenticated;
+GRANT ALL ON TABLE public.audit_log TO service_role;
+
+-- service_role: bypass y control maestro para Server Actions
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE ON SCHEMA auth TO service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;
+
 
 -- ============================================================================
--- 8. VISTAS Y FUNCIONES RPC
+-- 8. ÍNDICES DE RENDIMIENTO Y BÚSQUEDA RÁPIDA
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_orders_location_status ON public.orders(location_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key ON public.orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_eta ON public.orders(eta);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON public.orders(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_orders_driver ON public.orders(driver_id);
+CREATE INDEX IF NOT EXISTS idx_orders_table_id ON public.orders(table_id);
+
+CREATE INDEX IF NOT EXISTS idx_reservations_location_date ON public.reservations(location_id, reservation_date);
+CREATE INDEX IF NOT EXISTS idx_reservations_status ON public.reservations(status);
+CREATE INDEX IF NOT EXISTS idx_reservations_table_id ON public.reservations(table_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_table_ids_gin ON public.reservations USING GIN (table_ids);
+CREATE INDEX IF NOT EXISTS idx_reservations_table_date_status ON public.reservations (table_id, reservation_date, status);
+
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_location ON public.restaurant_tables(location_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_location_zone_active ON public.restaurant_tables (location_id, zone, is_active);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_qr_token ON public.restaurant_tables(qr_token);
+
+CREATE INDEX IF NOT EXISTS idx_local_shifts_location ON public.local_shifts(location_id);
+
+CREATE INDEX IF NOT EXISTS idx_waitlist_location_status ON public.waitlist(location_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_waitlist_tracking_token ON public.waitlist(tracking_token);
+CREATE INDEX IF NOT EXISTS idx_waitlist_table_ids_gin ON public.waitlist USING GIN (table_ids);
+
+CREATE INDEX IF NOT EXISTS idx_staff_location ON public.staff(location_id);
+CREATE INDEX IF NOT EXISTS idx_staff_auth_user_id ON public.staff(auth_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_tokens_order_id ON public.delivery_tokens(order_id);
+CREATE INDEX IF NOT EXISTS idx_discounts_location_active ON public.discounts(location_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_product_allergens_product ON public.product_allergens(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_diet_labels_product ON public.product_diet_labels(product_id);
+CREATE INDEX IF NOT EXISTS idx_discount_usages_discount ON public.discount_usages(discount_id);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_location_created ON public.audit_log(location_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_staff ON public.audit_log(staff_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON public.audit_log(resource_type, resource_id);
+
+
+-- ============================================================================
+-- 9. VISTAS Y FUNCIONES RPC
 -- ============================================================================
 
--- 8.1 Aforo dinámico por zona (calculado en tiempo real desde mesas activas)
-DROP VIEW IF EXISTS local_zone_capacity;
+-- 9.1 Aforo dinámico por zona (calculado en tiempo real desde restaurant_tables)
+DO $$
+DECLARE
+  v_relkind "char";
+BEGIN
+  SELECT c.relkind INTO v_relkind
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relname = 'local_zone_capacity'
+    AND n.nspname = 'public';
 
-CREATE VIEW local_zone_capacity
+  IF v_relkind = 'r' THEN
+    EXECUTE 'DROP TABLE public.local_zone_capacity CASCADE';
+  ELSIF v_relkind = 'v' THEN
+    EXECUTE 'DROP VIEW public.local_zone_capacity CASCADE';
+  END IF;
+
+  SELECT c.relkind INTO v_relkind
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relname = 'zone_capacities'
+    AND n.nspname = 'public';
+
+  IF v_relkind = 'r' THEN
+    EXECUTE 'DROP TABLE public.zone_capacities CASCADE';
+  ELSIF v_relkind = 'v' THEN
+    EXECUTE 'DROP VIEW public.zone_capacities CASCADE';
+  END IF;
+END $$;
+
+CREATE VIEW public.local_zone_capacity
 WITH (security_invoker = true)
 AS
 SELECT 
     location_id,
     zone,
     COALESCE(SUM(max_capacity), 0)::INTEGER AS capacity
-FROM restaurant_tables
+FROM public.restaurant_tables
 WHERE is_active = TRUE
 GROUP BY location_id, zone;
 
-GRANT SELECT ON local_zone_capacity TO anon, authenticated, service_role;
+GRANT SELECT ON public.local_zone_capacity TO anon, authenticated, service_role;
 
--- 8.2 Vista segura para KDS/Caja: expone solo lo necesario, sin datos sensibles.
--- security_invoker = true -> aplica RLS de la tabla subyacente.
-DROP VIEW IF EXISTS staff_orders_view;
+-- 9.2 Vista segura para KDS/Caja: expone solo lo necesario sin PII sensible
+DROP VIEW IF EXISTS public.staff_orders_view;
 
-CREATE VIEW staff_orders_view
+CREATE VIEW public.staff_orders_view
 WITH (security_invoker = true)
 AS
 SELECT
@@ -894,12 +1077,12 @@ SELECT
     o.delivered_at,
     o.created_at,
     o.updated_at
-FROM orders o;
+FROM public.orders o;
 
-GRANT SELECT ON staff_orders_view TO anon, authenticated, service_role;
+GRANT SELECT ON public.staff_orders_view TO anon, authenticated, service_role;
 
--- 8.3 Función RPC para asignación de mesas ("Best-Fit" y mesas combinadas)
-CREATE OR REPLACE FUNCTION get_available_tables(
+-- 9.3 Función RPC para asignación de mesas ("Best-Fit" y mesas combinadas)
+CREATE OR REPLACE FUNCTION public.get_available_tables(
     p_location_id UUID,
     p_date DATE,
     p_start_time TIME,
@@ -959,54 +1142,13 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_available_tables(UUID, DATE, TIME, TIME, INT, TEXT) TO service_role;
+
 
 -- ============================================================================
--- 9. COMENTARIOS
+-- 10. REALTIME (PUBLICACIÓN SUPABASE_REALTIME)
 -- ============================================================================
-COMMENT ON TABLE locals IS 'Multi-tenant root: cada local/restaurante';
-COMMENT ON COLUMN locals.iva_rate IS 'Tasa de IVA del local (0.16 = 16%). Ajustable por local.';
-COMMENT ON COLUMN locals.delivery_fee IS 'Tarifa fija base de delivery del local (fallback cuando no aplica cálculo por matriz OSM).';
-COMMENT ON COLUMN locals.is_catalog_only IS 'Si es true, el menú de la sucursal es solo informativo/catálogo y no permite armar carritos ni pedidos.';
-COMMENT ON COLUMN locals.reservations_enabled IS 'Si es false, las reservas de mesa en línea están pausadas/desactivadas para esta sucursal.';
-COMMENT ON COLUMN locals.address IS 'Dirección física del local o sucursal';
-COMMENT ON COLUMN locals.latitude IS 'Latitud GPS del local para cálculo de matriz de distancias';
-COMMENT ON COLUMN locals.longitude IS 'Longitud GPS del local para cálculo de matriz de distancias';
-COMMENT ON COLUMN staff.auth_user_id IS 'Referencia a auth.users.id para vinculación directa y consultas sin depender de email';
-COMMENT ON TABLE orders IS 'Pedidos; snapshot con precios públicos (IVA incluido)';
-COMMENT ON COLUMN orders.cart_snapshot IS 'JSONB schema fijo: items[] {product_id, product_name, base_price (IVA incl.), quantity, modifiers[{group, selections[]}]}';
-COMMENT ON COLUMN orders.iva_amount IS 'IVA interno para contabilidad: subtotal * rate/(1+rate). No se suma al público.';
-COMMENT ON COLUMN orders.driver_id IS 'Repartidor asignado (staff). NULL = sin asignar.';
-COMMENT ON COLUMN reservations.table_ids IS 'Mesas físicas secundarias unidas para grupos grandes.';
-COMMENT ON TABLE delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
-COMMENT ON TABLE discounts IS 'Engine de promos: códigos o automáticas con reglas; sin apilar';
-COMMENT ON TABLE waitlist IS 'Fila de espera virtual (walk-ins) con token de seguimiento';
-COMMENT ON COLUMN waitlist.tracking_token IS 'UUID público para seguimiento de posición y cancelación en tiempo real por el comensal';
-COMMENT ON COLUMN waitlist.table_ids IS 'Mesas físicas secundarias asignadas en combinación al sentar un grupo grande.';
-COMMENT ON FUNCTION get_available_tables IS 'Retorna mesas físicas activas sin reservas solapadas que admiten el tamaño del grupo solicitado.';
-
--- ============================================================================
--- Permisos para service_role (bypass RLS en operaciones server-side)
--- ============================================================================
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
-
-GRANT SELECT ON restaurant_tables TO anon, authenticated;
-GRANT ALL ON restaurant_tables TO authenticated;
-GRANT SELECT ON local_shifts TO anon, authenticated;
-GRANT ALL ON local_shifts TO authenticated;
-
--- TambiÃ©n grant en auth schema para gestiÃ³n de usuarios si se necesita
-GRANT USAGE ON SCHEMA auth TO service_role;
-GRANT SELECT ON ALL TABLES IN SCHEMA auth TO service_role;
-
--- ============================================================================
--- 10. REALTIME (Publicación supabase_realtime)
--- ============================================================================
--- Agrega las tablas necesarias a la publicación de Realtime para eventos en vivo
--- (Caja/KDS, disponibilidad de productos del menú y fila de espera virtual).
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
@@ -1033,10 +1175,10 @@ BEGIN
   END IF;
 END $$;
 
+
 -- ============================================================================
--- 11. SUPABASE STORAGE (Bucket de imágenes del menú)
+-- 11. SUPABASE STORAGE (BUCKET MENU-IMAGES)
 -- ============================================================================
--- Configura el bucket 'menu-images' público para fotos de categorías y productos.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
@@ -1044,8 +1186,8 @@ BEGIN
     VALUES (
         'menu-images',
         'menu-images',
-        true,                                  -- URLs públicas para el menú
-        5242880,                               -- 5MB
+        true,
+        5242880,
         ARRAY['image/jpeg', 'image/png', 'image/webp']
     )
     ON CONFLICT (id) DO UPDATE
@@ -1055,66 +1197,65 @@ BEGIN
   END IF;
 END $$;
 
+
 -- ============================================================================
--- 12. PG_CRON: recordatorios de reservaciones (opcional)
+-- 12. COMENTARIOS DE DOCUMENTACIÓN
 -- ============================================================================
--- Requiere definir la GUC app.cron_secret en Supabase (Settings â†’ Database â†’
--- Custom Configuration o vÃ­a supabase secrets).
--- Los endpoints /api/cron/reminders/24h y /2h deben existir en la app Next.js
--- y validar el header Authorization contra CRON_SECRET.
+COMMENT ON TABLE public.locals IS 'Multi-tenant root: sucursales del restaurante indexadas por path /{slug}';
+COMMENT ON COLUMN public.locals.iva_rate IS 'Tasa de IVA del local (0.16 = 16%). Ajustable por sucursal.';
+COMMENT ON COLUMN public.locals.delivery_fee IS 'Tarifa fija base de delivery del local.';
+COMMENT ON COLUMN public.locals.is_catalog_only IS 'Si es true, el menú es solo informativo/catálogo y no permite armar carritos ni pedidos.';
+COMMENT ON COLUMN public.locals.reservations_enabled IS 'Si es false, las reservas de mesa en línea están pausadas para esta sucursal.';
+COMMENT ON COLUMN public.staff.auth_user_id IS 'Referencia a auth.users.id para vinculación directa y consultas sin depender de email';
+COMMENT ON TABLE public.orders IS 'Pedidos; snapshot con precios públicos (IVA incluido)';
+COMMENT ON COLUMN public.orders.driver_id IS 'Repartidor asignado (staff). NULL = sin asignar.';
+COMMENT ON COLUMN public.orders.cart_snapshot IS 'JSONB snapshot: items[] {product_id, product_name, base_price, quantity, modifiers[]}';
+COMMENT ON COLUMN public.reservations.table_ids IS 'Mesas físicas secundarias unidas para grupos grandes.';
+COMMENT ON TABLE public.delivery_tokens IS 'Token único de repartidor: EN_CAMINO -> COMPLETADO, un solo uso';
+COMMENT ON TABLE public.discounts IS 'Motor de promociones: cupones o automáticas; no acumulables';
+COMMENT ON TABLE public.waitlist IS 'Fila de espera virtual (walk-ins) con token de seguimiento';
+COMMENT ON FUNCTION public.get_available_tables IS 'Retorna mesas físicas activas sin reservas solapadas que admiten el tamaño del grupo solicitado.';
 
-SELECT cron.schedule(
-  'reservation-reminders-24h',
-  '0 * * * *',
-  $$
-  SELECT net.http_get(
-    url := 'https://your-domain.vercel.app/api/cron/reminders/24h',
-    headers := '{"Authorization": "Bearer ' || current_setting('app.cron_secret', true) || '"}'::jsonb
-  );
-  $$
-);
 
-SELECT cron.schedule(
-  'reservation-reminders-2h',
-  '0 * * * *',
-  $$
-  SELECT net.http_get(
-    url := 'https://your-domain.vercel.app/api/cron/reminders/2h',
-    headers := '{"Authorization": "Bearer ' || current_setting('app.cron_secret', true) || '"}'::jsonb
-  );
-  $$
-);
+-- ============================================================================
+-- 13. PG_CRON: RECORDATORIOS DE RESERVAS (OPCIONAL / CONFIGURABLE)
+-- ============================================================================
+-- Requiere tener habilitadas las extensiones pg_cron y pg_net, y configurar
+-- la GUC app.cron_secret o reemplazar por el endpoint de producción.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') AND
+     EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
+    
+    -- Schedule: Recordatorio 24h (cada hora al minuto 0)
+    PERFORM cron.schedule(
+      'reservation-reminders-24h',
+      '0 * * * *',
+      $cron$
+      SELECT net.http_get(
+        url := 'https://your-domain.vercel.app/api/cron/reminders/24h',
+        headers := ('{"Authorization": "Bearer ' || COALESCE(current_setting('app.cron_secret', true), '') || '"}')::jsonb
+      );
+      $cron$
+    );
 
--- Para desactivar:
+    -- Schedule: Recordatorio 2h (cada hora al minuto 0)
+    PERFORM cron.schedule(
+      'reservation-reminders-2h',
+      '0 * * * *',
+      $cron$
+      SELECT net.http_get(
+        url := 'https://your-domain.vercel.app/api/cron/reminders/2h',
+        headers := ('{"Authorization": "Bearer ' || COALESCE(current_setting('app.cron_secret', true), '') || '"}')::jsonb
+      );
+      $cron$
+    );
+
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron scheduler no configurado automáticamente (debe configurarse con dominio de producción si se usa): %', SQLERRM;
+END $$;
+
+-- Para desactivar o desprogramar crons de recordatorios si se usan Vercel Crons:
 -- SELECT cron.unschedule('reservation-reminders-24h');
 -- SELECT cron.unschedule('reservation-reminders-2h');
-
--- ============================================================================
--- 13. AUDITORÍA (audit_log)
--- ============================================================================
-CREATE TABLE IF NOT EXISTS public.audit_log (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    location_id UUID REFERENCES public.locals(id) ON DELETE CASCADE,
-    staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL,
-    action TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id TEXT NULL,
-    metadata JSONB NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_log_location_created ON public.audit_log(location_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_log_staff ON public.audit_log(staff_id);
-CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON public.audit_log(resource_type, resource_id);
-
-ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY audit_log_staff_read ON public.audit_log
-FOR SELECT USING (
-    location_id = NULLIF(current_setting('app.local_id', true), '')::uuid
-);
-
-GRANT SELECT ON TABLE public.audit_log TO authenticated;
-GRANT ALL ON TABLE public.audit_log TO service_role;
-
-

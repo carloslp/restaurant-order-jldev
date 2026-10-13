@@ -201,8 +201,7 @@ export interface Order {
   table_number?: string | null;
   session_id?: string | null;
   idempotency_key?: string | null;
-  // Repartidor asignado (requiere docs/migration-driver-id.sql; opcional para
-  // compatibilidad mientras la migración se aplica).
+  // Repartidor asignado (staff.id)
   driver_id?: string | null;
   delivery_token: string | null;
   delivery_token_expires_at: string | null;

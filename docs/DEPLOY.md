@@ -7,13 +7,11 @@
 ## 1. Preparar Supabase
 
 1. Crea un proyecto nuevo en [supabase.com](https://supabase.com) (región cercana a tu restaurante).
-2. **SQL Editor** → pega y ejecuta `docs/install.sql` (único SQL de instalación:
-   extensiones → tipos → tablas → triggers → RLS + policies → índices → vistas → pg_cron).
+2. **SQL Editor** → pega y ejecuta `docs/install.sql` (único archivo maestro de esquema:
+   extensiones → tipos → tablas → triggers → RLS + policies → índices → vistas → Realtime → Storage → pg_cron).
    - Deja la base **vacía**: al abrir la app, `/setup` arranca el onboarding
      (crea el primer local + admin). No ejecutes seeds en producción.
-   - ¿Proyecto ya existente con datos? Aplica las migraciones incrementales:
-     `docs/migration-link-auth-staff.sql` (idempotente). La migración
-     subdominio→slug ya está incluida dentro de `install.sql`.
+   - Para entorno de desarrollo o pruebas locales con catálogo demo, ejecuta opcionalmente `docs/seed.sql`.
 3. **Authentication → Providers**: deja habilitado **Email** (magic link + contraseña).
    En **URL Configuration** añade tu dominio a *Site URL* y *Redirect URLs*:
    `https://tudominio.com/staff/auth/callback`, `https://tudominio.com/auth/confirm`,
@@ -25,8 +23,7 @@
 ```bash
 node --env-file=.env scripts/setup-menu-images-bucket.mjs
 ```
-Crea el bucket público `menu-images` (5MB, jpeg/png/webp) de forma idempotente.
-Referencia SQL en `docs/storage-menu-images.sql` (no hace falta ejecutarla).
+El bucket público `menu-images` (5MB, jpeg/png/webp) ya queda aprovisionado automáticamente por `docs/install.sql`. El script de Node es opcional para desarrollo.
 
 ## 3. Variables de entorno
 
@@ -68,8 +65,8 @@ Opción A — **Vercel Cron**: añade a `vercel.json`:
 ```
 Vercel manda `Authorization: Bearer ${CRON_SECRET}` automáticamente.
 
-Opción B — **pg_cron en Supabase**: ver `docs/pg_cron_reminders.sql`
-(llama al endpoint con `?secret=...` cada 15 min).
+Opción B — **pg_cron en Supabase**: integrado condicionalmente en `docs/install.sql` §13
+(llama al endpoint con `Authorization: Bearer ${CRON_SECRET}`).
 
 ## 6. Primer arranque (setup)
 

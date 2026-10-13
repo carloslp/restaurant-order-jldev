@@ -12,7 +12,7 @@ Flujo completo cubierto: menú público → carrito con modificadores → checko
 - **Motor de promociones**: códigos + automáticas, sin apilar (prioridad código > auto > manual), ventanas temporales, días/horas, límites de uso, alcance por producto. Descuento manual en caja.
 - **Reservas** por zona (INTERIOR/TERRAZA/BARRA) con aforo configurable, calendario día/semana/mes y recordatorios automáticos 24h/2h (cron protegido con `CRON_SECRET`).
 - **Reportes y cierre de caja**: KPIs, ingresos por día (gráfica sin dependencias), top productos, export CSV, efectivo/tarjeta esperado por día.
-- **Reparto**: asignación de repartidor desde caja + link de reparto revocable y regenerable (`orders.driver_id`, ver `docs/migration-driver-id.sql`).
+- **Reparto**: asignación de repartidor desde caja + link de reparto revocable y regenerable (`orders.driver_id`, ver `docs/install.sql`).
 - **Errores amigables**: catálogo central (`lib/errors.ts`) que traduce PG/PGRST a español; los formularios muestran error por campo y conservan los datos (ver `docs/FORMULARIOS.md`).
 - **Operación**: `/api/health`, `lib/logger.ts`, scripts de diagnóstico (`check-seed.mjs`, `seed-test-data.mjs`), 53 tests unit (Vitest).
 

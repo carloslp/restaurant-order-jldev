@@ -77,7 +77,7 @@
 
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
-| 27 | Asignación de repartidor en orden (campo `driver_id`). ✅ Sin depender de roles (decisión del dueño): cualquier staff del local puede asignarse. Server action `assignDriver` + selector en `CashierView`. ⚠️ Requiere ejecutar `docs/migration-driver-id.sql` (columna + vista). | ✅ Completado | 4h |
+| 27 | Asignación de repartidor en orden (campo `driver_id`). ✅ Sin depender de roles (decisión del dueño): cualquier staff del local puede asignarse. Server action `assignDriver` + selector en `CashierView`. Incluido de forma nativa en `docs/install.sql`. | ✅ Completado | 4h |
 | 28 | Vista track repartidor mejorada. ✅ Base existente (`/track/repartidor/[token]`); añade regeneración/revocación del link desde caja (`regenerateDeliveryToken`). Mapa Leaflet diferido (decisión pendiente). | 🔄 En progreso | 6h |
 | 29 | Notificación push/email a repartidor al asignar. webhook a servicio externo. | ⬜ Pendiente | 4h |
 | 30 | Rol `REPARTIDOR` en schema y RLS. ❌ Fuera de alcance por decisión del dueño: el auth de staff funciona sin roles y no se toca. | ❌ Cancelado | 2h |
@@ -102,7 +102,7 @@
 | # | Tarea | Estado | Esfuerzo |
 |---|-------|--------|----------|
 | 37 | Documentar variables de entorno (`.env.example` completo). ✅ `.env.example` ampliado: `NEXT_PUBLIC_APP_URL`, `CRON_SECRET` (+ doc de uso), `WHATSAPP_WEBHOOK_URL`, `SENTRY_DSN`, alias de nomenclatura Supabase. | ✅ Completado | 2h |
-| 38 | Guía de despliegue Vercel + Supabase. ✅ `docs/DEPLOY.md`: install.sql/migraciones, Storage bucket, env vars, Vercel Cron + pg_cron con `CRON_SECRET`, setup inicial, monitoreo con `/api/health`, tests. | ✅ Completado | 4h |
+| 38 | Guía de despliegue Vercel + Supabase. ✅ `docs/DEPLOY.md`: install.sql consolidado, Storage bucket, env vars, Vercel Cron + pg_cron con `CRON_SECRET`, setup inicial, monitoreo con `/api/health`, tests. | ✅ Completado | 4h |
 | 39 | Configurar Vercel Analytics / Speed Insights. `next.config.ts` + env vars. | ❌ Cancelado | 1h |
 | 40 | Alertas de caída (UptimeRobot / Better Uptime). ✅ Health check `/api/health` implementado (env vars + ping a Supabase, 503 si algo falla). Apuntar el uptime monitor ahí queda del lado de infra externa. | ✅ Completado | 2h |
 | 41 | Métricas de uso (PostHog o Plausible). Eventos: `order_created`, `order_completed`, `promo_applied`, `reservation_created`. | ❌ Cancelado | 3h |
@@ -113,8 +113,8 @@
 
 | # | Decisión | Estado | Impacto |
 |---|----------|--------|---------|
-|| 42 | **Imágenes de productos**: Supabase Storage (gratis 1GB) | ✅ Confirmado | Implementado en Admin Menú |
-|| 43 | **Notificaciones WhatsApp**: Webhook externo | ✅ Confirmado | Implementado en reminders |
+| 42 | **Imágenes de productos**: Supabase Storage (gratis 1GB) | ✅ Confirmado | Implementado en Admin Menú |
+| 43 | **Notificaciones WhatsApp**: Webhook externo | ✅ Confirmado | Implementado en reminders |
 | 44 | **Mapa repartidor**: ¿Leaflet + OSM (gratis, self-hosted tiles) o Mapbox (pago, mejor UX)? | ⬜ Pendiente | Afecta vista track repartidor |
 | 45 | **Gráficas**:  Chart.js + wrapper  | ⬜ Pendiente | Afecta Admin Reportes |
 | 46 | **Tests E2E**: Playwright (recomendado) | ⬜ Pendiente | Afecta infra testing |
@@ -129,8 +129,8 @@
 | **Fase 1: Admin Core** (Menú + Promos) | ✅ Completado | **Crítica** | CRUD Menú, Motor de Promos + tests del engine |
 | **Fase 2: Reservas** | ✅ Completado | **Alta** | Gestión de mesas y calendario + recordatorios cron (con CRON_SECRET) |
 | **Fase 3: Reportes + Staff + Settings** | ✅ Completado | **Alta** | KPIs + gráfica ingresos + Cierre de Caja + Staff + Aforo por zona |
-| **Fase 4: Repartidor** | ✅ Casi completo | **Media** | Asignación + link un solo uso (⚠️ ejecutar `docs/migration-driver-id.sql`); mapa/notificación diferidos |
-| **Fase 5: Calidad + Infra** | 🔄 Casi listo | **Alta** | 53 unit tests, auditoría RLS, logger, errors centralizados, DEPLOY.md, /api/health; falta Playwright (35) |
+| **Fase 4: Repartidor** | ✅ Completado | **Media** | Asignación + link un solo uso (consolidado en `docs/install.sql`); mapa/notificación diferidos |
+| **Fase 5: Calidad + Infra** | 🔄 Casi listo | **Alta** | 53 unit tests, esquema SQL limpio y consolidado (`docs/install.sql`), auditoría RLS, logger, errors centralizados, DEPLOY.md, /api/health; falta Playwright (35) |
 
 ---
 

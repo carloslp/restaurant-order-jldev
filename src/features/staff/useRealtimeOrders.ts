@@ -17,7 +17,7 @@ import type { Order } from '@/lib/types';
  *   user_metadata.location_id del JWT: el pedido nuevo aparece siempre.
  * - Suscripción: postgres_changes a la tabla `orders` filtrando por
  *   location_id, como mejora "en vivo". Requiere Realtime habilitado en
- *   `orders` y la policy orders_staff_live (docs/fix-realtime-caja.sql).
+ *   `orders` y la policy orders_staff_live (docs/install.sql §6.6 y §10).
  * - Red de seguridad: refetch al conectar el canal, al recuperar el foco de
  *   la pestaña y por polling cada REFRESH_INTERVAL_MS. Así el pedido aparece
  *   aunque Realtime esté sin configurar o se pierda un evento.

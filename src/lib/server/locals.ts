@@ -229,7 +229,7 @@ export async function toggleLocalOpenStatus(localId: string, isOpen: boolean) {
     if (error.code === '42703' || error.message?.includes('is_open')) {
       console.warn('locals.is_open no existe aún en la base de datos.');
       throw new AppError(
-        'La columna is_open no existe en la base de datos. Por favor ejecuta el script docs/migration-location-open-status.sql en Supabase SQL Editor.'
+        'La columna is_open no existe en la base de datos. Por favor ejecuta el script docs/install.sql en Supabase SQL Editor.'
       );
     }
     console.error('toggleLocalOpenStatus:', error);
@@ -257,7 +257,7 @@ export async function toggleLocalCatalogMode(localId: string, isCatalogOnly: boo
     if (error.code === '42703' || error.message?.includes('is_catalog_only')) {
       console.warn('locals.is_catalog_only no existe aún en la base de datos.');
       throw new AppError(
-        'La columna is_catalog_only no existe en la base de datos. Por favor ejecuta el script docs/migration-catalog-mode-and-reservations.sql en Supabase SQL Editor.'
+        'La columna is_catalog_only no existe en la base de datos. Por favor ejecuta el script docs/install.sql en Supabase SQL Editor.'
       );
     }
     console.error('toggleLocalCatalogMode:', error);
@@ -287,7 +287,7 @@ export async function toggleLocalReservationsEnabled(localId: string, enabled: b
     if (error.code === '42703' || error.message?.includes('reservations_enabled')) {
       console.warn('locals.reservations_enabled no existe aún en la base de datos.');
       throw new AppError(
-        'La columna reservations_enabled no existe en la base de datos. Por favor ejecuta el script docs/migration-catalog-mode-and-reservations.sql en Supabase SQL Editor.'
+        'La columna reservations_enabled no existe en la base de datos. Por favor ejecuta el script docs/install.sql en Supabase SQL Editor.'
       );
     }
     console.error('toggleLocalReservationsEnabled:', error);
