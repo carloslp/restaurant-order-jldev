@@ -316,8 +316,12 @@ export function CheckoutForm({
         return;
       }
 
-      // 3. Preparar input para server action
-      const idempotencyKey = form.idempotency_key ?? crypto.randomUUID();
+      // 3. Preparar input para server action (clave de idempotencia persistente para reintentos seguros)
+      let idempotencyKey = form.idempotency_key;
+      if (!idempotencyKey) {
+        idempotencyKey = crypto.randomUUID();
+        setForm((prev) => ({ ...prev, idempotency_key: idempotencyKey }));
+      }
       const input = {
         location_id: locationId,
         customer_name: orderType === 'EN_MESA' && tableNumber
@@ -964,7 +968,21 @@ export function CheckoutForm({
                 </div>
               </div>
 
-              {/* Botón de envío final con CA-1 de F-02 (bloqueo doble clic, spinner, Procesando pedido...) */}
+              {/* CA-2.3: Alerta accesible ante fallo de envío/red */}
+              {errors._submit && (
+                <div
+                  role="alert"
+                  className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm font-medium flex items-start gap-2.5 animate-in fade-in"
+                >
+                  <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="block font-bold">No pudimos procesar tu pedido</span>
+                    <span>{errors._submit}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Botón de envío final con CA-1 de F-02 (bloqueo doble clic, spinner, Procesando pedido...) y CA-2.3 (reintento) */}
               <div className="pt-2 space-y-2">
                 <button
                   type="submit"
@@ -978,6 +996,11 @@ export function CheckoutForm({
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Procesando pedido...</span>
+                    </>
+                  ) : errors._submit ? (
+                    <>
+                      <span>Reintentar envío (no se ha realizado ningún cargo)</span>
+                      <ArrowRight className="w-5 h-5" />
                     </>
                   ) : (
                     <>

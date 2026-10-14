@@ -391,40 +391,75 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
                       <p className="font-bold">⚠️ No hay mesas en estado LIBRE actualmente.</p>
                       <p>Espera a que un comensal pague en caja o libera una mesa desde la pestaña Sala y Mesas.</p>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
-                      {freeTables.map((t) => {
-                        const isSelected = selectedTableIds.includes(t.id);
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => toggleTable(t.id)}
-                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
-                              isSelected
-                                ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-400 shadow-sm'
-                                : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-black text-zinc-900">Mesa {t.table_number}</span>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-bold">
-                                  ✓
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-zinc-500 mt-1">
-                              Zona: <strong className="text-zinc-700">{t.zone}</strong>
-                            </div>
-                            <div className="text-[11px] font-bold text-zinc-700 mt-0.5">
-                              {t.min_capacity}-{t.max_capacity} pax
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  ) : (() => {
+                    const isOptimalTable = (t: RestaurantTable) => {
+                      const matchesZone =
+                        seatingParty.preferred_zone === 'CUALQUIERA' ||
+                        t.zone === seatingParty.preferred_zone;
+                      const matchesCap =
+                        t.max_capacity >= seatingParty.party_size &&
+                        seatingParty.party_size >= (t.min_capacity || 1);
+                      return matchesZone && matchesCap;
+                    };
+
+                    const sortedFreeTables = [...freeTables].sort((a, b) => {
+                      const aOpt = isOptimalTable(a) ? 1 : 0;
+                      const bOpt = isOptimalTable(b) ? 1 : 0;
+                      if (aOpt !== bOpt) return bOpt - aOpt;
+                      return (
+                        a.max_capacity - b.max_capacity ||
+                        a.table_number.localeCompare(b.table_number)
+                      );
+                    });
+
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
+                        {sortedFreeTables.map((t) => {
+                          const isSelected = selectedTableIds.includes(t.id);
+                          const isOpt = isOptimalTable(t);
+
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => toggleTable(t.id)}
+                              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                                isSelected
+                                  ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-400 shadow-sm'
+                                  : isOpt
+                                  ? 'bg-emerald-50/30 border-emerald-300 hover:border-emerald-400'
+                                  : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-sm font-black text-zinc-900">
+                                    Mesa {t.table_number}
+                                  </span>
+                                  {isOpt && (
+                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md">
+                                      ✨ Sugerida
+                                    </span>
+                                  )}
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-bold shrink-0">
+                                    ✓
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-zinc-500 mt-1">
+                                Zona: <strong className="text-zinc-700">{t.zone}</strong>
+                              </div>
+                              <div className="text-[11px] font-bold text-zinc-700 mt-0.5">
+                                {t.min_capacity}-{t.max_capacity} pax
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex gap-2 pt-2">

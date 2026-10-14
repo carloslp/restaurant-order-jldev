@@ -4,9 +4,11 @@
 import { useState, useRef, useTransition } from 'react';
 import { 
   validateMenuCsv, 
+  getMenuDryRunDiff,
   importMenuFromCsv, 
   getMenuCsvTemplate, 
   type MenuCsvValidationResult, 
+  type MenuDryRunDiff,
   type MenuImportMode 
 } from '@/lib/server/menu-csv';
 import { useToast } from '@/components/ui/use-toast';
@@ -40,6 +42,7 @@ export function AdminMenuCsvModal({ isOpen, onClose, onSuccess, localName }: Adm
   const [fileName, setFileName] = useState<string | null>(null);
   const [csvContent, setCsvContent] = useState<string | null>(null);
   const [validation, setValidation] = useState<MenuCsvValidationResult | null>(null);
+  const [dryRunDiff, setDryRunDiff] = useState<MenuDryRunDiff | null>(null);
   const [isValidating, setIsValidating] = useState(false);
 
   if (!isOpen) return null;
@@ -65,6 +68,8 @@ export function AdminMenuCsvModal({ isOpen, onClose, onSuccess, localName }: Adm
       setCsvContent(text);
       const res = await validateMenuCsv(text);
       setValidation(res);
+      const diff = await getMenuDryRunDiff(text);
+      setDryRunDiff(diff);
     } catch (err: any) {
       toast({
         title: 'Error al leer archivo',
@@ -72,6 +77,7 @@ export function AdminMenuCsvModal({ isOpen, onClose, onSuccess, localName }: Adm
         variant: 'destructive',
       });
       setValidation(null);
+      setDryRunDiff(null);
       setCsvContent(null);
     } finally {
       setIsValidating(false);
@@ -141,6 +147,7 @@ export function AdminMenuCsvModal({ isOpen, onClose, onSuccess, localName }: Adm
     setFileName(null);
     setCsvContent(null);
     setValidation(null);
+    setDryRunDiff(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -379,6 +386,41 @@ export function AdminMenuCsvModal({ isOpen, onClose, onSuccess, localName }: Adm
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  )}
+
+                  {/* CA-5.3: Simulación Dry-Run (Diff de productos nuevos, modificados y alerta de precio >50%) */}
+                  {dryRunDiff && (
+                    <div className="mt-3 p-3.5 rounded-xl bg-zinc-900 text-white space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-orange-400">
+                          Simulación Dry-Run (Diff previo)
+                        </span>
+                        <span className="text-[11px] text-zinc-400 font-mono">
+                          {dryRunDiff.newProducts.length} nuevos · {dryRunDiff.priceChanges.length} cambios de precio
+                        </span>
+                      </div>
+
+                      {dryRunDiff.hasPriceSurge && (
+                        <div
+                          role="alert"
+                          className="p-2.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-medium space-y-1"
+                        >
+                          <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>⚠️ Variación de precio mayor al 50% detectada:</span>
+                          </p>
+                          <ul className="list-disc list-inside text-[11px] text-amber-100 pl-1 space-y-0.5">
+                            {dryRunDiff.priceChanges
+                              .filter((p) => p.isPriceSurge)
+                              .map((p, idx) => (
+                                <li key={idx}>
+                                  <strong>{p.productName}</strong>: ${p.previousPrice.toFixed(2)} → ${p.newPrice.toFixed(2)} ({p.percentChange > 0 ? '+' : ''}{p.percentChange}%)
+                                </li>
+                              ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

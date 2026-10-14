@@ -10,9 +10,10 @@ import {
   getKdsCardVisuals,
   getKdsActionConfig,
   playNewOrderChime,
+  playAlertTone,
 } from '@/features/staff/kdsUtils';
 import type { Order } from '@/lib/types';
-import { Loader2, Ban, UtensilsCrossed, Volume2, VolumeX, AlertCircle } from 'lucide-react';
+import { Loader2, Ban, UtensilsCrossed, Volume2, VolumeX, AlertCircle, RotateCcw } from 'lucide-react';
 import { ProductAvailabilityManager } from '@/features/staff/ProductAvailabilityManager';
 
 interface KitchenDisplayProps {
@@ -27,6 +28,15 @@ function formatTime(iso: string): string {
 }
 
 const ACTIVE_STATUSES: Order['status'][] = ['CONFIRMADO_CAJA', 'EN_PREPARACION', 'LISTO'];
+
+interface UndoableAction {
+  orderId: string;
+  orderNumber: string;
+  previousStatus: Order['status'];
+  nextStatus: Order['status'];
+  rollback: () => void;
+  timeoutId: NodeJS.Timeout;
+}
 
 export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
   const [isMuted, setIsMuted] = useState(false);
@@ -61,6 +71,18 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
   const [now, setNow] = useState<number>(() => Date.now());
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
 
+  // CA-3.1: Estado para Deshacer cambio de estado accidental con ventana de gracia de 4 segundos
+  const [activeUndo, setActiveUndo] = useState<UndoableAction | null>(null);
+
+  // CA-3.2: Alerta sonora cuando cae la conexión en tiempo real
+  const prevReconnecting = useRef(false);
+  useEffect(() => {
+    if (orders.isReconnecting && !prevReconnecting.current) {
+      void playAlertTone({ isMuted });
+    }
+    prevReconnecting.current = Boolean(orders.isReconnecting);
+  }, [orders.isReconnecting, isMuted]);
+
   // CA-4: Limpieza segura de timers para evitar memory leaks
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,28 +91,52 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
     return () => {
       clearInterval(timer);
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (activeUndo) clearTimeout(activeUndo.timeoutId);
     };
-  }, []);
+  }, [activeUndo]);
 
   async function handleTransition(orderId: string, nextStatus: Order['status']) {
     setError(null);
-    setPendingOrder(orderId);
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder) return;
 
-    // Mutación optimista inmediata: la tarjeta salta de columna instantáneamente (0 ms)
+    const previousStatus = targetOrder.status;
+
+    // Mutación optimista inmediata
     const rollback = orders.mutateOrderStatusOptimistic?.(orderId, nextStatus);
 
-    try {
-      const result = await updateOrderStatus(orderId, nextStatus);
-      if (!result.ok) {
-        rollback?.();
-        setError(result.error ?? 'No se pudo actualizar la comanda');
-      }
-    } catch {
-      rollback?.();
-      setError('Error de comunicación al actualizar la comanda');
-    } finally {
-      setPendingOrder(null);
+    // Si había un undo activo previo, cancelarlo
+    if (activeUndo) {
+      clearTimeout(activeUndo.timeoutId);
     }
+
+    // Ventana de 4 segundos antes de enviar mutación a base de datos
+    const timeoutId = setTimeout(async () => {
+      setActiveUndo(null);
+      try {
+        const result = await updateOrderStatus(orderId, nextStatus);
+        if (!result.ok) {
+          rollback?.();
+          setError(result.error ?? 'No se pudo actualizar la comanda');
+        }
+      } catch {
+        rollback?.();
+        setError('Error de comunicación al actualizar la comanda');
+      }
+    }, 4000);
+
+    setActiveUndo({
+      orderId,
+      orderNumber: targetOrder.id.slice(0, 6).toUpperCase(),
+      previousStatus,
+      nextStatus,
+      rollback: () => {
+        clearTimeout(timeoutId);
+        rollback?.();
+        setActiveUndo(null);
+      },
+      timeoutId,
+    });
   }
 
   const grouped: Record<string, Order[]> = {
@@ -153,15 +199,54 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
         </div>
       </div>
 
-      {/* CA-3: Banner superior persistente en amarillo ante pérdida de conexión WebSocket */}
+      {/* CA-3.2: Alerta de pérdida de conexión en tiempo real */}
       {orders.isReconnecting && (
         <div
           role="alert"
           aria-live="assertive"
-          className="rounded-xl bg-amber-400 text-amber-950 px-4 py-3 font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm animate-pulse border border-amber-500"
+          className="rounded-xl bg-amber-500 text-amber-950 px-4 py-3 font-extrabold text-sm flex items-center justify-between gap-2 shadow-sm animate-pulse border border-amber-600"
         >
-          <AlertCircle className="w-5 h-5 shrink-0 text-amber-900" />
-          <span>Conexión en pausa. Reintentando...</span>
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-950" />
+            <span>Sin conexión en vivo — Reintentando conectar...</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => orders.refresh?.()}
+            className="text-xs bg-amber-950 text-white px-3 py-1.5 rounded-lg hover:bg-black font-bold transition-colors cursor-pointer"
+          >
+            Reconectar
+          </button>
+        </div>
+      )}
+
+      {/* CA-3.1: Barra de Deshacer cambio de estado accidental con ventana de 4 segundos */}
+      {activeUndo && (
+        <div
+          role="status"
+          aria-live="assertive"
+          className="rounded-2xl bg-zinc-900 text-white p-3.5 sm:p-4 shadow-xl border-2 border-orange-500 flex items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-200"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-600/30 text-orange-400 flex items-center justify-center font-black text-sm shrink-0">
+              <RotateCcw className="w-5 h-5 text-orange-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold">
+                Comanda #{activeUndo.orderNumber} movida a <span className="text-orange-400 font-extrabold">{activeUndo.nextStatus}</span>
+              </p>
+              <p className="text-xs text-zinc-400">
+                ¿Fue un toque accidental? Tienes 4 segundos para revertir antes de guardar.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => activeUndo.rollback()}
+            className="min-h-[48px] px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black text-sm tracking-wide shadow-md shadow-orange-600/30 transition-all cursor-pointer shrink-0"
+          >
+            Deshacer
+          </button>
         </div>
       )}
 

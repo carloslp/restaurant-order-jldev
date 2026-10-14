@@ -26,12 +26,12 @@ export default function AddToCartButton({ product, quantity, onAdd, disabled = f
       aria-label={`Agregar ${quantity} ${product.name} al carrito`}
     >
       {!disabled && <Plus className="w-4 h-4" />}
-      <span>
+      <span aria-live="polite">
         {disabled
           ? 'Agotado'
           : (product.modifier_groups && product.modifier_groups.length > 0)
             ? `Personalizar · ${formatMXN(price)}`
-            : `Agregar · ${formatMXN(price)}`}
+            : `Agregar al pedido · ${formatMXN(price)}`}
       </span>
     </button>
   );

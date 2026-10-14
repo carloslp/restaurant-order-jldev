@@ -24,6 +24,37 @@ export interface DiscountWithUsage extends Discount {
 }
 
 /**
+ * Evalúa la elegibilidad de un código de descuento y proporciona retroalimentación contextual específica (CA-2.4).
+ */
+export function evaluatePromoCodeEligibility(
+  requestedCode: string,
+  availableDiscounts: DiscountWithUsage[],
+  subtotal: number
+): { valid: boolean; reason?: string; missingAmount?: number; minPurchase?: number } {
+  if (!requestedCode?.trim()) return { valid: false, reason: 'Código requerido' };
+
+  const codeDiscount = availableDiscounts.find(
+    (d) => d.code?.toLowerCase() === requestedCode.toLowerCase().trim()
+  );
+
+  if (!codeDiscount || !codeDiscount.is_active) {
+    return { valid: false, reason: 'Cupón no válido o inactivo' };
+  }
+
+  if (subtotal < codeDiscount.min_purchase) {
+    const missing = codeDiscount.min_purchase - subtotal;
+    return {
+      valid: false,
+      reason: `Te faltan $${missing.toFixed(2)} para usar este cupón (mínimo $${codeDiscount.min_purchase.toFixed(2)})`,
+      missingAmount: missing,
+      minPurchase: codeDiscount.min_purchase,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Evaluates a cart against a set of potential discounts.
  * Rules:
  * 1. Priority: Promo Code > Automatic > Manual.

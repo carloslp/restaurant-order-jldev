@@ -64,10 +64,10 @@ export function getKdsCardVisuals(status: string, elapsedMinutes: number): KdsCa
     case 'warning':
       return {
         urgencyLevel: 'warning',
-        borderClass: 'border-2 border-[#D97706] shadow-amber-500/10',
+        borderClass: 'border-2 border-dashed border-[#D97706] shadow-amber-500/10',
         bgClass: 'bg-amber-50/20',
         pulseClass: '',
-        staticIndicator: '⚠️ Demora (+10 min)',
+        staticIndicator: '⏱️ Demora (+10 min)',
         badgeClass: 'bg-amber-100 text-[#D97706] border border-amber-300 font-bold',
       };
     case 'normal':
@@ -77,8 +77,8 @@ export function getKdsCardVisuals(status: string, elapsedMinutes: number): KdsCa
         borderClass: 'border border-gray-200',
         bgClass: 'bg-white',
         pulseClass: '',
-        staticIndicator: null,
-        badgeClass: null,
+        staticIndicator: '✅ A tiempo',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold',
       };
   }
 }

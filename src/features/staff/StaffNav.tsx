@@ -1,6 +1,5 @@
-// src/features/staff/StaffNav.tsx
 'use client';
-
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from './auth';
@@ -9,9 +8,11 @@ import {
   ChefHat, 
   Settings, 
   LogOut, 
-  UtensilsCrossed 
+  UtensilsCrossed,
+  Ban
 } from 'lucide-react';
 import { LocationSwitcher } from './LocationSwitcher';
+import { ProductAvailabilityManager } from './ProductAvailabilityManager';
 
 interface StaffNavProps {
   userEmail: string;
@@ -22,6 +23,19 @@ interface StaffNavProps {
 
 export function StaffNav({ userEmail, locals = [], activeLocalId = '', currentIsOpen = true }: StaffNavProps) {
   const pathname = usePathname();
+  const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
+
+  // CA-3.3: Atajo de teclado global Alt+8 para invocar el modo "86" instantáneamente
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === '8' || e.code === 'Digit8')) {
+        e.preventDefault();
+        setIsAvailabilityOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const links = [
     { href: '/staff/caja', label: 'Caja', icon: Banknote },
@@ -74,26 +88,45 @@ export function StaffNav({ userEmail, locals = [], activeLocalId = '', currentIs
                 </Link>
               );
             })}
+
+            {/* CA-3.3: Botón Agotados (86) accesible con atajo Alt+8 */}
+            <button
+              type="button"
+              onClick={() => setIsAvailabilityOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all select-none active:scale-95 text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/50"
+              title="Agotados (86) - Atajo: Alt + 8"
+            >
+              <Ban className="w-4 h-4 text-red-500" />
+              <span className="hidden sm:inline">Agotados (86)</span>
+              <span className="sm:hidden">86</span>
+            </button>
           </nav>
 
-        {/* Usuario y Salir */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden md:inline text-xs text-zinc-400 font-mono max-w-[140px] truncate">
-            {userEmail}
-          </span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 transition-all"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Salir</span>
-            </button>
-          </form>
+          {/* Usuario y Salir */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="hidden md:inline text-xs text-zinc-400 font-mono max-w-[140px] truncate">
+              {userEmail}
+            </span>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 transition-all"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Salir</span>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
-  </header>
-);
+
+      {/* Modal / Panel de disponibilidad 86 */}
+      <ProductAvailabilityManager
+        locationId={activeLocalId}
+        isOpen={isAvailabilityOpen}
+        onClose={() => setIsAvailabilityOpen(false)}
+      />
+    </header>
+  );
 }

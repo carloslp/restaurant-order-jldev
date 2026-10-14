@@ -16,6 +16,7 @@ import { X, Check, AlertCircle, Plus, Minus } from 'lucide-react';
 interface Props {
   product: Product;
   initialQuantity?: number;
+  isAvailable?: boolean;
   onConfirm?: (modifiers: CartItemModifiers[], comments: string, quantity?: number) => void;
   onCancel: () => void;
   readOnly?: boolean;
@@ -24,6 +25,7 @@ interface Props {
 export default function ModifierSelector({
   product,
   initialQuantity = 1,
+  isAvailable = true,
   onConfirm,
   onCancel,
   readOnly = false,
@@ -36,6 +38,7 @@ export default function ModifierSelector({
   const [comments, setComments] = useState('');
   const [limitWarnings, setLimitWarnings] = useState<Record<string, string>>({});
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const [focusedInvalidGroupId, setFocusedInvalidGroupId] = useState<string | null>(null);
 
   // CA-4: Modificador agotado en tiempo real (86ing)
   const [soldOutOptionIds, setSoldOutOptionIds] = useState<Set<string>>(() => {
@@ -151,6 +154,11 @@ export default function ModifierSelector({
             return next;
           });
         }
+        // Limpiar foco de error si este grupo ya cumple con el mínimo requerido
+        const minReq = group.min_selections > 0 ? group.min_selections : (group.is_required ? 1 : 0);
+        if (res.nextSelections.size >= minReq) {
+          setFocusedInvalidGroupId((curr) => (curr === groupId ? null : curr));
+        }
       }
     },
     [groups, selections, limitWarnings, soldOutOptionIds]
@@ -167,7 +175,29 @@ export default function ModifierSelector({
   }, [groups, selections, totalPrice]);
 
   const handleConfirm = () => {
-    if (!actionButtonState.isValid) return;
+    if (!isAvailable) {
+      onCancel();
+      return;
+    }
+
+    if (!actionButtonState.isValid) {
+      // CA-1.2: Guía automática a modificador obligatorio faltante (Prevención de error)
+      const firstInvalidGroup = groups.find((g) => {
+        const selCount = (selections[g.id] || new Set()).size;
+        const min = g.min_selections > 0 ? g.min_selections : (g.is_required ? 1 : 0);
+        return selCount < min;
+      });
+
+      if (firstInvalidGroup) {
+        setFocusedInvalidGroupId(firstInvalidGroup.id);
+        const el = document.getElementById(`group-fieldset-${firstInvalidGroup.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        setLiveAnnouncement(`Selecciona una opción para ${firstInvalidGroup.name} para continuar`);
+      }
+      return;
+    }
 
     const modifiers: CartItemModifiers[] = groups.map((group) => ({
       modifier_group_id: group.id,
@@ -240,19 +270,42 @@ export default function ModifierSelector({
             {liveAnnouncement}
           </div>
 
+          {/* CA-1.4: Banner no intrusivo si el platillo pasa a 86 mientras el modal está abierto */}
+          {!isAvailable && (
+            <div
+              role="alert"
+              className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm font-semibold flex items-center gap-3 animate-in fade-in"
+            >
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+              <div className="flex-1">
+                <span className="block font-bold">Este platillo se acaba de agotar en cocina</span>
+                <span className="text-xs text-red-700 font-normal">
+                  Puedes cerrar esta ventana para ver platillos similares disponibles en el menú.
+                </span>
+              </div>
+            </div>
+          )}
+
           {groups.map((group) => {
             const currentSelected = selections[group.id] || new Set();
             const isSingle = group.max_selections === 1;
             const badge = getModifierGroupBadge(group, currentSelected.size);
             const warning = limitWarnings[group.id];
             const isMaxReached = group.max_selections > 1 && currentSelected.size >= group.max_selections;
+            const isInvalidGroup = focusedInvalidGroupId === group.id;
 
             return (
               <fieldset
                 key={group.id}
-                className="space-y-3 border-0 p-0 m-0"
+                id={`group-fieldset-${group.id}`}
+                className={`space-y-3 p-3.5 sm:p-4 rounded-2xl border transition-all ${
+                  isInvalidGroup
+                    ? 'border-red-500 bg-red-50/25 ring-2 ring-red-500/20'
+                    : 'border-transparent'
+                }`}
                 role={isSingle ? 'radiogroup' : 'group'}
                 aria-labelledby={`group-title-${group.id}`}
+                aria-invalid={isInvalidGroup ? 'true' : undefined}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <legend
@@ -263,7 +316,9 @@ export default function ModifierSelector({
                     <span
                       className={`text-xs px-2.5 py-0.5 rounded-full font-bold border transition-colors ${
                         badge.isRequired
-                          ? 'bg-red-100 text-red-800 border-red-200'
+                          ? isInvalidGroup
+                            ? 'bg-red-200 text-red-900 border-red-400 animate-pulse'
+                            : 'bg-red-100 text-red-800 border-red-200'
                           : 'bg-zinc-100 text-zinc-700 border-zinc-200'
                       }`}
                     >
@@ -277,6 +332,18 @@ export default function ModifierSelector({
                     </span>
                   )}
                 </div>
+
+                {/* CA-1.2: Microcopy inline cuando falta seleccionar un grupo obligatorio */}
+                {isInvalidGroup && (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50 border border-red-300 text-red-900 text-xs font-bold animate-in fade-in duration-150"
+                  >
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>Selecciona 1 opción para continuar</span>
+                  </div>
+                )}
 
                 {/* CA-3: Microcopy inline cuando se intenta exceder el tope máximo */}
                 {warning && (
@@ -454,7 +521,7 @@ export default function ModifierSelector({
                   <span className="text-xs font-semibold text-zinc-600 block uppercase tracking-wider">
                     Precio total
                   </span>
-                  <span className="text-xl font-extrabold text-orange-600">
+                  <span className="text-xl font-extrabold text-orange-600" aria-live="polite">
                     {formatMXN(totalPrice)}
                   </span>
                 </div>
@@ -472,19 +539,23 @@ export default function ModifierSelector({
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={!actionButtonState.isValid}
+                  aria-live="polite"
                   className={`min-h-[48px] min-w-[44px] flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center justify-center text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
-                    actionButtonState.isValid
-                      ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/25 cursor-pointer'
-                      : 'bg-zinc-200 text-zinc-700 shadow-none cursor-not-allowed border border-zinc-300'
+                    !isAvailable
+                      ? 'bg-zinc-200 text-zinc-700 shadow-none cursor-pointer border border-zinc-300 hover:bg-zinc-300'
+                      : actionButtonState.isValid
+                        ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/25 cursor-pointer'
+                        : 'bg-orange-500/85 hover:bg-orange-600 text-white shadow-orange-500/20 cursor-pointer border border-orange-400'
                   }`}
                   aria-label={
-                    actionButtonState.isValid
-                      ? `Agregar al pedido por ${actionButtonState.formattedPrice}`
-                      : actionButtonState.buttonText
+                    !isAvailable
+                      ? 'Platillo agotado. Ver platillos similares'
+                      : actionButtonState.isValid
+                        ? `Agregar al pedido por ${actionButtonState.formattedPrice}`
+                        : `${actionButtonState.buttonText}. Haz clic para completar los campos requeridos.`
                   }
                 >
-                  {actionButtonState.buttonText}
+                  {!isAvailable ? 'Ver platillos similares' : actionButtonState.buttonText}
                 </button>
               </div>
             </>

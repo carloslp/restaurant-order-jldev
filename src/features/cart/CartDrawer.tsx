@@ -15,7 +15,7 @@ import {
   Check,
   UtensilsCrossed
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { 
   EMPTY_CART_COPY, 
   getCartLiveAnnouncement, 
@@ -37,11 +37,33 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
     updateQuantity, 
     updateComments,
     removeItem, 
+    restoreItem,
     clearCart 
   } = useCart();
 
   const [editingCommentKey, setEditingCommentKey] = useState<string | null>(null);
   const [draftComment, setDraftComment] = useState('');
+
+  // CA-2.1: Estado para Deshacer eliminación de platillo (5 segundos)
+  const [undoItem, setUndoItem] = useState<{ item: any; key: string } | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleRemoveWithUndo = (item: any, key: string) => {
+    removeItem(key);
+    setUndoItem({ item, key });
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    undoTimeoutRef.current = setTimeout(() => {
+      setUndoItem(null);
+    }, 5000);
+  };
+
+  const handleUndo = () => {
+    if (undoItem) {
+      restoreItem(undoItem.item);
+      setUndoItem(null);
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    }
+  };
 
   // Anuncio para lectores de pantalla ante cambios en el carrito
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
@@ -301,7 +323,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
                         type="button"
                         onClick={() => {
                           if (item.quantity <= 1) {
-                            removeItem(key);
+                            handleRemoveWithUndo(item, key);
                           } else {
                             updateQuantity(key, item.quantity - 1);
                           }
@@ -326,7 +348,7 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
 
                     <button
                       type="button"
-                      onClick={() => removeItem(key)}
+                      onClick={() => handleRemoveWithUndo(item, key)}
                       className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-red-600 transition-colors px-2 py-1 rounded hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                       aria-label="Eliminar producto"
                     >
@@ -339,6 +361,28 @@ export function CartDrawer({ slug, checkoutHref }: CartDrawerProps) {
             })
           )}
         </div>
+
+        {/* CA-2.1: Toast flotante con opción Deshacer (5 segundos) */}
+        {undoItem && (
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="cart-undo-toast"
+            className="mx-4 mb-2 p-3 bg-zinc-900 text-white text-xs rounded-xl flex items-center justify-between shadow-xl border border-zinc-800 animate-in fade-in slide-in-from-bottom-2 duration-200"
+          >
+            <div className="flex items-center gap-2 truncate pr-2">
+              <Trash2 className="w-4 h-4 text-orange-400 shrink-0" />
+              <span className="truncate">Se eliminó <strong>{undoItem.item.product_name}</strong></span>
+            </div>
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="px-3 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            >
+              Deshacer
+            </button>
+          </div>
+        )}
 
         {/* Footer con Totales y Botón de Checkout */}
         {cart.items.length > 0 && (

@@ -196,7 +196,23 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
   }
 
-  // 6. Calcular descuentos
+  // 6. Validar cupón específico (CA-2.4) y calcular descuentos
+  if (input.promo_code) {
+    const codeDiscount = (discounts || []).find(
+      (d) => d.code?.toLowerCase() === input.promo_code?.toLowerCase().trim()
+    );
+    if (!codeDiscount || !codeDiscount.is_active) {
+      return { ok: false, error: 'Cupón no válido o expirado' };
+    }
+    if (items_subtotal < codeDiscount.min_purchase) {
+      const diff = codeDiscount.min_purchase - items_subtotal;
+      return {
+        ok: false,
+        error: `Te faltan $${diff.toFixed(2)} para usar este cupón (mínimo $${codeDiscount.min_purchase.toFixed(2)})`,
+      };
+    }
+  }
+
   const discountResult = calculateBestDiscount(
     input.cart,
     items_subtotal,

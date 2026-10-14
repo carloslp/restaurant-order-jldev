@@ -55,6 +55,7 @@ export default function MenuClient({
 }: Props) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState(initialSearchTerm || '');
+  const [excludedAllergens, setExcludedAllergens] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const { cart, addItem, setOpen } = useCart();
@@ -91,16 +92,29 @@ export default function MenuClient({
     [availability]
   );
 
-  // Filtro de productos por búsqueda (nombre o descripción)
+  // CA-1.1: Filtro de productos por búsqueda y filtrado excluyente de alérgenos
   const filteredProducts = useMemo(() => {
-    if (!search.trim()) return products;
-    const term = search.toLowerCase().trim();
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        (p.description && p.description.toLowerCase().includes(term))
-    );
-  }, [products, search]);
+    let result = products;
+
+    if (search.trim()) {
+      const term = search.toLowerCase().trim();
+      result = result.filter(
+        (p) =>
+          p.name.toLowerCase().includes(term) ||
+          (p.description && p.description.toLowerCase().includes(term))
+      );
+    }
+
+    if (excludedAllergens.length > 0) {
+      const exLower = excludedAllergens.map((a) => a.toLowerCase().trim());
+      result = result.filter((p) => {
+        const prodAllergens = (p.allergens || []).map((a) => a.toLowerCase().trim());
+        return !exLower.some((ex) => prodAllergens.includes(ex));
+      });
+    }
+
+    return result;
+  }, [products, search, excludedAllergens]);
 
   // Lista de categorías visibles con conteo de productos
   const visibleCategories: (Category & { count?: number })[] = useMemo(() => {
@@ -131,6 +145,35 @@ export default function MenuClient({
 
   const productsByCategory = (cat: Category) =>
     filteredProducts.filter((p) => p.category_id === cat.id);
+
+  // Scroll-spy con IntersectionObserver para sincronizar visualmente la categoría al hacer scroll
+  const [activeScrollCategory, setActiveScrollCategory] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeCategory !== null) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveScrollCategory(entry.target.id);
+            const btn = document.getElementById(`tab-cat-${entry.target.id}`);
+            if (btn) {
+              btn.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+            }
+            break;
+          }
+        }
+      },
+      { rootMargin: '-15% 0px -70% 0px', threshold: 0.1 }
+    );
+
+    visibleCategories.forEach((cat) => {
+      const el = document.getElementById(cat.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [visibleCategories, activeCategory]);
 
   const updateQuantity = (productId: string, delta: number) => {
     setQuantities((prev) => {
@@ -340,36 +383,92 @@ export default function MenuClient({
             )}
           </div>
 
-          {/* Carrusel de categorías */}
+          {/* Carrusel de categorías con scroll-spy */}
           {visibleCategories.length > 1 && (
             <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mx-4 px-4 sm:mx-0 sm:px-0" aria-label="Categorías del menú">
               <button
                 type="button"
                 onClick={() => setActiveCategory(null)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all select-none active:scale-95 ${
-                  activeCategory === null
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all select-none active:scale-95 cursor-pointer ${
+                  activeCategory === null && activeScrollCategory === null
                     ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/30'
                     : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
                 }`}
               >
                 Todos ({filteredProducts.length})
               </button>
-              {visibleCategories.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all select-none active:scale-95 ${
-                    activeCategory === cat.id
-                      ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/30'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
-                  }`}
-                >
-                  {cat.name} {cat.count !== undefined && <span className="opacity-75 text-[11px] ml-0.5">({cat.count})</span>}
-                </button>
-              ))}
+              {visibleCategories.map((cat) => {
+                const isSelected = activeCategory === cat.id || (activeCategory === null && activeScrollCategory === cat.id);
+                return (
+                  <button
+                    key={cat.id}
+                    id={`tab-cat-${cat.id}`}
+                    type="button"
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all select-none active:scale-95 cursor-pointer ${
+                      isSelected
+                        ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/30'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
+                    }`}
+                  >
+                    {cat.name} {cat.count !== undefined && <span className="opacity-75 text-[11px] ml-0.5">({cat.count})</span>}
+                  </button>
+                );
+              })}
             </nav>
           )}
+
+          {/* Fila de exclusión de alérgenos (CA-1.1) */}
+          {allergens.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5 pb-0.5">
+              <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-orange-500" /> Excluir:
+              </span>
+              {allergens.map((alg) => {
+                const isExcluded = excludedAllergens.includes(alg);
+                return (
+                  <button
+                    key={alg}
+                    type="button"
+                    onClick={() => {
+                      setExcludedAllergens((prev) =>
+                        prev.includes(alg) ? prev.filter((a) => a !== alg) : [...prev, alg]
+                      );
+                    }}
+                    className={`min-h-[36px] px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all select-none active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                      isExcluded
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs font-bold'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 border border-transparent'
+                    }`}
+                    aria-pressed={isExcluded}
+                  >
+                    <span>{isExcluded ? '✓ Sin' : '+ Sin'} {alg}</span>
+                  </button>
+                );
+              })}
+              {excludedAllergens.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setExcludedAllergens([])}
+                  className="min-h-[36px] px-2 text-xs font-bold text-orange-600 hover:underline shrink-0 cursor-pointer"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Contador accesible de platillos */}
+          <div className="flex items-center justify-between text-xs text-zinc-500 pt-0.5">
+            <span className="font-semibold text-zinc-700">
+              {filteredProducts.length} {filteredProducts.length === 1 ? 'platillo disponible' : 'platillos disponibles'}
+            </span>
+            {excludedAllergens.length > 0 && (
+              <span className="text-amber-800 font-semibold text-[11px] bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/70">
+                Filtros: {excludedAllergens.map((a) => `Sin ${a}`).join(', ')}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -380,17 +479,23 @@ export default function MenuClient({
             <div className="w-14 h-14 bg-zinc-100 text-zinc-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
               <Search className="w-7 h-7" />
             </div>
-            <h3 className="text-base font-bold text-zinc-800">No encontramos resultados</h3>
+            <h3 className="text-base font-bold text-zinc-800">No encontramos platillos con estos filtros</h3>
             <p className="text-xs text-zinc-500 mt-1 max-w-xs mx-auto">
-              Intenta con otra palabra clave o revisa la ortografía de tu búsqueda.
+              {excludedAllergens.length > 0
+                ? 'Prueba desactivando algún filtro de alérgenos o cambiando tu término de búsqueda.'
+                : 'Intenta con otra palabra clave o revisa la ortografía de tu búsqueda.'}
             </p>
-            {search && (
+            {(search || excludedAllergens.length > 0) && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
-                className="mt-4 inline-flex items-center justify-center min-h-[44px] px-4 py-2 text-xs font-semibold text-orange-600 hover:text-orange-700 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-lg cursor-pointer"
+                onClick={() => {
+                  setSearch('');
+                  setExcludedAllergens([]);
+                  setActiveCategory(null);
+                }}
+                className="mt-4 inline-flex items-center justify-center min-h-[44px] px-5 py-2.5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-sm cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
               >
-                Limpiar búsqueda y ver todo el menú
+                Restablecer filtros y ver todo el menú
               </button>
             )}
           </div>
@@ -633,6 +738,7 @@ export default function MenuClient({
         <ModifierSelector
           product={modifierProduct}
           initialQuantity={quantities[modifierProduct.id] ?? 1}
+          isAvailable={isProductAvailable(modifierProduct.id)}
           readOnly={Boolean(local?.is_catalog_only)}
           onConfirm={(modifiers, comments, qty) => {
             const finalQty = qty ?? quantities[modifierProduct.id] ?? 1;

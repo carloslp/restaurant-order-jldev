@@ -9,13 +9,16 @@ import { generateCsv } from '@/lib/csv';
 import {
   parseMenuCsvStructure,
   buildMenuValidationResult,
+  generateMenuDryRunDiff,
   MENU_CSV_COLUMNS,
   type MenuCsvValidationResult,
+  type MenuDryRunDiff,
   type MenuImportMode,
   type MenuCsvValidationError,
 } from '@/lib/menu-csv-parser';
+import { logAudit } from '@/lib/server/audit';
 
-export type { MenuImportMode, MenuCsvValidationError, MenuCsvValidationResult };
+export type { MenuImportMode, MenuCsvValidationError, MenuCsvValidationResult, MenuDryRunDiff };
 
 export interface MenuImportResult {
   ok: boolean;
@@ -32,6 +35,27 @@ export interface MenuImportResult {
  */
 export async function validateMenuCsv(csvContent: string): Promise<MenuCsvValidationResult> {
   return buildMenuValidationResult(csvContent);
+}
+
+/**
+ * CA-5.3: Simulación Dry-Run que compara el CSV con el catálogo actual del local
+ * para detectar productos nuevos, modificaciones de precio y variaciones críticas (>50%).
+ */
+export async function getMenuDryRunDiff(csvContent: string): Promise<MenuDryRunDiff> {
+  const { staff } = await getCurrentStaff();
+  const supabase = createServerClient();
+  const { data: prods } = await supabase
+    .from('products')
+    .select('name, base_price, category:categories(name)')
+    .eq('location_id', staff.location_id);
+
+  const catalog = (prods || []).map((p: any) => ({
+    name: p.name,
+    base_price: Number(p.base_price) || 0,
+    category_name: p.category?.name,
+  }));
+
+  return generateMenuDryRunDiff(csvContent, catalog);
 }
 
 /**
@@ -299,6 +323,23 @@ export async function importMenuFromCsv(payload: {
     revalidatePath(`/${local.slug}`);
     revalidatePath(`/${local.slug}/checkout`);
   }
+  // CA-5.3: Registrar evento de auditoría tras importación exitosa
+  await logAudit({
+    action: 'IMPORT_MENU_CSV',
+    resourceType: 'products',
+    resourceId: staff.location_id,
+    locationId: staff.location_id,
+    staffId: staff.id,
+    metadata: {
+      mode: payload.mode,
+      createdCategories,
+      createdProducts,
+      skippedProducts,
+      createdModifierGroups,
+      createdModifierOptions,
+    },
+  });
+
   revalidatePath('/staff/admin');
   revalidatePath('/staff/kds');
   revalidatePath('/staff/caja');

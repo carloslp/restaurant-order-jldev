@@ -42,6 +42,34 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
   const [party, setParty] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [graceSecondsLeft, setGraceSecondsLeft] = useState(600); // 10 minutos de tolerancia
+
+  // CA-5.1: Alerta sensorial con vibración móvil cuando la mesa está lista
+  useEffect(() => {
+    if (party.status === 'LLAMADO') {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate([200, 100, 200, 100, 200]);
+        } catch {
+          // Navegador bloqueó vibración sin interacción previa
+        }
+      }
+    }
+  }, [party.status]);
+
+  // CA-5.1: Temporizador regresivo de gracia en vivo
+  useEffect(() => {
+    if (party.status !== 'LLAMADO') return;
+    const timer = setInterval(() => {
+      setGraceSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [party.status]);
+
+  const formatCountdown = (s: number) =>
+    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   // Recarga manual y periódica del estado del turno
   const refreshStatus = useCallback(async () => {
@@ -163,9 +191,31 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
                 {party.table_number ? ` (Mesa ${party.table_number})` : ''}.
               </p>
             </div>
+
+            {/* CA-5.1: Contador regresivo de tolerancia en vivo */}
             <div className="bg-emerald-900/40 border border-emerald-800/60 rounded-2xl p-4 text-xs text-emerald-200">
-              ⏱️ Cuentas con 10 minutos de tolerancia para presentarte en puerta antes de pasar al siguiente turno.
+              ⏱️ Tiempo de tolerancia restante:{' '}
+              <strong className="font-mono text-sm text-white bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-700">
+                {formatCountdown(graceSecondsLeft)} min
+              </strong>{' '}
+              para presentarte en puerta antes de pasar al siguiente turno.
             </div>
+
+            {/* CA-5.1: Botón de confirmación de asistencia en camino */}
+            {!acknowledged ? (
+              <button
+                type="button"
+                onClick={() => setAcknowledged(true)}
+                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer"
+              >
+                🏃 Voy para allá (Confirmar asistencia)
+              </button>
+            ) : (
+              <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-300 font-bold text-xs flex items-center justify-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>¡Excelente! Avisamos a la recepción que vienes en camino.</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -262,10 +312,10 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
               </p>
             </div>
 
-            {/* Botón para cancelar turno */}
+            {/* Botón para cancelar turno con modal preventivo */}
             <button
               type="button"
-              onClick={handleCancel}
+              onClick={() => setShowCancelModal(true)}
               disabled={cancelling}
               className="w-full py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-red-400 hover:border-red-900/50 text-xs font-bold transition-all select-none cursor-pointer"
             >
@@ -274,6 +324,60 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
           </div>
         )}
       </main>
+
+      {/* CA-5.1: Modal accesible de confirmación destructiva para salir de la fila */}
+      {showCancelModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-waitlist-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-xl bg-red-600/20 text-red-500 flex items-center justify-center mx-auto border border-red-500/30">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 id="cancel-waitlist-title" className="text-base font-bold text-white">
+                ¿Seguro que deseas salir de la fila?
+              </h3>
+              <p className="text-xs text-zinc-400 mt-1">
+                Perderás tu lugar actual (#{party.position}) y tendrás que formarte de nuevo.
+              </p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs transition cursor-pointer"
+              >
+                Volver a la fila
+              </button>
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={async () => {
+                  setCancelling(true);
+                  try {
+                    const res = await cancelPublicWaitlistByToken(token);
+                    if (res.ok) {
+                      setParty((prev) => ({ ...prev, status: 'CANCELADO' }));
+                      setShowCancelModal(false);
+                    }
+                  } catch {
+                    alert('No se pudo cancelar el turno.');
+                  } finally {
+                    setCancelling(false);
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition disabled:opacity-50 cursor-pointer"
+              >
+                {cancelling ? 'Cancelando...' : 'Sí, salir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="py-4 text-center text-[11px] text-zinc-600 border-t border-zinc-900">

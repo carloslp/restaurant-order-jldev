@@ -23,6 +23,7 @@ interface CartContextValue {
   updateQuantity: (key: string, quantity: number) => void;
   updateComments: (key: string, comments: string) => void;
   removeItem: (key: string) => void;
+  restoreItem: (item: CartItem) => void;
   clearCart: () => void;
   isOpen: boolean;
   setOpen: (open: boolean) => void;
@@ -153,6 +154,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const restoreItem = useCallback<CartContextValue['restoreItem']>((item) => {
+    setCart((prev) => {
+      const key = itemKey(item);
+      const exists = prev.items.some((i) => itemKey(i) === key);
+      if (exists) return prev;
+      return {
+        ...prev,
+        items: [...prev.items, item],
+      };
+    });
+  }, []);
+
   const clearCart = useCallback(() => {
     try {
       localStorage.removeItem(CART_STORAGE_KEY);
@@ -204,6 +217,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       updateQuantity,
       updateComments,
       removeItem,
+      restoreItem,
       clearCart,
       isOpen,
       setOpen,
@@ -211,7 +225,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       locationName: cart.location_name ?? null,
       setLocation,
     }),
-    [cart, count, total, addItem, updateQuantity, updateComments, removeItem, clearCart, isOpen, setLocation]
+    [cart, count, total, addItem, updateQuantity, updateComments, removeItem, restoreItem, clearCart, isOpen, setLocation]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

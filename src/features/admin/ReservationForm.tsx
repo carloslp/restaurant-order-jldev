@@ -157,6 +157,19 @@ export function ReservationForm({ reservation, tables = [], initialData, onSucce
                 <option value="TERRAZA">Terraza</option>
                 <option value="BARRA">Barra</option>
               </select>
+              {(() => {
+                const zoneCap = (tables || [])
+                  .filter((t) => t.is_active && t.zone === formData.preferred_zone)
+                  .reduce((acc, t) => acc + (t.max_capacity || 0), 0);
+                if (zoneCap > 0 && formData.party_size > zoneCap) {
+                  return (
+                    <p className="mt-1.5 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-md border border-red-200">
+                      ⚠️ El grupo ({formData.party_size} pax) excede la capacidad total configurada en {formData.preferred_zone} ({zoneCap} lugares).
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
             <div className="md:col-span-2 space-y-1.5">
               <div className="flex items-center justify-between">

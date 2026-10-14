@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { changeReservationStatus, updateReservation } from '@/lib/server/reservations';
+import { calculateZoneOccupancy } from '@/lib/reservations-utils';
 import type { ReservationStatus, Zone, RestaurantTable } from '@/lib/types';
 import { format } from 'date-fns';
 import { 
@@ -33,6 +34,18 @@ export function DailyReservationsList({ reservations, selectedDate, onUpdate, ta
   const filtered = reservations
     .filter((r) => r.reservation_date === format(selectedDate, 'yyyy-MM-dd'))
     .sort((a, b) => a.reservation_time.localeCompare(b.reservation_time));
+
+  // CA-4.2: Cálculo reactivo de aforo por zona a partir de mesas activas
+  const zoneCapacities: Record<Zone, number> = {
+    INTERIOR: tables.filter((t) => t.zone === 'INTERIOR' && t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0),
+    TERRAZA: tables.filter((t) => t.zone === 'TERRAZA' && t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0),
+    BARRA: tables.filter((t) => t.zone === 'BARRA' && t.is_active).reduce((sum, t) => sum + (t.max_capacity || 0), 0),
+  };
+
+  const zoneOccupancy = calculateZoneOccupancy(filtered, zoneCapacities);
+  const overCapacityZones = (['INTERIOR', 'TERRAZA', 'BARRA'] as Zone[]).filter(
+    (z) => zoneOccupancy[z].isOverCapacity
+  );
 
   const handleStatusChange = async (id: string, status: ReservationStatus) => {
     setUpdatingId(id);
@@ -71,20 +84,85 @@ export function DailyReservationsList({ reservations, selectedDate, onUpdate, ta
     }
   };
 
-  if (filtered.length === 0) {
-    return (
-      <div className="text-center py-16 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200">
-        <Clock className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-        <p className="text-base font-semibold text-zinc-700">No hay reservas programadas para este día</p>
-        <p className="text-xs text-zinc-400 mt-1">
-          Usa el botón "+ Nueva Reserva" para agendar a un cliente manualmente.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-4">
+      {/* CA-4.2: Alerta visual preventiva si alguna zona supera el aforo configurado */}
+      {overCapacityZones.length > 0 && (
+        <div
+          role="alert"
+          className="p-4 rounded-2xl bg-red-50 border-2 border-red-200 text-red-950 flex items-center justify-between gap-3 shadow-xs"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+            <span className="text-xs sm:text-sm font-extrabold">
+              ⚠️ Alerta: El aforo de{' '}
+              {overCapacityZones
+                .map((z) => (z === 'INTERIOR' ? 'Interior' : z === 'TERRAZA' ? 'Terraza' : 'Barra'))
+                .join(', ')}{' '}
+              supera la capacidad configurada de mesas activas.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* CA-4.2: Barras de capacidad y aforo por zona */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {(['INTERIOR', 'TERRAZA', 'BARRA'] as Zone[]).map((zone) => {
+          const occ = zoneOccupancy[zone];
+          const ZoneIcon = zone === 'INTERIOR' ? Building2 : zone === 'TERRAZA' ? Trees : Coffee;
+          const label = zone === 'INTERIOR' ? 'Interior' : zone === 'TERRAZA' ? 'Terraza' : 'Barra';
+          const isOver = occ.isOverCapacity;
+
+          return (
+            <div
+              key={zone}
+              className={`p-3.5 rounded-2xl border transition-all ${
+                isOver
+                  ? 'bg-red-50/50 border-red-300 ring-1 ring-red-300'
+                  : 'bg-white border-zinc-200/80 shadow-xs'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-800">
+                  <ZoneIcon className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>{label}</span>
+                </div>
+                <span
+                  className={`text-xs font-extrabold ${
+                    isOver ? 'text-red-700' : 'text-zinc-600'
+                  }`}
+                >
+                  {occ.reserved} / {occ.capacity} lugares ({occ.percent}%)
+                </span>
+              </div>
+              {/* Barra de progreso */}
+              <div className="w-full h-2 rounded-full bg-zinc-100 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    isOver
+                      ? 'bg-red-600'
+                      : occ.percent >= 80
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, occ.percent)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200">
+          <Clock className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
+          <p className="text-base font-semibold text-zinc-700">No hay reservas programadas para este día</p>
+          <p className="text-xs text-zinc-400 mt-1">
+            Usa el botón "+ Nueva Reserva" para agendar a un cliente manualmente.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
       {filtered.map((res) => {
         const isBusy = updatingId === res.id;
         const ZoneIcon = res.preferred_zone === 'INTERIOR' ? Building2 : res.preferred_zone === 'TERRAZA' ? Trees : Coffee;
@@ -239,6 +317,8 @@ export function DailyReservationsList({ reservations, selectedDate, onUpdate, ta
           </div>
         );
       })}
+        </div>
+      )}
     </div>
   );
 }

@@ -310,7 +310,7 @@ export function buildMenuValidationResult(csvContent: string): MenuCsvValidation
     }
   }
 
-  return {
+    return {
     valid: errors.length === 0,
     errors,
     summary: {
@@ -321,5 +321,87 @@ export function buildMenuValidationResult(csvContent: string): MenuCsvValidation
       modifierOptionsCount,
     },
     sampleItems,
+  };
+}
+
+export interface PriceChangeItem {
+  productName: string;
+  categoryName: string;
+  previousPrice: number;
+  newPrice: number;
+  difference: number;
+  percentChange: number;
+  isPriceSurge: boolean; // Variación > 50%
+}
+
+export interface MenuDryRunDiff {
+  totalRows: number;
+  newProducts: Array<{ name: string; category: string; price: number }>;
+  existingProductsCount: number;
+  priceChanges: PriceChangeItem[];
+  hasPriceSurge: boolean;
+  errors: MenuCsvValidationError[];
+  isValid: boolean;
+}
+
+/**
+ * Simula la importación en modo dry-run comparando contra el catálogo existente en base de datos.
+ * Identifica productos nuevos, cambios de precio y variaciones significativas (>50%).
+ */
+export function generateMenuDryRunDiff(
+  csvContent: string,
+  existingCatalog: Array<{ name: string; base_price: number; category_name?: string }>
+): MenuDryRunDiff {
+  const { categories, errors, totalRows } = parseMenuCsvStructure(csvContent);
+  const existingMap = new Map<string, { base_price: number; category_name?: string }>();
+  for (const item of existingCatalog) {
+    existingMap.set(item.name.trim().toLowerCase(), item);
+  }
+
+  const newProducts: Array<{ name: string; category: string; price: number }> = [];
+  const priceChanges: PriceChangeItem[] = [];
+  let existingProductsCount = 0;
+
+  for (const [catName, cat] of categories.entries()) {
+    for (const [prodName, prod] of cat.products.entries()) {
+      const lower = prodName.trim().toLowerCase();
+      const existing = existingMap.get(lower);
+
+      if (!existing) {
+        newProducts.push({
+          name: prodName,
+          category: catName,
+          price: prod.base_price,
+        });
+      } else {
+        existingProductsCount++;
+        const prevPrice = existing.base_price;
+        const newPrice = prod.base_price;
+        if (prevPrice !== newPrice) {
+          const diff = newPrice - prevPrice;
+          const percent = prevPrice > 0 ? Math.round((diff / prevPrice) * 100) : 100;
+          const isPriceSurge = Math.abs(percent) > 50;
+          priceChanges.push({
+            productName: prodName,
+            categoryName: catName,
+            previousPrice: prevPrice,
+            newPrice,
+            difference: diff,
+            percentChange: percent,
+            isPriceSurge,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    totalRows,
+    newProducts,
+    existingProductsCount,
+    priceChanges,
+    hasPriceSurge: priceChanges.some((p) => p.isPriceSurge),
+    errors,
+    isValid: errors.length === 0,
   };
 }

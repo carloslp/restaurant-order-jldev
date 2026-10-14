@@ -5,6 +5,10 @@
   --foreground: #18181b;
   --primary: #ea580c;
   --primary-hover: #c2410c;
+  /* Tokens de estado semánticos (WCAG 2.2 AA) */
+  --status-required: #dc2626;
+  --status-completed: #16a34a;
+  --status-soldout: #71717a;
 }
 
 @theme inline {
@@ -95,6 +99,31 @@ body {
 /* Soporte para safe area en dispositivos móviles (notches y barras inferiores de iOS/Android) */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+
+/* Área táctil mínima accesible (WCAG 2.2 AA) de 44x44px */
+.touch-target-min {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Badges de estado de modificadores y alérgenos con contraste accesible */
+.badge-status-required {
+  background-color: #fef2f2;
+  color: var(--status-required);
+  border: 1px solid #fca5a5;
+}
+
+.badge-status-completed {
+  background-color: #f0fdf4;
+  color: var(--status-completed);
+  border: 1px solid #86efac;
+}
+
+.badge-status-soldout {
+  background-color: #f4f4f5;
+  color: var(--status-soldout);
+  border: 1px solid #d4d4d8;
 }
 
 
