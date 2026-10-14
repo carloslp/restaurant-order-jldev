@@ -156,7 +156,7 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-zinc-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
+            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 motion-safe:animate-pulse" />
             <h2 className="text-base font-extrabold text-zinc-900">
               Fila de Espera en Vivo ({waitlist.length} grupos aguardando)
             </h2>
@@ -221,7 +221,7 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
                     </span>
 
                     {isCalled ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500 text-white animate-pulse">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500 text-white motion-safe:animate-pulse">
                         Llamado
                       </span>
                     ) : (
@@ -437,7 +437,7 @@ export function AdminWaitlistManager({ waitlist, tables, localSlug, onRefresh }:
                                     Mesa {t.table_number}
                                   </span>
                                   {isOpt && (
-                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md">
+                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
                                       ✨ Sugerida
                                     </span>
                                   )}

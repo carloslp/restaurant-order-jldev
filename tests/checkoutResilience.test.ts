@@ -196,7 +196,10 @@ describe('FEATURE F-02: Checkout Resiliente con Estimación de Envío en Vivo y 
 
       const result = await createOrder({
         location_id: 'loc-1',
-        cart: { items: [], location_id: 'loc-1' },
+        cart: {
+          items: [{ product_id: 'p1', product_name: 'Taco', price: 150, quantity: 1 } as any],
+          location_id: 'loc-1',
+        },
         customer_name: 'Juan Perez',
         customer_phone: '5512345678',
         order_type: 'RECOGER',

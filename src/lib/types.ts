@@ -387,5 +387,6 @@ export interface PublicWaitlistStatusResponse {
     created_at: string;
   };
   localName?: string;
+  localSlug?: string;
   error?: string;
 }

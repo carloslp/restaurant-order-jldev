@@ -1,6 +1,7 @@
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
+  unstable_cache: vi.fn((fn) => fn),
 }));
 
 import { describe, it, expect, vi } from 'vitest';
@@ -96,6 +97,9 @@ describe('Sistema de Fila de Espera Virtual (Waitlist)', () => {
         if (table === 'restaurant_tables') {
           return {
             update: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                eq: mockTableUpdate,
+              }),
               eq: vi.fn().mockReturnValue({
                 eq: mockTableUpdate,
               }),

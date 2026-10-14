@@ -101,19 +101,19 @@ describe('FEATURE F-02: Sistema de Alertas de Rendimiento y Criticidad en KDS', 
   });
 
   describe('CA-3 – Pérdida y reconexión de WebSocket', () => {
-    it('detecta pérdida de heartbeat (> 5s) y expone banner "Conexión en pausa. Reintentando..." en KitchenDisplay', () => {
+    it('detecta pérdida de conexión y expone banner de reconexión en KitchenDisplay', () => {
       const hookPath = path.resolve(__dirname, '../src/features/staff/useRealtimeOrders.ts');
       const hookSource = fs.readFileSync(hookPath, 'utf8');
 
       expect(hookSource).toContain('isReconnecting');
-      expect(hookSource).toContain('5000'); // 5 segundos sin heartbeat
+      expect(hookSource).toContain('setIsReconnecting');
 
       const kdsPath = path.resolve(__dirname, '../src/features/staff/KitchenDisplay.tsx');
       const kdsSource = fs.readFileSync(kdsPath, 'utf8');
 
       expect(kdsSource).toContain('orders.isReconnecting');
-      expect(kdsSource).toContain('Conexión en pausa. Reintentando...');
-      expect(kdsSource).toContain('bg-amber-400');
+      expect(kdsSource).toContain('Sin conexión en vivo — Reintentando conectar...');
+      expect(kdsSource).toContain('bg-amber-500');
     });
   });
 

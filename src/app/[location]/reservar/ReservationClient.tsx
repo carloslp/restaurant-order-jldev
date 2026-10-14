@@ -683,7 +683,7 @@ export default function ReservationClient({ local, zones }: Props) {
                               )}
                             </button>
 
-                            {/* CA-4.1: Sugerencia proactiva ±30 min si el slot está lleno */}
+                            {/* CA-4.1: Sugerencia proactiva ±30 min si el slot está lleno (Target accesible >=44px) */}
                             {!canBook && closestAlternative && (
                               <button
                                 type="button"
@@ -696,10 +696,12 @@ export default function ReservationClient({ local, zones }: Props) {
                                     });
                                   }
                                 }}
-                                className="mt-1 text-[10px] text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200/80 rounded-md py-0.5 px-1 font-bold text-center transition-colors cursor-pointer"
+                                className="mt-1.5 min-h-[44px] w-full text-[11px] leading-tight text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-300 rounded-xl py-1.5 px-2 font-bold text-center transition-colors cursor-pointer flex flex-col items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
                                 title={`Agotado a las ${slot.time} · Sugerido a las ${closestAlternative}`}
+                                aria-label={`Horario ${slot.time} agotado. Seleccionar horario alternativo sugerido ${closestAlternative}`}
                               >
-                                Disp: {closestAlternative}
+                                <span className="text-[9px] uppercase tracking-wider text-orange-600 font-extrabold">Sugerido</span>
+                                <span className="font-extrabold text-xs text-orange-950">{closestAlternative}</span>
                               </button>
                             )}
                           </div>

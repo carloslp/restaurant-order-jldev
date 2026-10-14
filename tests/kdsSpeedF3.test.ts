@@ -5,7 +5,7 @@ import path from 'node:path';
 
 describe('FEATURE 3: Velocidad y Control en KDS y Caja', () => {
   describe('CA-3.1: Ventana de Deshacer (Undo) en KitchenDisplay', () => {
-    it('KitchenDisplay implementa barra de gracia de 4 segundos con botón Deshacer', () => {
+    it('KitchenDisplay implementa barra de gracia de 4 segundos con botón Deshacer y cola pendingCommitsRef', () => {
       const kdsPath = path.resolve(__dirname, '../src/features/staff/KitchenDisplay.tsx');
       const content = fs.readFileSync(kdsPath, 'utf8');
 
@@ -14,6 +14,8 @@ describe('FEATURE 3: Velocidad y Control en KDS y Caja', () => {
       expect(content).toContain('Deshacer');
       expect(content).toContain('4000');
       expect(content).toContain('mutateOrderStatusOptimistic');
+      expect(content).toContain('pendingCommitsRef');
+      expect(content).toContain('prevPending.commit()');
     });
   });
 

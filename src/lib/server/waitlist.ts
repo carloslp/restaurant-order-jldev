@@ -119,7 +119,7 @@ export async function getWaitlistStatusByToken(token: string): Promise<PublicWai
     // 1. Obtener la entrada del cliente
     const { data: party, error } = await supabase
       .from('waitlist')
-      .select('*, locals(name), restaurant_tables(table_number)')
+      .select('*, locals(name, slug), restaurant_tables(table_number)')
       .eq('tracking_token', token)
       .single();
 
@@ -171,6 +171,7 @@ export async function getWaitlistStatusByToken(token: string): Promise<PublicWai
     return {
       ok: true,
       localName: (party.locals as any)?.name || 'Restaurante',
+      localSlug: (party.locals as any)?.slug || null,
       party: {
         id: party.id,
         customer_name: party.customer_name,

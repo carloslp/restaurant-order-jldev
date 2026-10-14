@@ -22,6 +22,7 @@ export default async function WaitlistTrackingPage({ params }: Props) {
       initialData={data.party}
       token={token}
       localName={data.localName || 'Restaurante'}
+      localSlug={data.localSlug || null}
     />
   );
 }

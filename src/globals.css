@@ -9,6 +9,7 @@
   --status-required: #dc2626;
   --status-completed: #16a34a;
   --status-soldout: #71717a;
+  --focus-ring: #ea580c;
 }
 
 @theme inline {
@@ -124,6 +125,12 @@ body {
   background-color: #f4f4f5;
   color: var(--status-soldout);
   border: 1px solid #d4d4d8;
+}
+
+/* Anillo de foco interactivo unificado accesible (WCAG 2.2 AA Focus Appearance) */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 

@@ -35,16 +35,27 @@ interface Props {
   };
   token: string;
   localName: string;
+  localSlug?: string | null;
 }
 
-export default function WaitlistTrackingClient({ initialData, token, localName }: Props) {
+export default function WaitlistTrackingClient({ initialData, token, localName, localSlug }: Props) {
   const router = useRouter();
   const [party, setParty] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [graceSecondsLeft, setGraceSecondsLeft] = useState(600); // 10 minutos de tolerancia
+
+  // CA-5.1: Cálculo dinámico del tiempo de gracia persistente contra called_at
+  const calculateRemainingGrace = useCallback((calledAt?: string | null) => {
+    if (!calledAt) return 600;
+    const elapsedSeconds = Math.floor((Date.now() - new Date(calledAt).getTime()) / 1000);
+    return Math.max(0, 600 - elapsedSeconds);
+  }, []);
+
+  const [graceSecondsLeft, setGraceSecondsLeft] = useState(() =>
+    calculateRemainingGrace(initialData.called_at)
+  );
 
   // CA-5.1: Alerta sensorial con vibración móvil cuando la mesa está lista
   useEffect(() => {
@@ -59,14 +70,15 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
     }
   }, [party.status]);
 
-  // CA-5.1: Temporizador regresivo de gracia en vivo
+  // CA-5.1: Temporizador regresivo de gracia en vivo persistente
   useEffect(() => {
     if (party.status !== 'LLAMADO') return;
+    setGraceSecondsLeft(calculateRemainingGrace(party.called_at));
     const timer = setInterval(() => {
-      setGraceSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setGraceSecondsLeft(calculateRemainingGrace(party.called_at));
     }, 1000);
     return () => clearInterval(timer);
-  }, [party.status]);
+  }, [party.status, party.called_at, calculateRemainingGrace]);
 
   const formatCountdown = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
@@ -131,21 +143,6 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
     };
   }, [party.id, party.status, refreshStatus, token]);
 
-  const handleCancel = async () => {
-    if (!confirm('¿Seguro que deseas salir de la fila de espera? Perderás tu lugar actual.')) return;
-    setCancelling(true);
-    try {
-      const res = await cancelPublicWaitlistByToken(token);
-      if (res.ok) {
-        setParty((prev) => ({ ...prev, status: 'CANCELADO' }));
-      }
-    } catch {
-      alert('No se pudo cancelar el turno.');
-    } finally {
-      setCancelling(false);
-    }
-  };
-
   const isCalled = party.status === 'LLAMADO';
   const isSeated = party.status === 'SENTADO';
   const isCancelled = party.status === 'CANCELADO' || party.status === 'NO_SHOW';
@@ -176,7 +173,7 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
         {/* CASO 1: ¡LLAMADO! (Mesa lista) */}
         {isCalled && (
           <div className="bg-emerald-950/40 border-2 border-emerald-500 rounded-3xl p-6 sm:p-8 text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/40 shadow-lg animate-bounce">
+            <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/40 shadow-lg motion-safe:animate-bounce">
               <BellRing className="w-10 h-10" />
             </div>
             <div className="space-y-2">
@@ -192,7 +189,7 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
               </p>
             </div>
 
-            {/* CA-5.1: Contador regresivo de tolerancia en vivo */}
+            {/* CA-5.1: Contador regresivo de tolerancia en vivo persistente */}
             <div className="bg-emerald-900/40 border border-emerald-800/60 rounded-2xl p-4 text-xs text-emerald-200">
               ⏱️ Tiempo de tolerancia restante:{' '}
               <strong className="font-mono text-sm text-white bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-700">
@@ -201,21 +198,20 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
               para presentarte en puerta antes de pasar al siguiente turno.
             </div>
 
-            {/* CA-5.1: Botón de confirmación de asistencia en camino */}
-            {!acknowledged ? (
-              <button
-                type="button"
-                onClick={() => setAcknowledged(true)}
-                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer"
-              >
-                🏃 Voy para allá (Confirmar asistencia)
-              </button>
-            ) : (
-              <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-300 font-bold text-xs flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>¡Excelente! Avisamos a la recepción que vienes en camino.</span>
-              </div>
-            )}
+            {/* CA-5.1: Botón de redirección formal a la página de fila virtual de la sucursal */}
+            <button
+              type="button"
+              onClick={() => {
+                if (localSlug) {
+                  router.push(`/${localSlug}/fila`);
+                } else {
+                  router.push('/');
+                }
+              }}
+              className="w-full min-h-[48px] py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>🏃 Voy para allá (Ir a la Fila Virtual)</span>
+            </button>
           </div>
         )}
 
@@ -257,7 +253,7 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
               <div className="absolute top-0 right-0 w-32 h-32 bg-orange-600/10 rounded-full blur-2xl pointer-events-none" />
 
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-950/60 border border-orange-800/40 text-orange-400 text-xs font-bold">
-                <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-orange-500 motion-safe:animate-pulse" />
                 <span>En Espera</span>
               </div>
 
@@ -315,7 +311,10 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
             {/* Botón para cancelar turno con modal preventivo */}
             <button
               type="button"
-              onClick={() => setShowCancelModal(true)}
+              onClick={() => {
+                setCancelError(null);
+                setShowCancelModal(true);
+              }}
               disabled={cancelling}
               className="w-full py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-red-400 hover:border-red-900/50 text-xs font-bold transition-all select-none cursor-pointer"
             >
@@ -345,6 +344,13 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
                 Perderás tu lugar actual (#{party.position}) y tendrás que formarte de nuevo.
               </p>
             </div>
+
+            {cancelError && (
+              <p className="text-xs text-red-400 bg-red-950/50 border border-red-900/60 p-2 rounded-lg">
+                {cancelError}
+              </p>
+            )}
+
             <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
@@ -358,14 +364,17 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
                 disabled={cancelling}
                 onClick={async () => {
                   setCancelling(true);
+                  setCancelError(null);
                   try {
                     const res = await cancelPublicWaitlistByToken(token);
                     if (res.ok) {
                       setParty((prev) => ({ ...prev, status: 'CANCELADO' }));
                       setShowCancelModal(false);
+                    } else {
+                      setCancelError(res.error || 'No se pudo cancelar el turno.');
                     }
                   } catch {
-                    alert('No se pudo cancelar el turno.');
+                    setCancelError('Error de red al intentar cancelar el turno.');
                   } finally {
                     setCancelling(false);
                   }

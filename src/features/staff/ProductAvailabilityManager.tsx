@@ -198,7 +198,7 @@ export function ProductAvailabilityManager({
                 <Ban className="w-3.5 h-3.5" />
                 <span>Agotados (86)</span>
                 {outOfStockCount > 0 && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
                     filter === 'OUT_OF_STOCK' ? 'bg-red-800 text-white' : 'bg-red-200 text-red-900'
                   }`}>
                     {outOfStockCount}

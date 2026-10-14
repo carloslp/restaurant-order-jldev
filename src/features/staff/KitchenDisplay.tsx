@@ -83,7 +83,18 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
     prevReconnecting.current = Boolean(orders.isReconnecting);
   }, [orders.isReconnecting, isMuted]);
 
-  // CA-4: Limpieza segura de timers para evitar memory leaks
+  const pendingCommitsRef = useRef<
+    Map<
+      string,
+      {
+        timeoutId: ReturnType<typeof setTimeout>;
+        commit: () => Promise<void>;
+        rollback: () => void;
+      }
+    >
+  >(new Map());
+
+  // CA-4: Limpieza segura de timers y flush de commits pendientes para evitar pérdida de datos
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
@@ -91,9 +102,14 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
     return () => {
       clearInterval(timer);
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-      if (activeUndo) clearTimeout(activeUndo.timeoutId);
+      // Vaciar y confirmar de inmediato en base de datos cualquier comanda pendiente de commit
+      for (const item of pendingCommitsRef.current.values()) {
+        clearTimeout(item.timeoutId);
+        void item.commit();
+      }
+      pendingCommitsRef.current.clear();
     };
-  }, [activeUndo]);
+  }, []);
 
   async function handleTransition(orderId: string, nextStatus: Order['status']) {
     setError(null);
@@ -105,14 +121,18 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
     // Mutación optimista inmediata
     const rollback = orders.mutateOrderStatusOptimistic?.(orderId, nextStatus);
 
-    // Si había un undo activo previo, cancelarlo
-    if (activeUndo) {
-      clearTimeout(activeUndo.timeoutId);
+    // Si había una orden previa con Undo activo, la confirmamos inmediatamente en BD
+    // para que la nueva orden tome la barra de Deshacer sin riesgo de perder la anterior
+    if (activeUndo && activeUndo.orderId !== orderId) {
+      const prevPending = pendingCommitsRef.current.get(activeUndo.orderId);
+      if (prevPending) {
+        clearTimeout(prevPending.timeoutId);
+        void prevPending.commit();
+        pendingCommitsRef.current.delete(activeUndo.orderId);
+      }
     }
 
-    // Ventana de 4 segundos antes de enviar mutación a base de datos
-    const timeoutId = setTimeout(async () => {
-      setActiveUndo(null);
+    const commitFunction = async () => {
       try {
         const result = await updateOrderStatus(orderId, nextStatus);
         if (!result.ok) {
@@ -122,19 +142,36 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
       } catch {
         rollback?.();
         setError('Error de comunicación al actualizar la comanda');
+      } finally {
+        pendingCommitsRef.current.delete(orderId);
+        setActiveUndo((curr) => (curr?.orderId === orderId ? null : curr));
       }
+    };
+
+    // Ventana de 4 segundos antes de enviar mutación a base de datos
+    const timeoutId = setTimeout(() => {
+      void commitFunction();
     }, 4000);
+
+    const rollbackWrapper = () => {
+      clearTimeout(timeoutId);
+      pendingCommitsRef.current.delete(orderId);
+      rollback?.();
+      setActiveUndo((curr) => (curr?.orderId === orderId ? null : curr));
+    };
+
+    pendingCommitsRef.current.set(orderId, {
+      timeoutId,
+      commit: commitFunction,
+      rollback: rollbackWrapper,
+    });
 
     setActiveUndo({
       orderId,
       orderNumber: targetOrder.id.slice(0, 6).toUpperCase(),
       previousStatus,
       nextStatus,
-      rollback: () => {
-        clearTimeout(timeoutId);
-        rollback?.();
-        setActiveUndo(null);
-      },
+      rollback: rollbackWrapper,
       timeoutId,
     });
   }

@@ -89,10 +89,17 @@ describe('FEATURE 5: Fila Virtual en Vivo, Asignación de Mesas y Menú CSV Segu
 
       expect(content).toContain('navigator.vibrate');
       expect(content).toContain('graceSecondsLeft');
+      expect(content).toContain('calculateRemainingGrace');
       expect(content).toContain('formatCountdown');
       expect(content).toContain('Voy para allá');
+      expect(content).toContain('router.push');
+      expect(content).toContain('/fila');
       expect(content).toContain('showCancelModal');
       expect(content).toContain('¿Seguro que deseas salir de la fila?');
+      // No debe contener alert() ni confirm() intrusivos
+      expect(content).not.toMatch(/\bwindow\.alert\b/);
+      expect(content).not.toMatch(/\balert\(/);
+      expect(content).not.toMatch(/\bconfirm\(/);
     });
   });
 
