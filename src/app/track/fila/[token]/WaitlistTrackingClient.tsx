@@ -172,30 +172,30 @@ export default function WaitlistTrackingClient({ initialData, token, localName, 
       <main className="max-w-md mx-auto px-4 py-6 flex-1 w-full flex flex-col justify-center">
         {/* CASO 1: ¡LLAMADO! (Mesa lista) */}
         {isCalled && (
-          <div className="bg-emerald-950/40 border-2 border-emerald-500 rounded-3xl p-6 sm:p-8 text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/40 shadow-lg motion-safe:animate-bounce">
+          <div className="bg-emerald-950/60 border-2 border-emerald-500 rounded-3xl p-6 sm:p-8 text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/40 shadow-md motion-safe:animate-bounce">
               <BellRing className="w-10 h-10" />
             </div>
             <div className="space-y-2">
-              <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-500 text-zinc-950 uppercase tracking-wider">
-                ¡Tu mesa está lista!
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-stone-950">
+                Tu mesa está lista
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-white">
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
                 {party.customer_name}
               </h2>
-              <p className="text-sm text-emerald-300 font-medium">
-                Por favor preséntate en la entrada con el Hostess para pasar a tu mesa
+              <p className="text-sm text-emerald-200 font-normal max-w-prose mx-auto">
+                Por favor preséntate en la entrada con el equipo de recepción para pasar a tu mesa
                 {party.table_number ? ` (Mesa ${party.table_number})` : ''}.
               </p>
             </div>
 
             {/* CA-5.1: Contador regresivo de tolerancia en vivo persistente */}
             <div className="bg-emerald-900/40 border border-emerald-800/60 rounded-2xl p-4 text-xs text-emerald-200">
-              ⏱️ Tiempo de tolerancia restante:{' '}
-              <strong className="font-mono text-sm text-white bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-700">
+              Tiempo de tolerancia restante:{' '}
+              <strong className="font-mono text-sm text-white bg-emerald-950 px-2.5 py-0.5 rounded-lg border border-emerald-700">
                 {formatCountdown(graceSecondsLeft)} min
               </strong>{' '}
-              para presentarte en puerta antes de pasar al siguiente turno.
+              antes de reasignar el lugar al siguiente turno.
             </div>
 
             {/* CA-5.1: Botón de redirección formal a la página de fila virtual de la sucursal */}
@@ -208,7 +208,7 @@ export default function WaitlistTrackingClient({ initialData, token, localName, 
                   router.push('/');
                 }
               }}
-              className="w-full min-h-[48px] py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2"
+              className="w-full min-h-[50px] py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2"
             >
               <span>🏃 Voy para allá (Ir a la Fila Virtual)</span>
             </button>

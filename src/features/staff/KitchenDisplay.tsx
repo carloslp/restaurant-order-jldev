@@ -262,17 +262,17 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
         <div
           role="status"
           aria-live="assertive"
-          className="rounded-2xl bg-zinc-900 text-white p-3.5 sm:p-4 shadow-xl border-2 border-orange-500 flex items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-200"
+          className="rounded-2xl bg-[#1c1917] text-white p-3.5 sm:p-4 shadow-xl border-2 border-[#d9480f] flex items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-200"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-600/30 text-orange-400 flex items-center justify-center font-black text-sm shrink-0">
-              <RotateCcw className="w-5 h-5 text-orange-400" />
+            <div className="w-10 h-10 rounded-xl bg-[#d9480f]/20 text-[#f97316] flex items-center justify-center font-bold text-sm shrink-0">
+              <RotateCcw className="w-5 h-5 text-[#f97316]" />
             </div>
             <div>
               <p className="text-sm font-bold">
-                Comanda #{activeUndo.orderNumber} movida a <span className="text-orange-400 font-extrabold">{activeUndo.nextStatus}</span>
+                Comanda #{activeUndo.orderNumber} movida a <span className="text-[#f97316] font-extrabold">{activeUndo.nextStatus}</span>
               </p>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-stone-400">
                 ¿Fue un toque accidental? Tienes 4 segundos para revertir antes de guardar.
               </p>
             </div>
@@ -280,7 +280,7 @@ export function KitchenDisplay({ locationId }: KitchenDisplayProps) {
           <button
             type="button"
             onClick={() => activeUndo.rollback()}
-            className="min-h-[48px] px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black text-sm tracking-wide shadow-md shadow-orange-600/30 transition-all cursor-pointer shrink-0"
+            className="min-h-[48px] px-6 py-2.5 rounded-xl bg-[#d9480f] hover:bg-[#b83807] active:scale-95 text-white font-bold text-sm tracking-normal shadow-md transition-all cursor-pointer shrink-0"
           >
             Deshacer
           </button>

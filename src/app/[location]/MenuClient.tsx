@@ -232,15 +232,13 @@ export default function MenuClient({
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAFA] text-zinc-900 pb-28">
-      {/* Header del Restaurante */}
-      <header className="relative bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-950 text-white overflow-hidden border-b border-zinc-800">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#f97316_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
-        
+    <main className="min-h-screen bg-[#fcfbfa] text-stone-900 pb-28">
+      {/* Header del Restaurante con identidad gastronómica sobria y cálida */}
+      <header className="relative bg-[#1c1917] text-white overflow-hidden border-b border-stone-800">
         <div className="relative mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-orange-600/90 text-white flex items-center justify-center shadow-lg shadow-orange-600/30 ring-2 ring-white/10 shrink-0">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#d9480f] text-white flex items-center justify-center shadow-md ring-1 ring-white/10 shrink-0">
                 <UtensilsCrossed className="w-7 h-7 sm:w-8 sm:h-8" />
               </div>
               <div>
@@ -249,10 +247,10 @@ export default function MenuClient({
                     {local.name}
                   </h1>
                 </div>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-1 flex items-center gap-2">
+                <p className="text-xs sm:text-sm text-stone-400 mt-1 flex items-center gap-2">
                   {local.is_open !== false ? (
                     <>
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
                       <span className="text-emerald-400 font-medium">
                         {local.is_catalog_only ? 'Abierto' : 'Abierto para pedidos'}
                       </span>
@@ -264,7 +262,7 @@ export default function MenuClient({
                     </>
                   )}
                   <span>·</span>
-                  <Link href="/" className="text-orange-400 hover:text-orange-300 transition-colors">
+                  <Link href="/" className="text-[#f97316] hover:text-[#fb923c] transition-colors font-medium">
                     Cambiar sucursal
                   </Link>
                 </p>
@@ -273,12 +271,12 @@ export default function MenuClient({
 
             {/* Badges de Información Legal e Higiene */}
             <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 text-white/90 text-xs font-medium backdrop-blur-sm">
-                <ShieldCheck className="w-3.5 h-3.5 text-orange-400" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-medium backdrop-blur-xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#f97316]" />
                 IVA incluido (16%)
               </span>
               {local.delivery_fee > 0 && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 text-white/90 text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-medium">
                   Envío: {formatMXN(local.delivery_fee)}
                 </span>
               )}
@@ -556,22 +554,22 @@ export default function MenuClient({
                           <div className="flex items-start justify-between gap-3 mb-1.5">
                             <h3 
                               onClick={() => available && setModifierProduct(p)}
-                              className={`font-bold text-zinc-900 text-base group-hover:text-orange-600 transition-colors ${
+                              className={`font-bold text-stone-900 text-base group-hover:text-[#d9480f] transition-colors ${
                                 available ? 'cursor-pointer' : ''
                               }`}
                             >
                               {p.name}
                             </h3>
                             {!available && (
-                              <span className="shrink-0 rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-bold text-red-600 uppercase tracking-wider">
-                                Agotado
+                              <span className="shrink-0 rounded-lg bg-stone-100 border border-stone-200 px-2.5 py-0.5 text-xs font-semibold text-stone-600">
+                                Agotado por hoy
                               </span>
                             )}
                           </div>
 
                           {/* Descripción */}
                           {p.description && (
-                            <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed line-clamp-2">
+                            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed line-clamp-2 max-w-prose">
                               {p.description}
                             </p>
                           )}
@@ -582,7 +580,7 @@ export default function MenuClient({
                               p.diet_labels.map((diet) => (
                                 <span
                                   key={diet}
-                                  className="inline-flex items-center gap-1 text-[11px] font-medium bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200/60"
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60"
                                 >
                                   <Leaf className="w-3 h-3" />
                                   {diet}
@@ -592,7 +590,7 @@ export default function MenuClient({
                               p.allergens.map((alg) => (
                                 <span
                                   key={alg}
-                                  className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200/60"
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/60"
                                 >
                                   <AlertTriangle className="w-3 h-3" />
                                   {alg}
@@ -605,12 +603,12 @@ export default function MenuClient({
                             <button
                               type="button"
                               onClick={() => setModifierProduct(p)}
-                              className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 font-semibold cursor-pointer mt-2.5 hover:underline"
+                              className="inline-flex items-center gap-1 text-xs text-[#d9480f] hover:text-[#b83807] font-semibold cursor-pointer mt-2.5 hover:underline"
                             >
                               <span>
                                 {local?.is_catalog_only 
-                                  ? '🔍 Ver opciones e ingredientes' 
-                                  : '✍️ Personalizar / Agregar nota'}
+                                  ? 'Ver opciones e ingredientes' 
+                                  : 'Personalizar ingredientes y notas'}
                               </span>
                             </button>
                           )}

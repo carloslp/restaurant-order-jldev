@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
-  --primary: #ea580c;
-  --primary-hover: #c2410c;
-  /* Tokens de estado semánticos (WCAG 2.2 AA) */
-  --status-required: #dc2626;
-  --status-completed: #16a34a;
-  --status-soldout: #71717a;
-  --focus-ring: #ea580c;
+  --background: #fcfbfa;
+  --foreground: #1c1917;
+  --primary: #d9480f;
+  --primary-hover: #b83807;
+  /* Tokens de estado semánticos gastronómicos (WCAG 2.2 AA) */
+  --status-required: #b91c1c;
+  --status-completed: #15803d;
+  --status-soldout: #78716c;
+  --focus-ring: #d9480f;
 }
 
 @theme inline {
@@ -35,19 +35,19 @@ body {
   justify-content: center;
   gap: 0.5rem;
   border-radius: 0.75rem;
-  background-color: #ea580c;
+  background-color: var(--primary);
   color: #ffffff;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
-  box-shadow: 0 1px 2px 0 rgba(234, 88, 12, 0.2);
+  box-shadow: 0 1px 2px 0 rgba(217, 72, 15, 0.2);
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   user-select: none;
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #c2410c;
+  background-color: var(--primary-hover);
 }
 .btn-primary:active:not(:disabled) {
   transform: scale(0.98);
