@@ -37,7 +37,7 @@ function minutesToTime(minutes: number): string {
 }
 
 const SHIFT_COLUMNS =
-  'id, location_id, day_of_week, name, open_time, close_time, turn_duration_minutes, buffer_minutes, is_active, created_at, updated_at';
+  'id, location_id, day_of_week, shift_name, open_time, close_time, slot_interval_minutes, turn_duration_minutes, buffer_minutes, is_active, created_at';
 
 /**
  * Obtiene todos los turnos configurados para el local actual del staff.
@@ -62,7 +62,7 @@ export async function getStaffLocalShifts(): Promise<LocalShift[]> {
     throw new AppError(parsePostgrestError(error, 'No se pudieron cargar los turnos del local'));
   }
 
-  return (data || []) as LocalShift[];
+  return (data || []) as unknown as LocalShift[];
 }
 
 /**
@@ -94,7 +94,7 @@ export async function upsertShift(payload: z.infer<typeof ShiftSchema>) {
   );
 
   revalidatePath('/staff/admin');
-  return data as LocalShift;
+  return data as unknown as LocalShift;
 }
 
 /**
@@ -142,7 +142,7 @@ export async function getGeneratedSlotsForDate(locationId: string, dateStr: stri
     .eq('is_active', true)
     .order('open_time', { ascending: true });
 
-  const shifts = ((!error && shiftsData) ? shiftsData : []) as LocalShift[];
+  const shifts = ((!error && shiftsData) ? (shiftsData as unknown as LocalShift[]) : []);
 
   // Fallback estándar si no hay turnos configurados aún
   if (shifts.length === 0) {

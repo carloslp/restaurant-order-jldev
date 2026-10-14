@@ -47,7 +47,7 @@ async function getStaffContext() {
 }
 
 function invalidateMenu(locationId: string) {
-  revalidateTag(`menu-${locationId}`);
+  revalidateTag(`menu-${locationId}`, 'default');
   revalidatePath('/staff/admin');
 }
 
@@ -421,7 +421,7 @@ export async function toggleProductAvailability(
     }
 
     // Invalidar caché Next.js del menú público
-    revalidateTag(`menu-${staff.location_id}`);
+    revalidateTag(`menu-${staff.location_id}`, 'default');
 
     // Obtener slug del local para revalidar el menú público y staff
     const { data: local } = await supabase

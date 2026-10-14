@@ -76,8 +76,8 @@ export default function WaitlistTrackingClient({ initialData, token, localName }
           table: 'waitlist',
           filter: `id=eq.${party.id}`,
         },
-        (payload) => {
-          const updated = payload.new as { status?: WaitlistStatus } | undefined;
+        (payload: { new: { status?: WaitlistStatus } }) => {
+          const updated = payload.new;
           if (updated?.status && ['SENTADO', 'NO_SHOW', 'CANCELADO'].includes(updated.status)) {
             // Desconectar canal inmediatamente ante estado terminal
             void supabase.removeChannel(channel);

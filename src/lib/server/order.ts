@@ -85,7 +85,7 @@ export async function markOrderAsDeliveredByToken(plainToken: string): Promise<{
   }
 
   // 2. Find the specific token by verifying the plain token against each candidate's hash
-  const tokenRecord = (candidates as DeliveryTokenCandidate[]).find((c) =>
+  const tokenRecord = (candidates as unknown as DeliveryTokenCandidate[]).find((c) =>
     verifyToken(plainToken, c.token_hash)
   );
   if (!tokenRecord) {
@@ -153,7 +153,7 @@ export async function getOrderByPlainToken(plainToken: string): Promise<Order | 
   }
 
   // 2. Find the specific token by verifying the plain token against each candidate's hash
-  const tokenRecord = (candidates as DeliveryTokenWithOrder[]).find((c) =>
+  const tokenRecord = (candidates as unknown as DeliveryTokenWithOrder[]).find((c) =>
     verifyToken(plainToken, c.token_hash)
   );
   if (!tokenRecord) {
@@ -341,7 +341,7 @@ export async function listOrdersForLocation(opts?: {
     return [];
   }
 
-  return (data ?? []) as Order[];
+  return (data ?? []) as unknown as Order[];
 }
 
 // Transiciones válidas según el flujo de negocio (sin roles)

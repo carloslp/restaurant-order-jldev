@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getCurrentStaff } from '@/app/staff/page';
 import { AppError, parseOrThrow, parsePostgrestError, queryOrThrow } from '@/lib/errors';
+import type { Discount } from '@/lib/types';
 
 async function getStaffContext() {
   const { staff } = await getCurrentStaff();
@@ -21,7 +22,7 @@ function setLocationGUC(supabase: ReturnType<typeof createServerClient>, locatio
   });
 }
 
-export async function listDiscounts() {
+export async function listDiscounts(): Promise<Discount[]> {
   const staff = await getStaffContext();
   const supabase = await createServerClient();
 
@@ -29,11 +30,11 @@ export async function listDiscounts() {
 
   const { data, error } = await supabase
     .from('discounts')
-    .select('id, location_id, code, description, type, value, is_active, starts_at, ends_at, max_uses, current_uses, min_order_amount, created_at, updated_at')
+    .select('id, location_id, code, description, discount_type, value, min_purchase, applies_to_product_ids, applies_to_category_ids, starts_at, ends_at, days_of_week, time_of_day_start, time_of_day_end, usage_limit_total, usage_limit_per_customer, usage_limit_per_day, is_active, created_at, updated_at, created_by')
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Error listing discounts: ${error.message}`);
-  return data;
+  return (data ?? []) as unknown as Discount[];
 }
 
 export async function createDiscount(payload: z.infer<typeof DiscountSchema>) {
@@ -137,7 +138,7 @@ export async function applyManualDiscount(orderId: string, amount: number, reaso
   // 1. Get order to find location_id and current total
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('id, location_id, subtotal, iva_amount, delivery_fee, discount_amount, total')
+    .select('id, location_id, customer_phone, subtotal, iva_amount, delivery_fee_amount, total')
     .eq('id', orderId)
     .eq('location_id', staff.location_id)
     .single();

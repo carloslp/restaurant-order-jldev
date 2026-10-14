@@ -10,23 +10,23 @@ interface OrderForExport {
   status: OrderStatus;
   order_type: OrderType;
   payment_method: PaymentMethod | null;
-  total_amount: number;
+  total_amount?: number;
   subtotal: number;
   iva_amount: number;
   delivery_fee_amount: number;
   total: number;
   customer_name: string;
   customer_phone: string;
-  customer_email: string | null;
+  customer_email?: string | null;
   delivery_address: string | null;
-  delivery_zone: string | null;
-  delivery_fee: number | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number | null;
   delivery_references: string | null;
   eta: string | null;
   delivered_at: string | null;
-  notes: string | null;
-  created_by: string;
-  updated_by: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
 }
 
 async function getStaffContext() {
@@ -79,14 +79,14 @@ export async function getKPIs(dateFrom: string, dateTo: string): Promise<KPIData
   // Fetch orders in date range with minimal columns (saves egress on heavy order snapshots)
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('id, status, order_type, payment_method, total, subtotal, delivery_fee, cart_snapshot, created_at, delivered_at')
+    .select('id, status, order_type, payment_method, total, subtotal, delivery_fee_amount, cart_snapshot, created_at, delivered_at')
     .gte('created_at', dateFrom)
     .lte('created_at', dateTo)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
 
-  const orderList = (orders ?? []) as Array<{
+  const orderList = (orders ?? []) as unknown as Array<{
     id: string;
     status: OrderStatus;
     order_type: OrderType;
@@ -283,7 +283,7 @@ export async function exportOrdersCSV(dateFrom: string, dateTo: string): Promise
 
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('id, created_at, status, order_type, payment_method, customer_name, customer_phone, subtotal, iva_amount, delivery_fee_amount:delivery_fee, total, delivery_address, delivery_references, eta, delivered_at')
+    .select('id, created_at, status, order_type, payment_method, customer_name, customer_phone, subtotal, iva_amount, delivery_fee_amount, total, delivery_address, delivery_references, eta, delivered_at, created_by, updated_by')
     .gte('created_at', dateFrom)
     .lte('created_at', dateTo)
     .order('created_at', { ascending: false });
@@ -310,21 +310,21 @@ export async function exportOrdersCSV(dateFrom: string, dateTo: string): Promise
     'Actualizado por',
   ];
 
-  const rows = (orders ?? []).map((o: OrderForExport) => [
+  const rows = ((orders ?? []) as unknown as OrderForExport[]).map((o) => [
     o.id,
     o.created_at,
     o.status,
     o.order_type,
-    o.payment_method,
+    o.payment_method ?? '',
     o.customer_name,
     o.customer_phone,
-    o.subtotal.toFixed(2),
-    o.iva_amount.toFixed(2),
-    o.delivery_fee_amount.toFixed(2),
-    o.total.toFixed(2),
+    Number(o.subtotal || 0).toFixed(2),
+    Number(o.iva_amount || 0).toFixed(2),
+    Number(o.delivery_fee_amount || 0).toFixed(2),
+    Number(o.total || 0).toFixed(2),
     o.delivery_address ?? '',
     o.delivery_references ?? '',
-    o.eta,
+    o.eta ?? '',
     o.delivered_at ?? '',
     o.created_by ?? '',
     o.updated_by ?? '',

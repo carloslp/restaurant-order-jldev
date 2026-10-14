@@ -142,7 +142,7 @@ export async function createLocal(payload: z.infer<typeof LocalSchema>) {
     throw new AppError('No se pudo crear el local. Inténtalo de nuevo.');
   }
 
-  revalidateTag('locals-list');
+  revalidateTag('locals-list', 'default');
   revalidatePath('/staff/admin');
   return data;
 }
@@ -212,9 +212,9 @@ export async function updateLocal(id: string, payload: z.infer<typeof LocalSchem
     throw new AppError('No se pudo actualizar el local. Verifica que siga existiendo.');
   }
 
-  revalidateTag('locals-list');
-  revalidateTag(`local-${validated.slug}`);
-  revalidateTag(`local-id-${id}`);
+  revalidateTag('locals-list', 'default');
+  revalidateTag(`local-${validated.slug}`, 'default');
+  revalidateTag(`local-id-${id}`, 'default');
   revalidatePath('/staff/admin');
   return data;
 }
@@ -226,7 +226,7 @@ export async function toggleLocalOpenStatus(localId: string, isOpen: boolean) {
     .from('locals')
     .update({ is_open: isOpen })
     .eq('id', localId)
-    .select('id, name')
+    .select('id, name, slug')
     .single();
 
   if (error) {
@@ -240,10 +240,10 @@ export async function toggleLocalOpenStatus(localId: string, isOpen: boolean) {
     throw new AppError('No se pudo cambiar el estado del local.');
   }
 
-  revalidateTag('locals-list');
-  revalidateTag(`local-id-${localId}`);
+  revalidateTag('locals-list', 'default');
+  revalidateTag(`local-id-${localId}`, 'default');
   if (data?.slug) {
-    revalidateTag(`local-${data.slug}`);
+    revalidateTag(`local-${data.slug}`, 'default');
   }
   revalidatePath('/staff');
   revalidatePath('/staff/admin');
@@ -273,9 +273,9 @@ export async function toggleLocalCatalogMode(localId: string, isCatalogOnly: boo
     throw new AppError('No se pudo cambiar el modo de catálogo del local.');
   }
 
-  revalidateTag(`local-id-${localId}`);
+  revalidateTag(`local-id-${localId}`, 'default');
   if (data?.slug) {
-    revalidateTag(`local-${data.slug}`);
+    revalidateTag(`local-${data.slug}`, 'default');
     revalidatePath(`/${data.slug}`);
     revalidatePath(`/${data.slug}/checkout`);
   }
@@ -305,9 +305,9 @@ export async function toggleLocalReservationsEnabled(localId: string, enabled: b
     throw new AppError('No se pudo cambiar el estado de reservaciones del local.');
   }
 
-  revalidateTag(`local-id-${localId}`);
+  revalidateTag(`local-id-${localId}`, 'default');
   if (data?.slug) {
-    revalidateTag(`local-${data.slug}`);
+    revalidateTag(`local-${data.slug}`, 'default');
     revalidatePath(`/${data.slug}`);
     revalidatePath(`/${data.slug}/reservar`);
   }
@@ -363,8 +363,8 @@ export async function deleteLocal(id: string) {
     throw new AppError(parsePostgrestError(error, 'No se pudo eliminar el local.'));
   }
 
-  revalidateTag('locals-list');
-  revalidateTag(`local-id-${id}`);
+  revalidateTag('locals-list', 'default');
+  revalidateTag(`local-id-${id}`, 'default');
   revalidatePath('/staff/admin');
 }
 

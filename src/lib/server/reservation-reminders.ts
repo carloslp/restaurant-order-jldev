@@ -10,7 +10,6 @@ interface Reservation {
   holder_phone: string;
   reservation_date: string; // YYYY-MM-DD
   reservation_time: string; // HH:mm:ss
-  preferred_zone: string;
   status: string;
   location_id: string;
 }
@@ -41,7 +40,7 @@ async function fetchReservationsForReminder(
   // We'll filter by time window in the application layer for precision
   const { data, error } = await supabase
     .from('reservations')
-    .select('id, location_id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, reminder_sent_at')
+    .select('id, location_id, holder_name, holder_phone, reservation_date, reservation_time, status')
     .eq('reservation_date', targetDateStr)
     .in('status', ['PENDIENTE', 'CONFIRMADA']);
   
@@ -58,7 +57,7 @@ async function fetchReservationsForReminder(
   const targetMinutes = targetTime.getHours() * 60 + targetTime.getMinutes();
   const windowMinutes = 15; // 15-minute window
   
-  return data.filter((res: Reservation) => {
+  return ((data || []) as unknown as Reservation[]).filter((res: Reservation) => {
     const resTimeParts = res.reservation_time.split(':');
     const resMinutes = parseInt(resTimeParts[0]) * 60 + parseInt(resTimeParts[1]);
     return Math.abs(resMinutes - targetMinutes) <= windowMinutes;
